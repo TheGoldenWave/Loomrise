@@ -1,0 +1,30 @@
+# Secrets and local state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+local-data/
+data/
+logs/
+recordings/
+*.sqlite
+*.sqlite3
+*.db
+
+# Builds and dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+dist/
+build/
+.next/
+.DS_Store
+
+# Reference source checkouts are not part of this project
+vendor/
+_reference/
