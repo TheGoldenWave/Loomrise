@@ -28,3 +28,9 @@ build/
 # Reference source checkouts are not part of this project
 vendor/
 _reference/
+
+# Private thinking, research, and unconfirmed discussion
+private/
+
+# Local agent working state (session memory, scratch data)
+.workbuddy/

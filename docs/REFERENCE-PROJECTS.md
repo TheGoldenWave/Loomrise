@@ -1,88 +1,111 @@
-# 可迭代 Agent 工作台：参考项目分级清单与双模态路线 v0.2
+# Agent 交付工作台：参考项目分级与采用边界 v0.5
 
-> 2026-09-26；本文件覆盖《可迭代企业Agent开源平台立项探索》里“Octop 优先作为 fork 基座”与“语音后置”的初步假设。这里是**上游文档核对后的候选清单**，不是安装、性能或 API 兼容性的实测结论。本人 GitHub 284 个 Star 已枚举，以下只保留与目标直接相关的项目。
+> 2026-09-26。本文件记录可以公开复述的候选清单，不是安装、性能或 API 兼容性实测结论。详细讨论和个人判断保留在本地工作区。
 
 ## 0. 已确认的产品前提
 
-- 第一用户：**业务 PM / 运营**，而非首先服务开发者。输入 FAQ、SOP、转人工规则、线索字段，输出可试用 Agent 与解释性运营报告。
-- 独立定位：**面向业务人员的 Agent 冷启动和可验证自迭代工作台**。业务价值来自“资料→配置→文字/语音试聊→完整 Trace→Badcase→候选改动→回放→审批/回滚”，而不是底层模型、聊天壳或 fork 的品牌。
-- 展示场景：**售前客服 + 线索预约**；用独立创作、明确标注“虚构/模拟”的行业品牌、FAQ、用户和线索，或只使用允许复用的公开资料。不要使用雇主或第三方未授权内容、内部 Prompt、真实客户数据；“典型行业”不能偷换成“真实企业合作案例”。
-- 文字、**网页语音**同步做最小纵向切片；电话外呼是后续独立渠道，不等于网页麦克风。教育、二手车/汽车可以做首批模板；保险、牙科、医美仅演示一般信息与预约转接，不做诊断、疗效、收益或价格承诺。
-- 首发既能用外部模型 API 在单机跑，也保持将来服务器多实例扩容的边界；不能把“大模型在任意 PC 本地运行”当作默认承诺。
+- 核心使用者：**AI 产品经理 / 解决方案人员 / 小团队开发者**；业务 PM 与运营是共同使用者和验收者。
+- 独立定位：**从业务资料到可运行、可验收、可部署、可持续改进的 Agent 交付工作台**，而不是底层模型、聊天壳或上游框架的品牌分叉。
+- 展示场景：明确标注虚构的成人在线课程咨询；二手车预约用于验证复用。不得使用雇主、第三方或客户的未授权内容、内部 Prompt、真实个人数据。
+- 网页文字与网页语音同步做最小纵向切片，共享同一业务任务、权限、工具和结果。电话外呼是后续独立渠道。
+- 默认采用“本地应用 + 外部模型 API”降低试用门槛；完全离线是另一种配置，不是首版默认能力。
+- 产品形态决策：单一工作台、统一执行内核与分类适配器，首版单 Agent；具体接入和测评门禁见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
 
-## 1. 首选研究/试接项目（按对首版的决定性排序）
+## 1. 首选研究/试接项目
 
-| 优先级 | 项目 / 角色 | 具体借用 | 必须验证的集成条件 | 结论 |
+| 优先级 | 项目 / 角色 | 具体借用 | 必须验证的集成条件 | 当前结论 |
 |---|---|---|---|---|
-| **P0-1** | **AgentScope 2.0**：文本 Agent 运行底座 | Agent、工具调用、记忆/状态、权限/人类确认、部署与可观测扩展；上游也已提供标为 **Experimental** 的 `RealtimeAgent` 和钉钉渠道，值得做一条统一 Runtime 的最小实验。[1] | 能否按版本实例化、在关键节点出结构化事件、支持人工接管与可重放；其实时语音是否足够支持打断/播放回执；不直接借旧版 AgentScope Runtime/Studio 仓库 | **首选 SDK 集成**，不 fork 整个平台 |
-| **P0-2** | **Pipecat**：语音编排/传输候选 | WebRTC/WebSocket、STT/LLM/TTS/实时模型插件、打断/轮次/可观测；复用业务策略服务，不把 Pipecat Frame 硬塞进文本 Agent 核心。[7] | 单机网页语音启动、打断与播出回执、将 tool/文本事件映射到共用 Run、是否能独立部署 Voice Worker | **首选工程骨架**，与 Qwen 语音方案做一次对照 spike |
-| **P0-3** | **QwenAudio/qwen-audio-agent**：低时延语音与后台任务样本 | 前台实时语音会话 + 后台持久任务的分工；研究 `spawn_thinking`、事件回流、取消、WebRTC SDK，以及语音直连和外围业务工具如何配合。[3][4] | 前台/后台能否接入本项目版本化业务规则、成本、私有部署要求；不能把它的整套个人助手直接当企业售前 Agent | **架构首选参照 + 语音对照实现**，具体模型/工程可复用度待跑通 |
-| **P0-4** | **Langfuse + OTel GenAI**：Trace/评测方法 | 观测、打分、数据集、实验 UI；统一 `tenant_id/agent_id/config_version/session_id/run_id/channel` 与脱敏口径，向 OTel 导出。[9][18] | 单机安装负担和数据可控性；最小首版可仅持久化本项目 RunEvent，并提供 Langfuse 可选导出 | **规范先行；完整服务非单机强依赖** |
-| **P0-5** | **Microsoft SkillOpt + alibaba/skill-up**：受控优化候选 | 轨迹分组、限定编辑预算、可变/锁定段、旧版对照、固定集验证与候选 Skill/Prompt。[10][11] | 对业务场景的成功判定不是研究 benchmark；必须独立评测集与人工审批，禁止自动改红线和真实生产版本 | **借机制，不把研究算法包装成可直接生产的自动优化器** |
-| **P0-6** | **AG-UI**：网页事件协议参考 | 文字流、工具状态、人工交接、前端事件；可让文字和语音转写/播放状态在一个 UI 中呈现。[12] | 是否需要全部协议事件；最小实现可内部 `RunEvent v1`，外层适配 AG-UI | **协议参考/兼容目标，不让第三方 UI 协议决定领域模型** |
+| **P0-1** | **AgentScope 2.0**：文本与工具运行 SDK | Agent、工具调用、状态、权限／人工确认、部署与事件扩展 | 固定稳定版；能否按版本输出结构化事件、支持暂停恢复和人工接管；开发版能力不等于稳定承诺 | **首选 SDK 集成候选**，不 fork 整个平台 |
+| **P0-2** | **Pipecat**：网页语音工程骨架 | WebRTC／WebSocket、STT/LLM/TTS、打断、轮次和可观测插件 | 一条中文网页语音链路、打断与播出回执、统一 RunEvent、独立 Voice Worker | **语音主线候选**，先用一种供应商组合 |
+| **P0-3** | **Qwen Audio Agent**：前台语音与后台任务样本 | 实时会话、异步任务、取消确认、事件回流和 WebRTC | 能否接同一业务规则、状态、工具与成本账本 | **架构参照 + 限时对照**，不直接套用整套助手 |
+| **P0-4** | **Langfuse + OTel GenAI**：追踪与评测 | 评分、数据集、实验 UI、OpenTelemetry 导出 | 单机安装负担与数据边界；Lite 可只保存自己的 RunEvent，Langfuse 可选 | **规范先行；完整服务非单机强依赖** |
+| **P0-5** | **Microsoft SkillOpt + Alibaba skill-up**：受控优化与评测 | 受限文本修改、独立验证集、环境隔离、工具行为和报告 | 业务成功判定、模拟工具、真实副作用与人工审批；不能把研究 benchmark 当生产保证 | **机制参照；优化器无生产写权限** |
+| **P0-6** | **AG-UI**：前端事件协议 | 文字增量、工具状态、人工交接和自定义业务事件 | 最小事件子集、版本冻结、脱敏和投影成本 | **兼容目标**，不决定内部领域模型 |
+| **P0-7** | **可插拔 DecisionProvider**：混合决策 | 规则先过滤；必要时使用分类、评分或小型生成模型做选择、拒选和回退 | 分数类型、校准版本、延迟、成本和错误均需记录；无 Provider 时产品仍可运行 | **可选增强，不是首版前置条件** |
+
+### 渐进式上下文加载的参考判断
+
+开源项目中存在相近做法，但通常是局部机制，不是与 Loomrise 六层配置完全相同的统一抽象：
+
+- **Dify / Langflow**：知识检索、变量和工作流节点让资料在特定步骤进入上下文，可借鉴“按阶段加载”，但不照搬完整画布或把节点状态当作 Loomrise 业务权威。
+- **AgentScope 等运行 SDK**：工具描述与工具结果通常按调用边界进入运行上下文，可借鉴“工具按需暴露、结果按需注入”；权限、确认和业务结果仍由 Loomrise `ExecutionService` 负责。
+- **MCP**：能力发现与资源读取天然支持先看声明、再取具体内容，可借鉴“元数据先行、内容后取”；外部声明不能直接授予 Loomrise 工具权限。
+- **SkillOpt / skill-up / SkillHone**：更接近技能选择、受限改动和历史证据管理，说明稳定规则与可优化文本应分离；它们不是 S1 的运行时上下文加载器，也不构成已验证的兼容承诺。
+- **长期上下文/记忆系统**：可作为受治理的 Context Pack 来源，适合后续摘要、检索和跨会话加载；不承担 Loomrise 的任务、权限、工具或发布权威。
+
+因此，Loomrise 的选择是“借鉴相邻模式，保持自己的执行合同”：S1 只做三段式加载和事件审计；S2 再验证更细的检索、摘要、缓存和质量门禁，并把 Skill 自进化限定为候选生成、独立评测和人工审批后的版本发布。当前这些判断属于架构参照，未完成兼容性或性能实测。
+
+自进化规划还吸收了以下共同约束：原始轨迹不可变，失败先归因再改 Skill；候选 Skill 需要 provenance、依赖图、回归/迁移评测、成本记录和回滚；作者、执行者、审计者应逻辑隔离；生产运行只加载已发布版本。长期任务再引入结构化状态补丁和 reducer，不能靠不断拼接完整历史解决上下文增长。
 
 ### 首版建议组合
 
 ```text
-本项目自己的 AgentSpec / ScenarioPack / RunEvent / Case / ChangeProposal / Release
-          │                         │
-          ├── Text Agent Adapter ─── AgentScope 2.0
-          ├── Voice Agent Adapter ── Pipecat（对照 AgentScope RealtimeAgent / QwenAudio）
-          ├── Web Transport ──────── Web 文本 + 浏览器麦克风
-          ├── Trace Export ───────── OTel → 可选 Langfuse
-          └── Eval/Optimizer ─────── 固定案例 + 硬规则 + 人工判定 + 受限候选编辑
+Loomrise 自有：
+ScenarioPack / AgentSpec / AgentVersion / ExecutionService
+Task / RunEvent / DecisionPolicy / Case / EvalSet / EvalResult
+ChangeProposal / Release
+                         │
+     ┌───────────────────┼────────────────────────┐
+     │                   │                        │
+渠道/媒体适配       Agent 运行适配             外部能力适配
+Web/Pipecat        AgentScope 候选       信息源/知识检索/业务工具
+     │                   │                        │
+     └───────────── ExecutionService ────────────┘
+                         │
+             AG-UI / OTel 事件投影与导出
+
+DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅给建议。
 ```
 
-“文本和语音同步推进”指**同一个业务定义、共享的运行追踪与回归测试**各有一条最小可运行通路，不是首版同时做全双工、SIP 外呼、多租户高并发和全部 IM 渠道。语音有自己的媒体 session、VAD/轮次、打断取消、播放确认；从语音产生的业务意图再进入共用策略/工具服务。Trace 需区分“生成、发出、实际播出”，避免打断后把用户没听到的话写入上下文。此取舍来自作者对实时全双工语音与帧管道语音架构的研究；可公开事实以本文件上游来源为准。
+文字和语音共享的是业务定义、任务状态、工具授权、取消语义和结果落库，不只共享一份提示词。AgentScope 是候选运行适配，不是文字专属业务权威；外部检索/工具供应商不直接决定领域对象。首版不同时建设 Pipecat、AgentScope Realtime、Qwen 三条生产语音链路；选定后只维护一条默认链路，其余保持实验或删除。
 
-## 2. 平行参考（选型比较 / 第二阶段集成）
+## 2. 平行参考与采用条件
 
 | 项目 | 学习价值 | 当前不当主底座的原因或适用条件 |
 |---|---|---|
-| **Omni-Interaction-Gander/Omni-Interaction-Agent**（腾讯项目） | Cerebellum 快速交互 + Brain 异步强推理/执行的“边聊边办”；全双工与事件系统。[5][6] | **研究标杆而非单 PC 默认依赖**：其研究演示使用多张高端 GPU；不应宣称“腾讯小模型方案可直接低成本部署”。与千问项目确属两条不同路线。[5][6] |
-| **TencentCloud/Octop** | 快速自托管、多用户、Web/钉钉/企微、Agent 管理；用它检验自己的冷启动与部署体验是否真的更好。[2] | 整体 fork 会使独立产品边界、升级和品牌难以掌控。优先做**对标与可选渠道适配**；只有明确的扩展合同和上游协作路径成立，才考虑代码层复用。 |
-| **LiveKit Agents** | WebRTC/房间模型、SIP/电话能力与大规模实时会话。[8] | 当网页语音要扩成电话或多人媒体、并接受其媒体基础设施时升级；首版不与 Pipecat 双主栈并存。 |
-| **Dify / Langflow** | 模板、业务人员冷启动交互、知识/RAG 工作流和公开分享流程。[13][14] | 是产品体验基准，不必对等建设全部节点画布；Dify 代码复用要另查许可和商用条件。 |
-| **Tencent/SkillHone** | Skill 决策历史、版本审阅、PR 化更新，可对照产品的变更证据链。[15] | 偏编码 Agent/Skill 管理方法，非本产品完整业务 Agent 后台。 |
-| **钉钉官方 Connector** | 官方渠道事件/授权的实现参考。[17] | 对接第二阶段业务 IM，不能替代网页语音接入或电话合规。企微另需按官方接口权限验证。 |
-| **GoldenWave**（本人项目） | 长期知识 Candidate/Context Pack 的可选来源 | 不承担本项目的 Run、Agent 配置、渠道或发布权威；避免两个项目复制造“长期记忆平台”。 |
+| **TencentCloud/Octop** | 自托管、多用户、Web／IM、Agent 管理体验 | 整体 fork 会增加产品模型、升级和品牌耦合；作为应用参照和紧急交付备选 |
+| **Dify / Langflow** | 模板、业务人员冷启动、知识与工作流体验 | 产品体验基准；不必对等建设全部画布，代码复用需另查许可 |
+| **LiveKit / LiveKit Agents** | WebRTC 房间、SIP 与电话能力 | 网页语音扩到多人媒体或电话时再评估；不与 Pipecat 同时作为默认主栈 |
+| **Omni-Interaction-Agent / Gander** | 全双工、改目标和过期结果处理 | 研究标杆；官方配置依赖较高资源，不进入普通 PC 默认部署 |
+| **Tencent/SkillHone** | 决策历史、版本审阅和提案持久化 | P1 产品参照；首版不强迫本地 Lite 安装 Git 工作台 |
+| **钉钉官方 Connector / Stream SDK** | 渠道事件、授权和消息去重 | 第二阶段验证具体宿主、接口类型与租户连接所有权 |
+| **长期上下文系统（可选外部系统）** | 经治理的 Context Pack 来源 | 不承担 Loomrise 的运行、Agent 配置、渠道或发布权威 |
 
-**排除项**：Flowise 仅研究历史 UI/模板，不再作为基座；上游已公告维护终止。[16] Tencent Gander 和 Meta HyperAgents 这类研究系统只能在隔离环境研究，不用于自改生产配置。模型训练、音色克隆、数字人不进入首版。
+排除项：研究性自我修改系统不直接用于生产配置；模型训练、音色克隆、数字人、批量营销外呼不进入首版。
 
-## 3. 让它成为“你的独立项目”的四条规则
+## 3. 保持独立产品的四条规则
 
-1. **产品合同原创**：`AgentSpec` 描述业务目标、语料、知识版本、SOP/安全边界、线索字段与转人工；`RunEvent` 描述跨渠道执行事实；`ChangeProposal` 绑定坏例、diff、实验和审批；都由本项目维护版本/迁移/示例与文档。
-2. **供应商依赖只在 Adapter**：AgentScope、Pipecat、Qwen、Langfuse 可替换；不要沿用其项目名称充当自己的领域对象、数据库主键或导出格式。实际选用依赖遵守上游许可证和署名，不以“独立品牌”掩盖其贡献。
-3. **案例包是传播资产**：先发布原创的“虚构在线课程咨询/预约”与“虚构二手车预约试驾”两份可下载 ScenarioPack，附资料、人工写的 expected behavior、坏例、回放报告；明确虚构与生成方式，绝不宣传成真实企业效果。
-4. **传播持续围绕真实进展**：公开冷启动时间、语音打断成功率、错误类型、改动前后固定集结果与部署门槛，记录失败和取舍；“企业级”需靠权限、隔离、审计和扩容实测逐项兑现，首版只声明单机可试用。
+1. **产品合同原创**：`AgentSpec` 描述业务目标、资料、知识快照、SOP／安全边界、字段和权限；`Task/RunEvent` 描述执行事实；`ChangeProposal` 绑定坏例、diff、实验和审批。
+2. **供应商依赖只在 Adapter**：AgentScope、Pipecat、Qwen、AG-UI、OpenTelemetry 和观测后端可替换；不沿用上游私有类型作为公开领域对象。
+3. **案例包是传播资产**：发布可以下载、导入和验证的虚构场景包，包含资料、期望行为、坏例和回放报告，明确数据为模拟。
+4. **传播围绕真实证据**：公开冷启动时间、任务成功、语音失败类型、前后对照与部署门槛；未运行的功能标记“规划”或“待验证”，不把仓库声明转成交付承诺。
 
-## 4. 两条并行纵向 spike（决策门）
+供应商“开放兼容”先指可版本化的接入合同，不意味着已实现多家供应商。MCP 或 OpenAPI 可以作为业务方自定义工具的入口候选，但必须经过 Loomrise 的权限、确认、幂等、沙盒回放和结果审计；第三方工具声明本身不是授权。
 
-- **A：文本**：AgentScope 单 Agent，导入原创教育/二手车案例包，生成可编辑 AgentSpec → Web 文字问答/线索预约 → 人工转接 → 一条 RunEvent 链 → 固定集回放 → 改动候选及人工确认。
-- **B：语音**：同一 AgentSpec 从网页麦克风发起 → 语音链路获取业务答复 → 打断/恢复 → 预约字段更新 → Trace 记录转写片段、推理、合成、播放确认；先跑 Pipecat 最小服务，并用 AgentScope `RealtimeAgent` 检验单一 SDK 路线能否减轻集成；QwenAudio 则检验“轻前台+后台任务”是否值得做 Voice Adapter。不得用单机完全本地化作为通过条件；可使用 BYOK 的云模型但必须设置分钟/并发预算。
-- **A/B 共用验收**：相同业务约束与线索字段；各自有可追踪版本和错误；业务 PM 不改代码能看到失败原因并执行一次审批/回滚。选定依赖前记录许可证、活跃维护、最低硬件、单机启动步骤与真实启动耗时。**当前均未运行安装与负载测试。**
+## 4. 首个纵向 spike 的决策门
 
-## 5. 来源与本地参照
+- **统一业务门**：文字与语音完成同一咨询和模拟预约，只产生一次业务写入。
+- **事件门**：每次运行可关联任务、版本、渠道、工具、成本与真实终态。
+- **恢复门**：取消请求与执行端确认分离；重启或弱网恢复不重复写入。
+- **配置门**：场景可导出到干净实例并恢复相同配置与模拟结果。
+- **音频门**：中文可懂度、首响、打断、播放确认、弱网恢复和媒体成本达到预先记录的业务标准。
+- **退出条件**：若 AgentScope 适配持续侵入上游，比较 LangGraph 等替代；若语音对照无法在限时预算内通过，保留 Pipecat 主线或降低语音承诺。
 
-作者的私人研究笔记曾用于归纳语音 Agent、评测和经验迭代模式；本清单的公开事实与项目引用以以下上游来源为准。私人资料和雇主内部系统不随本仓库发布。
+**当前均未运行安装、语音质量或负载测试。**
 
 ## Sources
 
-[1] https://github.com/agentscope-ai/agentscope
-[2] https://github.com/TencentCloud/Octop
-[3] https://github.com/QwenAudio/qwen-audio-agent
-[4] https://github.com/QwenAudio/qwen-audio-agent/blob/main/docs/architecture/deep-dive.md
-[5] https://github.com/Omni-Interaction-Gander/Omni-Interaction-Agent
-[6] https://arxiv.org/pdf/2609.08977
-[7] https://github.com/pipecat-ai/pipecat
-[8] https://github.com/livekit/agents
-[9] https://github.com/langfuse/langfuse
-[10] https://github.com/microsoft/SkillOpt
-[11] https://github.com/alibaba/skill-up
-[12] https://github.com/ag-ui-protocol/ag-ui
-[13] https://github.com/langgenius/dify
-[14] https://github.com/langflow-ai/langflow
-[15] https://github.com/Tencent/SkillHone
-[16] https://github.com/FlowiseAI/Flowise/discussions/6727
-[17] https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector
-[18] https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai
+- AgentScope: https://github.com/agentscope-ai/agentscope
+- Pipecat: https://github.com/pipecat-ai/pipecat
+- Qwen Audio Agent: https://github.com/QwenAudio/qwen-audio-agent
+- Octop: https://github.com/TencentCloud/Octop
+- Dify: https://github.com/langgenius/dify
+- Langflow: https://github.com/langflow-ai/langflow
+- LiveKit Agents: https://github.com/livekit/agents
+- Gander: https://github.com/Omni-Interaction-Gander/Omni-Interaction-Agent
+- SkillHone: https://github.com/Tencent/SkillHone
+- Microsoft SkillOpt: https://github.com/microsoft/SkillOpt
+- Alibaba skill-up: https://github.com/alibaba/skill-up
+- AG-UI: https://github.com/ag-ui-protocol/ag-ui
+- Langfuse: https://github.com/langfuse/langfuse
+- OpenTelemetry GenAI: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai

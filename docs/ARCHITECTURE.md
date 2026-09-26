@@ -1,46 +1,100 @@
-# 架构与对象权威 v0.1
+# 架构与对象权威 v0.4
 
-状态：待 spike 验证。区分**产品控制面**、**Agent 运行**、**媒体/渠道**、**观测与评测**，避免用任一参考项目吞并整个产品边界。
+状态：产品边界已确认，S1 被动响应纵向样例及渐进式上下文加载约束已细化；六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)。具体协议与选型仍待固定版本 spike 验证，2026-09-26。以下不是安装、性能或兼容性结论。开放接入和验收规则见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
+
+项目采用单一交付工作台与统一执行内核，区分**产品控制面**、**业务执行**、**媒体与渠道**、**外部信息与知识**、**业务工具**、**观测与评测**。首版以单 Agent 为主；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
 ```text
-原创/获授权资料 → ScenarioPack → AgentSpec 草稿 → Web 文字/网页语音
-                                           │              │
-                                           │        Voice Adapter/媒体 Session
-                                           │              ↓
-                                           └────→ 业务策略/工具 ───→ RunEvent/Trace
-                                                                 ↓
-                                            审批/回滚 ← 固定集回放 ← ChangeProposal ← Case
-
-文本 Adapter → AgentScope 2.0 SDK（候选）
-语音 Adapter → Pipecat（候选），并与 AgentScope RealtimeAgent / Qwen Audio Agent 对照
-观测导出 → OpenTelemetry → 可选 Langfuse
-后续渠道 → 钉钉/企微 adapter；电话媒体与 SIP 单列
+获授权资料 → ScenarioPack → AgentSpec/AgentVersion ← B 端工作台
+                                    ↓
+Web 文字 → 渠道适配 ───┐      ExecutionService
+Web 语音 → 媒体适配 ───┼──→ Task / 权限 / 确认 / 幂等 / 取消 / 预算
+后续 IM/电话 → 渠道适配 ┘             │
+                         ├── Agent 运行适配（AgentScope 候选）
+                         ├── DecisionPolicy（可选 Provider 只给建议）
+                         ├── 信息源 / 知识检索只读适配
+                         └── 业务工具合同 → 供应商/模拟适配 → 结果 ID
+                                    ↓
+                               Task / RunEvent
+                                    ↓
+                        Case → EvalSet → EvalResult
+                                    ↓
+                  ChangeProposal → 人工审批 → Release / Rollback
 ```
+
+## 候选组合与责任边界
+
+| 层 | 候选复用 | Loomrise 必须掌握 |
+|---|---|---|
+| 交付工作台 | 基础 UI、AG-UI 客户端 | 场景配置、业务组件、就绪检查、验收与发布 |
+| 控制面 | Web 框架、身份库、按需复用服务组件 | 租户、`AgentVersion`、密钥引用、配额、业务数据与发布权限 |
+| 业务执行 | AgentScope 2.0 固定稳定版 SDK | `ExecutionService`、任务生命周期、恢复、幂等、取消确认与真实结果 |
+| 决策策略 | 工程规则、可选分类／评分 Provider | 候选过滤、拒选、阈值、回退、审计与评测 |
+| 网页语音 | Pipecat 最小工程链路 | 媒体会话到业务任务的桥接、播放状态、用量与超限停止 |
+| 交互协议 | AG-UI 最小事件映射 | 业务事件、权限投影、脱敏与可靠状态 |
+| 观测 | OpenTelemetry；Langfuse 可选 | `RunEvent` 权威、业务终态、成本账本与证据保留 |
+| 外部接入 | API / 文件 / 事件流与外部检索 SDK | 来源授权、身份/字段映射、检索权限和引用、撤销、接入状态 |
+| 业务工具 | 供应商 API / 用户自定义适配 | `ToolManifest`、执行授权、沙盒/模拟、确认、幂等和结果证据 |
+| 改进 | SkillOpt / skill-up / SkillHone 作为方法或离线适配参照 | `Case`、`EvalSet`、`EvalResult`、`ChangeProposal`、审批、发布与回滚 |
+
+AgentScope `RealtimeAgent` 与 Qwen Audio Agent 仅作为限时语音对照，不同时维护三条生产链路。Octop、Dify、Langflow 作为应用体验参照，不作为默认底座。框架状态通过 Adapter 关联，前端不绑定上游私有数据类型。
+
+渠道/媒体适配、Agent 运行适配、信息源适配、知识检索适配、业务工具适配和事件导出是不同边界。网页语音的媒体交互可以异步进行，但业务请求仍进入同一 `ExecutionService`；AgentScope 是运行 SDK 候选，不是“文字专属业务内核”。新供应商优先实现现有适配合同，不增加平行任务状态或另一套发布流程。
+
+## S1 配置与执行边界
+
+S1 将复杂业务 Agent 配置压缩为可审计的六层：`ContextSnapshot` 提供带来源和有效期的事实；`TaskRouting` 选择当前唯一主任务；`Skill/SOP` 描述适用条件、下一步和退出；`HardRule` 在模型外裁决权限、确认、停止和去重；`ToolPolicy` 描述工具副作用、幂等和结果证据；`Outcome` 保存业务状态和结果 ID。模型可以提出解释和下一步，但不能绕过 `HardRule`、`ToolPolicy` 或 `Outcome`。
+
+渐进式上下文加载是横切的执行策略，不新增第七个领域层。运行时按“常驻基线 → 当前任务/Skill → 按需知识或工具结果”选择上下文，并对每个片段保留作用域、触发条件、优先级、来源版本、敏感级别和 token 估算。全局/任务/Skill 三级 `HardRule` 可以被独立追踪和模型外评估，但不要求把全部规则原文注入上下文；执行内核只向模型提供当前有效约束摘要，完整规则证据留在 `RunEvent`。这样既保留约束边界，也避免为了修复一个 badcase 无限堆叠 Prompt。
+
+S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）、`activation_reason`、`source_ref`、`source_version`、`token_estimate` 和 `load_status`（loaded/skipped/expired/budget_capped）。加载与跳过都记录事件，便于区分“规则未命中”“上下文未加载”“检索无结果”和“模型误判”。S1 不实现自动摘要、长期记忆优化或基于评测结果的动态调参。
+
+这六层是对实际 Agent 配置中阶段、路由、规则、工具和结果结构的公开抽象，不包含任何真实业务配置、内部标识或私有提示词。S1 只实现入站消息触发；`Task` 保留可关联触发来源的字段，暂不实现定时器、条件触达或主动发送队列。
 
 ## 权威对象
 
 | 对象 | 单一权威 | 必要状态/权限 | 删除/撤销 |
 |---|---|---|---|
-| `ScenarioPack`/原始素材 | 上传者/材料权利人；本项目只托管获授权副本 | 来源、使用许可/模拟标记、有效期 | 用户删除，停止后续检索；已发版本需标记失效并重验 |
-| `AgentSpec` 与 `Release` | 本项目 | `draft → tested → approved → released → rolled_back`；版本不可覆盖 | 用户删除/停用；审计元数据依保留策略处理 |
-| `RunEvent`/`Session` | 本项目 | 绑定租户、渠道、版本、成本、敏感级别、时间；媒体事件另标 | 租户可删除/脱敏；禁止跨租户可见 |
-| `Case`、`EvalSet`、`EvalResult` | 本项目（人工 GT/红线为评测权威） | 题目级 rubric、固定集版本、生成来源 | 用户删除案例/证据引用，评测结果失去证据则失效 |
-| `ChangeProposal` | 本项目 | `proposed → evaluated → accepted/rejected`；锁定段不可自改 | 可撤回、拒绝、审计 |
-| API key 与 IM/线路授权 | 用户/供应商 | 后端受控保管或短会话代理，绝不写前端 bundle/Trace | 随时撤销/删除；相应运行停止 |
-| 个人长期知识（若接 GoldenWave） | GoldenWave | 仅按授权读带引用的 Context Pack | 上游撤回时缓存失效，不复制其正式记忆库 |
+| `ScenarioPack` / 原始素材 | 上传者或材料权利人；本项目只托管获授权副本 | 来源、使用许可或模拟标记、有效期 | 用户删除，停止后续检索；已发版本标记失效并重验 |
+| `AgentSpec` / `AgentVersion` / `Release` | Loomrise | `draft → tested → approved → released → rolled_back`；发布版本不可覆盖 | 用户停用；审计元数据依保留策略处理 |
+| `Task` / `RunEvent` | Loomrise | 绑定租户、业务任务、运行尝试、渠道、版本、成本与敏感级别 | 租户可删除或脱敏；禁止跨租户可见 |
+| 连接引用 / `ToolManifest` / `SkillManifest` | Loomrise 管理配置和许可；外部数据权利仍归来源方 | 分类、合同版本、授权范围、风险、工具/Skill 可用版本 | 授权撤销即禁用连接；相关版本和评测标记待重验 |
+| `DecisionRequest` / `DecisionResult` | Loomrise 协议，Provider 只给建议 | 候选集版本、分数类型、绝对适配度、回退与 deadline | 可删除业务内容；保留必要的审计摘要 |
+| `Case` / `EvalSet` / `EvalResult` | Loomrise（人工真值与硬规则为评测权威） | 题目版本、环境快照、期望副作用与证据 | 证据删除后，相关“已验证”结论失效 |
+| `ChangeProposal` | Loomrise | `proposed → evaluated → accepted/rejected`；权限和硬规则不可自改 | 可撤回、拒绝、审计 |
+| API key / IM / 线路授权 | 用户或供应商 | 后端受控保管或短期令牌，不进入前端包与 Trace | 随时撤销或删除；对应运行停止 |
 
-## 最小领域合同（不宣称已实现）
+## 最小领域合同（尚未实现）
 
-- `AgentSpec@v1`：稳定 ID、场景目标、授权资料引用、SOP/安全锁定段、可改段、线索字段、工具权限、模型和预算。
-- `RunEvent@v1`：`tenant_id`、`agent_id`、`config_version`、`session_id`、`run_id`、`channel`、序号、时间、事件类型、source ref、耗时/成本、脱敏策略、幂等键。文字、语音输出至少区分生成、发送、已确认播出/未知；打断时不把未播内容记作已被用户听见。
-- `ChangeProposal@v1`：原配置版本、证据 Run/Case、结构化 diff、可修改范围、固定集版本、实验结果、提出者与审批人。未知主版本拒绝写入；验证成功不等于上线成功，上线需要单独回执。
+- `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置引用和合同版本，不携带凭据；动态外部数据须保留每次读取的来源/版本证据。
+- `Task@v1`：业务任务可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。
+- `RunEvent@v1`：租户、Agent 版本、任务、运行、媒体会话、渠道、序号、时间、事件类型、来源引用、耗时／成本和幂等键；文字与语音至少区分生成、发送、已确认播出和未知；上下文事件还需记录作用域、选择/跳过原因、来源版本和 token 估算。
+- `ToolManifest@v1`：稳定 ID/版本、业务语义、输入/输出 Schema、副作用级别、权限、确认、超时/预算、幂等、错误与未知结果、模拟实现、外部结果 ID 与审计字段。平台内部任务状态操作不必全部成为模型工具。
+- `SkillManifest@v1`：稳定 ID/版本/状态、适用条件、目标、退出条件、可引用知识/工具 ID、失败或转人工策略、依赖 Skill、来源证据和验收案例。Skill 是策略配置，不是权限或任意代码执行入口；候选版本必须先经过评测和审批才能进入已发布版本。
+- `Case/EvalSet/EvalResult@v1`：人工审定输入和预期状态/动作/副作用，冻结资料与模拟环境；按开发、验证、盲测分集，旧版/候选版配对批量回放，保存逐例判定与汇总。确定性硬规则独立于机评，缺证据、关键退步或违规时阻断候选发布。
+- `DecisionResult@v1`：Provider／模型版本、候选集哈希、选中项或拒选、原始分数及类型、校准版本、延迟、用量与错误。
+- `ChangeProposal@v1`：原版本、证据 Run／Case、结构化 diff、允许修改范围、固定评测集、实验结果、提出者与审批人；验证成功不等于上线成功。
 
-## 部署路线（目标，不是已验证结果）
+工具在执行前再次校验权限、预算、参数、确认版本与任务代次。判别器超时不得自动放行高风险动作；语音打断使待播片段和过期后台任务失效，但不能误把“未播出”记成用户已经听见。
 
-- 单 PC：控制台/API/Worker 尽可能少服务，用外部模型 API 跑通；本地数据默认不出机器，语音媒体单独 Worker，可在一台机器运行。
-- 服务器：相同领域合同，关系数据库/对象存储、独立队列、无状态 API 与可扩容的文本/语音 Worker；租户隔离、权限、审计与预算成为上线门禁。
-- 公共 Demo：登录、配额/并发/分钟上限；平台补贴与 BYOK 分开计费。服务端代理 BYOK 时透明告知密钥处理范围；不声称密钥只在本地。
+真实外部写入不得用于离线回放。信息源与知识检索连接要分别处理业务事实和可引用材料；都须记录来源、授权、有效期和撤销，知识撤回会使关联评测与发布就绪状态待重验。外呼供应商的拨打/接通/结束/转写等回执要与业务结果分别记账，线路授权、合规和人工接管在真实接入前单独验证。
+
+## 事件与部署路线
+
+Loomrise 业务事件是事实源，AG-UI 只用于前端映射，OpenTelemetry 用于跨服务追踪，Langfuse 是可选观测后端。`task_id`、`run_id`、`media_session_id` 和 `trace_id` 分别编号；计费、审批、发布和副作用审计不依赖抽样 Trace。
+
+后续主动触达不作为渠道适配器里的隐藏定时任务，而是独立的 `OutreachPolicy`：条件、优先级、冷却、授权、去重、停止和发送回执都必须版本化，并最终创建或唤醒既有 `Task`，写入既有 `RunEvent`。规则引擎可以直接触发，Agent 只能在允许范围内提出候选；S1 不实现该策略、调度器或发送队列。
+
+## 自进化与技能编排边界
+
+后续自进化采用“不可变运行证据 → 轨迹归一化 → 独立失败归因 → Candidate Skill/`ChangeProposal` → 沙箱与评测 → 审批发布”的链路。`Trajectory` 是从 `RunEvent` 派生的分析视图，不取代业务事实；经验和被拒绝提案可以长期保留，但生产 Agent 只加载已发布版本。
+
+作者/提议者、执行 Agent 与评估/审计者应逻辑隔离。候选必须携带来源 Run/Case、父版本、结构化 diff、依赖图、评测环境、成本变化和接受/拒绝/回滚理由，并通过开发、验证、保留集、回归和迁移样本门禁。Skill 自进化不得直接修改 `HardRule`、`ToolPolicy` 的权限/副作用、`Outcome` 语义、发布权限或数据保留策略；这些只能形成待审提案。
+
+Skill 数量增长后，Meta Skill 可以在已发布 Skill 集合中做选择、排序、并行与停止决策，但必须受预算、权限、依赖和回退约束。S1 不实现 Meta Skill 或自动发布；S2 只建立候选和评测闭环。
+
+部署目标分为 Lite 本地版、可选 Voice Worker、Server 服务端版和完整观测扩展。Lite 目标是在无 GPU 的普通 PC 上通过外部模型 API 试用，但这仍是待实测目标。从 SQLite 迁移到 PostgreSQL 必须提供导出导入与校验；在权限、租户隔离、工具授权、幂等、审计和备份恢复没有通过测试前，不对外宣称企业级能力。
 
 ## 失败与撤回
 
-工具超时与重复提交需幂等；语音打断使待播片段和过期后台任务失效；上游知识撤回使引用/缓存失效；评测证据删除后不得继续展示无来源的“已验证提升”；用户停用 IM 授权时禁止继续收发。渠道可故障降级，但不得悄悄改为更高权限操作。
+工具超时与重复提交必须幂等；语音打断和用户改需求要使相关旧结果失效；知识撤回使引用与缓存失效；评测证据删除后不得继续展示无来源的“已验证提升”；用户停用 IM 授权时立即停止收发。渠道可故障降级，但不得悄悄改为更高权限操作。
