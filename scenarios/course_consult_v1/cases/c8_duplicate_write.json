@@ -1,0 +1,28 @@
+{
+  "case_id": "c8_duplicate_write",
+  "title": "重复提交：同一幂等键只允许一次写入（跨轮次）",
+  "channel": "text",
+  "turns": [
+    { "role": "user", "text": "帮我预约数据分析入门，周二晚" },
+    { "role": "user", "text": "再帮我预约一次，同样的" }
+  ],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "周八",
+        "slot": "周二晚 20:00",
+        "idempotency_key": "idem-c8"
+      }
+    },
+    { "text": "已为您创建预约。" }
+  ],
+  "expected_state": "success",
+  "expected_write_count": 1,
+  "expected_outcome_contains": "",
+  "forbidden": [],
+  "confirm_responses": [true, true],
+  "tool_failure_mode": "none",
+  "notes": "反例：第二轮提交同一幂等键，被 dedupe 拦截，总写入仍为 1。"
+}

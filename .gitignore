@@ -34,3 +34,8 @@ private/
 
 # Local agent working state (session memory, scratch data)
 .workbuddy/
+
+# S1 运行产物与本地构建临时目录
+runs/
+.build/
+*.log

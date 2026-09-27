@@ -1,0 +1,25 @@
+{
+  "case_id": "c6_tool_error",
+  "title": "工具失败：写入返回错误，不得记为成功",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "帮我预约数据分析入门，周四晚" }],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "赵六",
+        "slot": "周四晚 20:00",
+        "idempotency_key": "idem-c6"
+      }
+    },
+    { "text": "预约服务返回错误，本次未写入，请稍后重试。" }
+  ],
+  "expected_state": "failed",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "",
+  "forbidden": [],
+  "confirm_responses": [true],
+  "tool_failure_mode": "error",
+  "notes": "反例：error 与 unknown 必须分开记账。"
+}

@@ -1,0 +1,25 @@
+{
+  "case_id": "c5_deny_unknown_course",
+  "title": "硬规则拒绝：课程未确定时不得写入预约",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "先帮我占个名额，课程待定" }],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "UNKNOWN",
+        "learner_name": "王五",
+        "slot": "待定",
+        "idempotency_key": "idem-c5"
+      }
+    },
+    { "text": "课程未确定，按硬规则不能创建预约。请先确认要报的课程。" }
+  ],
+  "expected_state": "failed",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "",
+  "forbidden": [],
+  "confirm_responses": [true],
+  "tool_failure_mode": "none",
+  "notes": "反例：确定性拒绝分支，且即使人工确认也不会放行。"
+}

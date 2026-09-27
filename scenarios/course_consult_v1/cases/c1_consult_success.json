@@ -1,0 +1,17 @@
+{
+  "case_id": "c1_consult_success",
+  "title": "咨询课程价格：只读检索后回答，无业务写入",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "数据分析入门这门课多少钱？" }],
+  "script": [
+    { "tool": "search_knowledge", "args": { "query": "数据分析入门 价格", "limit": 3 } },
+    { "text": "「数据分析入门」学费 3980 元，共 12 周，含 4 次作业批改（来源 kb.pricing@v1）。" }
+  ],
+  "expected_state": "success",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "3980",
+  "forbidden": ["立减", "优惠"],
+  "confirm_responses": [],
+  "tool_failure_mode": "none",
+  "notes": "正例：只读链路，知识带来源与版本，且不引用已过期片段。"
+}

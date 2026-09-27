@@ -1,0 +1,25 @@
+{
+  "case_id": "c7_timeout_unknown",
+  "title": "工具超时：回执未知，Loomrise 自建 unknown 态",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "帮我预约数据分析入门，周六上午" }],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "孙七",
+        "slot": "周六上午 10:00",
+        "idempotency_key": "idem-c7"
+      }
+    },
+    { "text": "预约超时，未取得回执，结果未知（不会当作成功）。" }
+  ],
+  "expected_state": "failed",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "未知",
+  "forbidden": [],
+  "confirm_responses": [true],
+  "tool_failure_mode": "timeout_unknown",
+  "notes": "反例：上游 ToolResultState 缺 unknown，S1 自建，不得映射成 success。"
+}

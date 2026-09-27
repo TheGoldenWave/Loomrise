@@ -1,0 +1,25 @@
+{
+  "case_id": "c3_booking_rejected",
+  "title": "预约被用户拒绝：不得产生业务写入",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "帮我预约数据分析入门，周二晚" }],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "韩梅梅",
+        "slot": "周二晚 20:00",
+        "idempotency_key": "idem-c3"
+      }
+    },
+    { "text": "好的，已取消这次预约操作，没有产生任何写入。" }
+  ],
+  "expected_state": "failed",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "",
+  "forbidden": [],
+  "confirm_responses": [false],
+  "tool_failure_mode": "none",
+  "notes": "反例：用户拒绝 → denied，业务账本为空。"
+}

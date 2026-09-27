@@ -1,0 +1,18 @@
+{
+  "case_id": "c10_budget_capped",
+  "title": "上下文预算截断：证据被裁剪必须显式记录 budget_capped",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "把课程价格、开班时间、优惠政策都告诉我" }],
+  "script": [
+    { "tool": "search_knowledge", "args": { "query": "优惠 价格 开班", "limit": 3 } },
+    { "text": "部分资料因 token 预算被截断，未能加载；已记录 budget_capped。" }
+  ],
+  "expected_state": "success",
+  "expected_write_count": 0,
+  "expected_outcome_contains": "截断",
+  "forbidden": ["立减 500"],
+  "confirm_responses": [],
+  "tool_failure_mode": "none",
+  "context_budget_tokens": 120,
+  "notes": "反例：预算截断与「规则未命中」必须可区分；过期片段不得被使用。"
+}

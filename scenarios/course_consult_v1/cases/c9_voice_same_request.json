@@ -1,0 +1,26 @@
+{
+  "case_id": "c9_voice_same_request",
+  "title": "语音入口：与文字共用同一业务请求、权限与结果",
+  "channel": "voice",
+  "turns": [{ "role": "user", "text": "我想报名数据分析入门，帮我预约" }],
+  "script": [
+    { "tool": "search_knowledge", "args": { "query": "数据分析入门 开班", "limit": 2 } },
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "吴九",
+        "slot": "周二晚 20:00",
+        "idempotency_key": "idem-c9"
+      }
+    },
+    { "text": "已为您创建预约，result_id 见回执。" }
+  ],
+  "expected_state": "success",
+  "expected_write_count": 1,
+  "expected_outcome_contains": "result_id",
+  "forbidden": [],
+  "confirm_responses": [true],
+  "tool_failure_mode": "none",
+  "notes": "正例（语音）：渠道不同，业务状态、权限判断与写入次数与文字一致。"
+}

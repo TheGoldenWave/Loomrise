@@ -1,0 +1,26 @@
+{
+  "case_id": "c2_booking_confirmed",
+  "title": "预约：人工确认后只写入一次并返回 result_id",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "我想报名数据分析入门，帮我预约一下" }],
+  "script": [
+    { "tool": "search_knowledge", "args": { "query": "数据分析入门 开班", "limit": 2 } },
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "李雷",
+        "slot": "周二晚 20:00",
+        "idempotency_key": "idem-c2"
+      }
+    },
+    { "text": "已为您创建预约，result_id 见工具回执。请注意这是模拟写入，不触达真实系统。" }
+  ],
+  "expected_state": "success",
+  "expected_write_count": 1,
+  "expected_outcome_contains": "result_id",
+  "forbidden": [],
+  "confirm_responses": [true],
+  "tool_failure_mode": "none",
+  "notes": "正例：确认在模型外收集；写入一次且有稳定 result_id。"
+}

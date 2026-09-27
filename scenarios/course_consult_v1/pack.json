@@ -1,0 +1,182 @@
+{
+  "pack_id": "course_consult_v1",
+  "title": "虚构成人在线课程咨询（模拟数据）",
+  "agent_version": {
+    "version_id": "course_consult_v1@1.0.0",
+    "scenario_pack_id": "course_consult_v1",
+    "model": "scripted-s1",
+    "model_version": "deterministic-v1",
+    "contract_version": "s1.0",
+    "skill_ids": ["course_consult_booking", "refund_request"],
+    "tool_ids": ["search_knowledge", "create_booking"],
+    "rule_ids": [
+      "search.readonly_allow",
+      "booking.require_confirm",
+      "booking.deny_unknown_course",
+      "booking.idempotent_once"
+    ],
+    "context_budget_tokens": 4000
+  },
+  "routing": {
+    "course_consult_booking": ["课程", "报名", "预约", "多少钱", "价格", "开班"],
+    "refund_request": ["退费", "退款", "退课"]
+  },
+  "skills": [
+    {
+      "skill_id": "course_consult_booking",
+      "version": "1.0.0",
+      "title": "课程咨询与预约",
+      "applies_when": "用户询问课程内容、价格、开班时间，或表达报名/预约意向",
+      "goal": "基于已授权资料回答课程信息，并在取得确认后创建一条模拟预约",
+      "exit_when": "用户问题已回答且（如需）预约已写入并返回 result_id",
+      "knowledge_ids": ["kb.pricing", "kb.schedule", "kb.refund_policy"],
+      "tool_ids": ["search_knowledge", "create_booking"],
+      "escalate_when": "用户要求折扣承诺、投诉或涉及真实付款时转人工",
+      "source_ref": "scenarios/course_consult_v1/skills/course_consult_booking.json"
+    },
+    {
+      "skill_id": "refund_request",
+      "version": "1.0.0",
+      "title": "退费咨询（S1 未启用，仅用于验证跳过可审计）",
+      "applies_when": "用户提出退费或退课",
+      "goal": "说明退费政策并转人工",
+      "exit_when": "已说明政策并生成转人工提示",
+      "knowledge_ids": ["kb.refund_policy"],
+      "tool_ids": ["search_knowledge"],
+      "escalate_when": "始终转人工",
+      "source_ref": "scenarios/course_consult_v1/skills/refund_request.json"
+    }
+  ],
+  "tools": [
+    {
+      "tool_id": "search_knowledge",
+      "version": "1.0.0",
+      "business_meaning": "只读检索已授权课程资料，返回带来源与版本的片段",
+      "side_effect_level": "read_only",
+      "idempotent": true,
+      "requires_confirm": false,
+      "timeout_ms": 3000,
+      "result_id_required": false
+    },
+    {
+      "tool_id": "create_booking",
+      "version": "1.0.0",
+      "business_meaning": "创建一条课程预约（模拟写入，不触达真实系统）",
+      "side_effect_level": "mock_write",
+      "idempotent": true,
+      "requires_confirm": true,
+      "timeout_ms": 3000,
+      "result_id_required": true
+    }
+  ],
+  "rules": [
+    {
+      "rule_id": "search.readonly_allow",
+      "scope": "global",
+      "tool": "search_knowledge",
+      "behavior": "allow",
+      "reason": "只读检索，无副作用",
+      "note": "模型外裁决，不依赖模型自评"
+    },
+    {
+      "rule_id": "booking.require_confirm",
+      "scope": "task",
+      "tool": "create_booking",
+      "behavior": "require_confirm",
+      "requires_confirm": true,
+      "reason": "业务写入必须取得人工确认",
+      "note": "确认在模型外收集，模型不得自己确认"
+    },
+    {
+      "rule_id": "booking.deny_unknown_course",
+      "scope": "task",
+      "tool": "create_booking",
+      "behavior": "deny",
+      "when_arg_equals": { "course_id": "UNKNOWN" },
+      "reason": "课程未确定时不得写入预约",
+      "note": "确定性裁决，含拒绝分支"
+    },
+    {
+      "rule_id": "booking.idempotent_once",
+      "scope": "task",
+      "tool": "create_booking",
+      "behavior": "allow",
+      "idempotent": true,
+      "reason": "同一幂等键只允许产生一次业务写入",
+      "note": "重复提交由 ExecutionService 拦截，不是模型自觉"
+    }
+  ],
+  "fragments": [
+    {
+      "fragment_id": "ctx.identity",
+      "scope": "global",
+      "title": "身份与输出合同",
+      "content": "你是「晨光职训」（虚构机构）的课程咨询助手。只依据已加载资料回答；缺失信息要说明缺失，不得补造；不得承诺折扣或价格变动。",
+      "source_ref": "scenarios/course_consult_v1/pack.json#ctx.identity",
+      "source_version": "v1",
+      "activation_reason": "常驻基线",
+      "priority": 100
+    },
+    {
+      "fragment_id": "ctx.safety",
+      "scope": "global",
+      "title": "全局安全与确认要求",
+      "content": "任何业务写入必须先取得人工确认；真实付款、投诉、折扣承诺一律转人工；不得把未播出内容记为用户已听见。",
+      "source_ref": "scenarios/course_consult_v1/pack.json#ctx.safety",
+      "source_version": "v1",
+      "activation_reason": "常驻基线",
+      "priority": 90
+    },
+    {
+      "fragment_id": "ctx.sop.booking",
+      "scope": "skill",
+      "title": "课程咨询与预约 SOP",
+      "content": "步骤：1) 检索资料确认课程与价格；2) 回答并询问意向；3) 用户确认后调用 create_booking 写入一次；4) 返回 result_id。退出：已回答且（如需）已写入。",
+      "source_ref": "scenarios/course_consult_v1/skills/course_consult_booking.json",
+      "source_version": "v1",
+      "applies_to": "course_consult_booking",
+      "activation_reason": "路由命中 course_consult_booking",
+      "priority": 80
+    },
+    {
+      "fragment_id": "ctx.sop.refund",
+      "scope": "skill",
+      "title": "退费咨询 SOP（本轮不命中）",
+      "content": "说明退费政策并转人工，不自行办理退费。",
+      "source_ref": "scenarios/course_consult_v1/skills/refund_request.json",
+      "source_version": "v1",
+      "applies_to": "refund_request",
+      "activation_reason": "路由未命中 refund_request",
+      "priority": 70
+    },
+    {
+      "fragment_id": "kb.pricing",
+      "scope": "evidence",
+      "title": "课程价格",
+      "content": "「数据分析入门」学费 3980 元，共 12 周，含 4 次作业批改。价格为模拟数据，仅用于演示。",
+      "source_ref": "scenarios/course_consult_v1/knowledge/pricing.md",
+      "source_version": "v1",
+      "priority": 60
+    },
+    {
+      "fragment_id": "kb.schedule",
+      "scope": "evidence",
+      "title": "开班时间",
+      "content": "最近一期「数据分析入门」于 2026-10-12 开班，每周二、四晚 20:00-21:30 直播。",
+      "source_ref": "scenarios/course_consult_v1/knowledge/schedule.md",
+      "source_version": "v1",
+      "priority": 55
+    },
+    {
+      "fragment_id": "kb.promo_expired",
+      "scope": "evidence",
+      "title": "旧版优惠（已过期）",
+      "content": "2025 年双十一优惠：立减 500 元。（已失效，不得使用）",
+      "source_ref": "scenarios/course_consult_v1/knowledge/promo_2025.md",
+      "source_version": "v1",
+      "valid_until": "2026-01-01T00:00:00+00:00",
+      "priority": 50,
+      "sensitivity": "internal"
+    }
+  ]
+}

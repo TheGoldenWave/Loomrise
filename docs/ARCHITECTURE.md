@@ -1,6 +1,6 @@
-# 架构与对象权威 v0.4
+# 架构与对象权威 v0.5
 
-状态：产品边界已确认，S1 被动响应纵向样例及渐进式上下文加载约束已细化；六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)。具体协议与选型仍待固定版本 spike 验证，2026-09-26。以下不是安装、性能或兼容性结论。开放接入和验收规则见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
+状态：产品边界已确认，S1 最小领域合同、执行内核及渐进式上下文加载已有代码，2026-09-27；六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)。源码/安装与确定性回放证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，不代表真实模型、真实音频、完整取消或生产兼容性已验证。以下架构图和对象表同时包含已实现切片与后续目标；工作台、发布闭环、多租户等仍是规划。开放接入和验收规则见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
 
 项目采用单一交付工作台与统一执行内核，区分**产品控制面**、**业务执行**、**媒体与渠道**、**外部信息与知识**、**业务工具**、**观测与评测**。首版以单 Agent 为主；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -8,14 +8,14 @@
 获授权资料 → ScenarioPack → AgentSpec/AgentVersion ← B 端工作台
                                     ↓
 Web 文字 → 渠道适配 ───┐      ExecutionService
-Web 语音 → 媒体适配 ───┼──→ Task / 权限 / 确认 / 幂等 / 取消 / 预算
+Web 语音 → 媒体适配 ───┼──→ ServiceRequest / 权限 / 确认 / 幂等 / 取消 / 预算
 后续 IM/电话 → 渠道适配 ┘             │
                          ├── Agent 运行适配（AgentScope 候选）
                          ├── DecisionPolicy（可选 Provider 只给建议）
                          ├── 信息源 / 知识检索只读适配
                          └── 业务工具合同 → 供应商/模拟适配 → 结果 ID
                                     ↓
-                               Task / RunEvent
+                               ServiceRequest / RunEvent
                                     ↓
                         Case → EvalSet → EvalResult
                                     ↓
@@ -28,9 +28,9 @@ Web 语音 → 媒体适配 ───┼──→ Task / 权限 / 确认 / 幂�
 |---|---|---|
 | 交付工作台 | 基础 UI、AG-UI 客户端 | 场景配置、业务组件、就绪检查、验收与发布 |
 | 控制面 | Web 框架、身份库、按需复用服务组件 | 租户、`AgentVersion`、密钥引用、配额、业务数据与发布权限 |
-| 业务执行 | AgentScope 2.0 固定稳定版 SDK | `ExecutionService`、任务生命周期、恢复、幂等、取消确认与真实结果 |
+| 业务执行 | AgentScope main 快照 `a388212`（源码版本字符串 2.0.8） | `ExecutionService`、任务生命周期、恢复、幂等、取消确认与真实结果 |
 | 决策策略 | 工程规则、可选分类／评分 Provider | 候选过滤、拒选、阈值、回退、审计与评测 |
-| 网页语音 | Pipecat 最小工程链路 | 媒体会话到业务任务的桥接、播放状态、用量与超限停止 |
+| 网页语音 | Pipecat 最小工程链路 | 媒体会话到业务请求的桥接、播放状态、用量与超限停止 |
 | 交互协议 | AG-UI 最小事件映射 | 业务事件、权限投影、脱敏与可靠状态 |
 | 观测 | OpenTelemetry；Langfuse 可选 | `RunEvent` 权威、业务终态、成本账本与证据保留 |
 | 外部接入 | API / 文件 / 事件流与外部检索 SDK | 来源授权、身份/字段映射、检索权限和引用、撤销、接入状态 |
@@ -43,13 +43,15 @@ AgentScope `RealtimeAgent` 与 Qwen Audio Agent 仅作为限时语音对照，�
 
 ## S1 配置与执行边界
 
-S1 将复杂业务 Agent 配置压缩为可审计的六层：`ContextSnapshot` 提供带来源和有效期的事实；`TaskRouting` 选择当前唯一主任务；`Skill/SOP` 描述适用条件、下一步和退出；`HardRule` 在模型外裁决权限、确认、停止和去重；`ToolPolicy` 描述工具副作用、幂等和结果证据；`Outcome` 保存业务状态和结果 ID。模型可以提出解释和下一步，但不能绕过 `HardRule`、`ToolPolicy` 或 `Outcome`。
+S1 将复杂业务 Agent 配置压缩为可审计的六层：`ContextSnapshot` 提供带来源和有效期的事实；`RequestRouting` 选择当前唯一主请求；`Skill/SOP` 描述适用条件、下一步和退出；`HardRule` 在模型外裁决权限、确认、停止和去重；`ToolPolicy` 描述工具副作用、幂等和结果证据；`Outcome` 保存业务状态和结果 ID。模型可以提出解释和下一步，但不能绕过 `HardRule`、`ToolPolicy` 或 `Outcome`。
 
 渐进式上下文加载是横切的执行策略，不新增第七个领域层。运行时按“常驻基线 → 当前任务/Skill → 按需知识或工具结果”选择上下文，并对每个片段保留作用域、触发条件、优先级、来源版本、敏感级别和 token 估算。全局/任务/Skill 三级 `HardRule` 可以被独立追踪和模型外评估，但不要求把全部规则原文注入上下文；执行内核只向模型提供当前有效约束摘要，完整规则证据留在 `RunEvent`。这样既保留约束边界，也避免为了修复一个 badcase 无限堆叠 Prompt。
 
+上下文压缩不是 S1 之后要永久放弃的能力，冲突点在于“未留证的隐式改写”。S1 关闭 AgentScope 运行时注入，并由压缩适配器拦截原生自动压缩/截断；长期由 Loomrise 的 `ContextCompactionService` 读取不可变上下文账本，产出带输入快照、摘要或截断算法、来源覆盖、输入/输出哈希、token 变化和成功/失败事件的压缩结果。上游 SDK 只能作为执行器，不能成为上下文事实源。压缩前后的业务 `RunEvent` 与来源引用均保留，审计回答的是“原始加载了什么、压缩保留了什么、哪些内容被移出模型窗口以及为什么”。
+
 S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）、`activation_reason`、`source_ref`、`source_version`、`token_estimate` 和 `load_status`（loaded/skipped/expired/budget_capped）。加载与跳过都记录事件，便于区分“规则未命中”“上下文未加载”“检索无结果”和“模型误判”。S1 不实现自动摘要、长期记忆优化或基于评测结果的动态调参。
 
-这六层是对实际 Agent 配置中阶段、路由、规则、工具和结果结构的公开抽象，不包含任何真实业务配置、内部标识或私有提示词。S1 只实现入站消息触发；`Task` 保留可关联触发来源的字段，暂不实现定时器、条件触达或主动发送队列。
+这六层是对实际 Agent 配置中阶段、路由、规则、工具和结果结构的公开抽象，不包含任何真实业务配置、内部标识或私有提示词。S1 只实现入站消息触发；`ServiceRequest` 保留可关联触发来源的字段，暂不实现定时器、条件触达或主动发送队列。
 
 ## 权威对象
 
@@ -57,20 +59,22 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 |---|---|---|---|
 | `ScenarioPack` / 原始素材 | 上传者或材料权利人；本项目只托管获授权副本 | 来源、使用许可或模拟标记、有效期 | 用户删除，停止后续检索；已发版本标记失效并重验 |
 | `AgentSpec` / `AgentVersion` / `Release` | Loomrise | `draft → tested → approved → released → rolled_back`；发布版本不可覆盖 | 用户停用；审计元数据依保留策略处理 |
-| `Task` / `RunEvent` | Loomrise | 绑定租户、业务任务、运行尝试、渠道、版本、成本与敏感级别 | 租户可删除或脱敏；禁止跨租户可见 |
+| `ServiceRequest` / `RunEvent` | Loomrise | 绑定租户、业务请求、运行尝试、渠道、版本、成本与敏感级别 | 租户可删除或脱敏；禁止跨租户可见 |
 | 连接引用 / `ToolManifest` / `SkillManifest` | Loomrise 管理配置和许可；外部数据权利仍归来源方 | 分类、合同版本、授权范围、风险、工具/Skill 可用版本 | 授权撤销即禁用连接；相关版本和评测标记待重验 |
 | `DecisionRequest` / `DecisionResult` | Loomrise 协议，Provider 只给建议 | 候选集版本、分数类型、绝对适配度、回退与 deadline | 可删除业务内容；保留必要的审计摘要 |
 | `Case` / `EvalSet` / `EvalResult` | Loomrise（人工真值与硬规则为评测权威） | 题目版本、环境快照、期望副作用与证据 | 证据删除后，相关“已验证”结论失效 |
 | `ChangeProposal` | Loomrise | `proposed → evaluated → accepted/rejected`；权限和硬规则不可自改 | 可撤回、拒绝、审计 |
 | API key / IM / 线路授权 | 用户或供应商 | 后端受控保管或短期令牌，不进入前端包与 Trace | 随时撤销或删除；对应运行停止 |
 
-## 最小领域合同（尚未实现）
+## 领域合同目标与 S1 实现边界
+
+`loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和 `ChangeProposal` 合同尚未实现。S1 请求与幂等账本在进程内，CLI 回放可持久化事件 JSONL；完整业务持久化和取消确认仍待补齐。
 
 - `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置引用和合同版本，不携带凭据；动态外部数据须保留每次读取的来源/版本证据。
-- `Task@v1`：业务任务可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。
+- `ServiceRequest@v1`：业务请求可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。AgentScope 的 `state.Task` 是运行时子任务清单，适配器内部只以 `RuntimeTask`/`PlanTask` 称呼，不进入本合同。
 - `RunEvent@v1`：租户、Agent 版本、任务、运行、媒体会话、渠道、序号、时间、事件类型、来源引用、耗时／成本和幂等键；文字与语音至少区分生成、发送、已确认播出和未知；上下文事件还需记录作用域、选择/跳过原因、来源版本和 token 估算。
 - `ToolManifest@v1`：稳定 ID/版本、业务语义、输入/输出 Schema、副作用级别、权限、确认、超时/预算、幂等、错误与未知结果、模拟实现、外部结果 ID 与审计字段。平台内部任务状态操作不必全部成为模型工具。
-- `SkillManifest@v1`：稳定 ID/版本/状态、适用条件、目标、退出条件、可引用知识/工具 ID、失败或转人工策略、依赖 Skill、来源证据和验收案例。Skill 是策略配置，不是权限或任意代码执行入口；候选版本必须先经过评测和审批才能进入已发布版本。
+- `SkillManifest@v1`：稳定 ID/版本/状态、适用条件、目标、退出条件、可引用知识/工具 ID、失败或转人工策略、依赖 Skill、来源证据和验收案例。`SkillManifest` 是 Loomrise 的公开规范对象，UI 可简称 Skill；AgentScope 的 Markdown 目录对象只在适配器内部以 `MarkdownSkill`/`SkillDirectory` 称呼。SkillManifest 是策略配置，不是权限或任意代码执行入口；候选版本必须先经过评测和审批才能进入已发布版本。
 - `Case/EvalSet/EvalResult@v1`：人工审定输入和预期状态/动作/副作用，冻结资料与模拟环境；按开发、验证、盲测分集，旧版/候选版配对批量回放，保存逐例判定与汇总。确定性硬规则独立于机评，缺证据、关键退步或违规时阻断候选发布。
 - `DecisionResult@v1`：Provider／模型版本、候选集哈希、选中项或拒选、原始分数及类型、校准版本、延迟、用量与错误。
 - `ChangeProposal@v1`：原版本、证据 Run／Case、结构化 diff、允许修改范围、固定评测集、实验结果、提出者与审批人；验证成功不等于上线成功。
@@ -81,9 +85,9 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 
 ## 事件与部署路线
 
-Loomrise 业务事件是事实源，AG-UI 只用于前端映射，OpenTelemetry 用于跨服务追踪，Langfuse 是可选观测后端。`task_id`、`run_id`、`media_session_id` 和 `trace_id` 分别编号；计费、审批、发布和副作用审计不依赖抽样 Trace。
+Loomrise 业务事件是事实源，AG-UI 只用于前端映射，OpenTelemetry 用于跨服务追踪，Langfuse 是可选观测后端。`request_id`、`run_id`、`media_session_id` 和 `trace_id` 分别编号；计费、审批、发布和副作用审计不依赖抽样 Trace。
 
-后续主动触达不作为渠道适配器里的隐藏定时任务，而是独立的 `OutreachPolicy`：条件、优先级、冷却、授权、去重、停止和发送回执都必须版本化，并最终创建或唤醒既有 `Task`，写入既有 `RunEvent`。规则引擎可以直接触发，Agent 只能在允许范围内提出候选；S1 不实现该策略、调度器或发送队列。
+后续主动触达不作为渠道适配器里的隐藏定时任务，而是独立的 `OutreachPolicy`：条件、优先级、冷却、授权、去重、停止和发送回执都必须版本化，并最终创建或唤醒既有 `ServiceRequest`，写入既有 `RunEvent`。规则引擎可以直接触发，Agent 只能在允许范围内提出候选；S1 不实现该策略、调度器或发送队列。
 
 ## 自进化与技能编排边界
 

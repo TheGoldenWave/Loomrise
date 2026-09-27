@@ -1,0 +1,19 @@
+# Loomrise S1 固定依赖
+# 版本钉的理由与安装证据见 VERSION-PINS.md
+
+# 核心执行内核（Agent 运行适配）
+# 基线：上游 main 快照 a388212（源码版本字符串 2.0.8），非发行 tag
+agentscope==2.0.8
+
+# 观测（可选导出）。semconv 必须钉 0.66b0：由 opentelemetry-instrumentation 精确锁定，
+# 且 GenAI 语义约定仍处于实验/迁移期，Loomrise 自持属性映射。
+opentelemetry-api==1.45.0
+opentelemetry-sdk==1.45.0
+opentelemetry-semantic-conventions==0.66b0
+opentelemetry-exporter-otlp==1.45.0
+
+pydantic>=2.10
+
+# 语音 Worker 单独环境安装，不要混进核心环境：
+#   pip install "pipecat-ai[tracing]==1.12.0"
+# 安装前置：docopt 只有源码分发，受限环境需手工预置，见 VERSION-PINS.md §3

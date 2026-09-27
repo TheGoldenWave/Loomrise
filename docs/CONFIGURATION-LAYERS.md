@@ -4,7 +4,7 @@
 
 ## 1. 设计目标
 
-Loomrise 把一个业务 Agent 拆成六层可版本化配置：`ContextSnapshot`、`TaskRouting`、`Skill/SOP`、`HardRule`、`ToolPolicy`、`Outcome`。
+Loomrise 把一个业务 Agent 拆成六层可版本化配置：`ContextSnapshot`、`RequestRouting`、`Skill/SOP`、`HardRule`、`ToolPolicy`、`Outcome`。
 
 六层不是六段 Prompt，也不是六个必须独立部署的服务。它们分别回答：当前知道什么、正在做什么、应该怎样做、绝不能怎样做、可以调用什么、业务上最终发生了什么。
 
@@ -15,11 +15,11 @@ Loomrise 把一个业务 Agent 拆成六层可版本化配置：`ContextSnapshot
 | 层 | 回答的问题 | 权威内容 | 不负责什么 | S1 形态 |
 |---|---|---|---|---|
 | `ContextSnapshot` | 当前已知事实是什么，来自哪里，是否仍有效？ | 带来源、时间、有效期和敏感级别的事实快照 | 不把模型猜测升级为事实；不自动等同于长期记忆 | 虚构课程资料、用户已提供字段、当前任务摘要 |
-| `TaskRouting` | 当前消息对应哪个业务任务，下一步只做什么？ | 主任务、路由理由、任务代次和下一步候选 | 不授予工具权限；不同时推进多个互斥主任务 | 固定课程咨询或模拟预约任务 |
+| `RequestRouting` | 当前消息对应哪个业务请求，下一步只做什么？ | 主请求、路由理由、任务代次和下一步候选 | 不授予工具权限；不同时推进多个互斥主请求 | 固定课程咨询或模拟预约任务 |
 | `Skill/SOP` | 在当前任务中应采用什么处理策略？ | 适用条件、目标、步骤、退出/转人工条件、引用的知识和工具 | 不决定权限、价格、确认和业务终态 | 一个命中的课程咨询 Skill |
 | `HardRule` | 哪些动作必须拒绝、确认、停止或去重？ | 全局/任务/Skill 作用域的禁止、必须、停止和去重规则 | 不承载所有 badcase；不依赖模型分数放行高风险动作 | 少量模型外规则，按稳定 ID 记录 |
 | `ToolPolicy` | 什么情况下可以调用哪个工具，如何确认结果？ | 输入/输出约束、权限、确认、预算、超时、幂等和结果证据要求 | 不把供应商私有状态当 Loomrise 业务状态 | 一个模拟预约写入工具 |
-| `Outcome` | 业务任务实际处于什么状态，产生了什么结果？ | 任务状态、持久副作用、结果 ID、失败/未知原因 | 不接受模型口头“已完成”作为证据 | 模拟预约结果或明确失败 |
+| `Outcome` | 业务请求实际处于什么状态，产生了什么结果？ | 任务状态、持久副作用、结果 ID、失败/未知原因 | 不接受模型口头“已完成”作为证据 | 模拟预约结果或明确失败 |
 
 ## 3. 执行顺序
 
@@ -27,7 +27,7 @@ Loomrise 把一个业务 Agent 拆成六层可版本化配置：`ContextSnapshot
 入站消息/语音轮次
         │
         ▼
-ContextSnapshot ──► TaskRouting ──► Skill/SOP
+ContextSnapshot ──► RequestRouting ──► Skill/SOP
         │                              │
         └──────── 有效上下文加载 ◄──────┘
                                        │
@@ -75,7 +75,7 @@ S1 采用最小三段式：
 S1 固定：一个虚构课程场景、一个模型、一个模拟写入工具、文字/网页语音双入口和单次隔离回放。
 
 - `ContextSnapshot`：只读虚构资料、用户已确认字段、当前任务摘要；不实现长期记忆。
-- `TaskRouting`：每轮一个主任务，路由理由写入事件。
+- `RequestRouting`：每轮一个主请求，路由理由写入事件。
 - `Skill/SOP`：一个或少量可人工审阅的 Skill，不做自动编排。
 - `HardRule`：确认前不得写入、权限/字段不完整不得执行、重复请求必须幂等。
 - `ToolPolicy`：模拟工具执行前重验权限、确认版本、任务代次和幂等键。
@@ -147,7 +147,7 @@ S1 不实现自动 Skill 生成、长期记忆优化、复杂 Meta Skill 编排�
 | 目的 | Loomrise 对象 |
 |---|---|
 | 运行配置 | `AgentSpec` / `AgentVersion` / `SkillManifest` / `ToolManifest` |
-| 执行事实 | `Task` / `RunEvent` / `Outcome` |
+| 执行事实 | `ServiceRequest` / `RunEvent` / `Outcome` |
 | 失败与真值 | `Case` / `EvalSet` / `EvalResult` |
 | 候选变更 | `ChangeProposal` |
 | 发布与撤回 | `Release` 及版本状态 |
