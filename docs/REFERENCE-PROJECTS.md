@@ -1,4 +1,4 @@
-# Agent 交付工作台：参考项目分级与采用边界 v0.7
+# Agent 交付工作台：参考项目分级与采用边界 v0.8
 
 > 2026-09-27。本文件记录可以公开复述的候选清单；源码级与安装级验证的具体范围见[S1 验证结论与轻量适配](S1-VALIDATION-AND-ADAPTATION.md)。S1 精确安装、执行中取消、跨渠道及导出恢复已有确定性证据；真实模型/网页音频和运行级门禁仍待验证，见[S1 交付与验收](S1-BUILD-REPORT.md)。详细讨论和个人判断保留在本地工作区。
 
@@ -21,7 +21,7 @@
 | **P0-2** | **Pipecat**：网页语音工程骨架 | WebRTC／WebSocket、STT/LLM/TTS、打断、轮次和可观测插件 | 一条中文网页语音链路、打断与播出回执、统一 RunEvent、独立 Voice Worker | **语音主线候选**，先用一种供应商组合。固定 **v1.12.0**（BSD 2-Clause）：中断帧、轮次策略、观测挂点、OTel turn span 均已源码级验证；缺口：**无客户端设备级播出回执**，"已确认播出"须自建 |
 | **P0-3** | **Qwen Audio Agent**：前台语音与后台任务样本 | 实时会话、异步任务、取消确认、事件回流和 WebRTC | 能否接同一业务规则、状态、工具与成本账本 | **架构参照 + 限时对照**，不直接套用整套助手（本轮未做源码级验证） |
 | **P0-4** | **Langfuse + OTel GenAI**：追踪与评测 | 评分、数据集、实验 UI、OpenTelemetry 导出 | 单机安装负担与数据边界；Lite 可只保存自己的 RunEvent，Langfuse 可选 | **规范先行；完整服务非单机强依赖**。已核：Langfuse 4.46.0 仅接收 OTLP traces（自托管含 6 个服务，`ee/` 另许）；**GenAI 语义约定处于实验/迁移期**，须自 pin 与自持属性映射 |
-| **P0-5** | **Microsoft SkillOpt + Alibaba skill-up**：受控优化与评测 | 受限文本修改、独立验证集、环境隔离、工具行为和报告 | 业务成功判定、模拟工具、真实副作用与人工审批；不能把研究 benchmark 当生产保证 | **机制参照；优化器无生产写权限** |
+| **P0-5** | **Microsoft SkillOpt + Alibaba skill-up**：受控优化与评测 | 受限文本修改、独立验证集、环境隔离、工具行为和报告 | 业务成功判定、模拟工具、真实副作用与人工审批；不能把研究 benchmark 当生产保证 | **机制参照；优化器无生产写权限**。同源方法论的 EvoOntology 已单独评估，只取评估与门禁机制，见[S2 评测门禁与改进循环提案](S2-EVAL-GATE-PROPOSAL.md) |
 | **P0-6** | **AG-UI**：前端事件协议 | 文字增量、工具状态、人工交接和自定义业务事件 | 最小事件子集、版本冻结、脱敏和投影成本 | **兼容目标**，不决定内部领域模型。已核 spec 1.0：31 个事件类型中**无人工确认/中断事件**，确认与取消只能走 `CUSTOM`；以 schema 协议版本字段为准，不以 `ag-ui-protocol` 包版本推断 |
 | **P0-7** | **可插拔 DecisionProvider**：混合决策 | 规则先过滤；必要时使用分类、评分或小型生成模型做选择、拒选和回退 | 分数类型、校准版本、延迟、成本和错误均需记录；无 Provider 时产品仍可运行 | **可选增强，不是首版前置条件** |
 
@@ -107,6 +107,7 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 - Gander: https://github.com/Omni-Interaction-Gander/Omni-Interaction-Agent
 - SkillHone: https://github.com/Tencent/SkillHone
 - Microsoft SkillOpt: https://github.com/microsoft/SkillOpt
+- EvoOntology: https://github.com/ruc-datalab/EvoOntology（arXiv:2609.15779；只取评估与门禁机制，见[S2 评测门禁与改进循环提案](S2-EVAL-GATE-PROPOSAL.md)）
 - Alibaba skill-up: https://github.com/alibaba/skill-up
 - AG-UI: https://github.com/ag-ui-protocol/ag-ui
 - Langfuse: https://github.com/langfuse/langfuse
