@@ -2,7 +2,7 @@
 
 状态：**设计草案，未实现**。2026-09-28。
 
-本文是对[S2 范围讨论记录](S2-SCOPE-DECISIONS.md) v0.6（24 条已确认方向 + 12 条明确不做）的设计展开：把方向落成对象、流程、权限与验收。它不替代[验证路线](ROADMAP.md)中的 S2 退出 Gate，也不意味着其中任何能力已实现或已验证。六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)，对象权威见[架构与对象权威](ARCHITECTURE.md)。
+本文是对[S2 范围讨论记录](S2-SCOPE-DECISIONS.md) v0.6（24 条已确认方向 + 12 条明确不做）的设计展开：把方向落成对象、流程、权限与验收。界面层展开见[S2 工作台界面设计](S2-UI-DESIGN.md)。它不替代[验证路线](ROADMAP.md)中的 S2 退出 Gate，也不意味着其中任何能力已实现或已验证。六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)，对象权威见[架构与对象权威](ARCHITECTURE.md)。
 
 **前置依赖**：S1 退出 Gate 尚未全部闭合（真实模型与音频链路、重启恢复、语音依赖下的导出恢复仍待实测）。依赖执行内核的建设以 S1 Gate 闭合为前提；范围、界面与评测设计可与 S1 收尾并行。
 
@@ -21,6 +21,7 @@ S2 覆盖能力演进路线中的两级——经验技能化与评测驱动的�
 | `PolicyProfile` | 策略档位：一整套「风险分类 + 阈值 + 审批要求」的命名组合，可复制、可 diff、受版本管理 | `id/version/name`、`risk_tier_overrides`、`thresholds`、`approval_requirement`、`valid_until`、`baseline_snapshot`（生效版本、阈值、资料与工具版本） | `draft → approved → active → expired → retired` |
 | `CaseNomination` | 系统提名：把可疑运行标为线索，不构成真值 | `id`、信号类型（确定性 / 行为异常）、证据引用（`run_id`、轮次、命中规则、加载或跳过、成本）、`status`、确认人 | `nominated → confirmed → promoted_to_case` 或 `nominated → false_positive` |
 | `Rollout` | 灰度发布的状态，挂在 `Release` 上 | `mode`（`full` / `canary`）、`percent`、`unit`（会话或用户）、`status` | `canary_running → canary_stopped` / `→ full` / `→ rolled_back` |
+| `ExampleSnippet` | 话术 / 表达范本，可检索召回，不独立成库 | `id/version`、触发条件标签（环节、意图、字段齐备度）、归属 `Skill`、共享标记与引用方、来源证据（人工编写 / 提炼自哪个已发布案例） | 随所属 Skill 版本演进；改动属表达层，走候选门禁 |
 
 `EvalSet` 增加 `tier` 维度，分为三层：**`golden`**（人工审定真值，稳定、可复现、受版本管理，只用于一票否决项与关键回归）、**`pending`**（待确认池，人确认真值后才升级）、**`blind`**（从运行中抽样，多数只做确定性裁决，仅业务语义部分抽检人工真值）。
 
@@ -165,6 +166,7 @@ S2 覆盖能力演进路线中的两级——经验技能化与评测驱动的�
 13. 策略档位可创建、复制、diff、切换、带有效期回落；切换全程留证。
 14. 人工编辑产生的候选与系统候选走同一门禁。
 15. 配置可导出到干净实例重新运行并复现回放结论。
+16. 示例片段的召回路径被评测覆盖：改示例或调召回参数后，回放能验证「该命中时仍命中、不该命中时被过滤」；盲测集中存在专门覆盖召回路径的案例。
 
 ## 6. 待定项与默认建议
 
