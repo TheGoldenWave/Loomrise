@@ -1,6 +1,6 @@
 # S1 交付与验收 v0.3
 
-状态：**真实模型（Coding Plan · `gpt-6-luna`）六路径 11/11 通过，离线 wheelhouse/哈希锁与 HTTP-SSE 消费已验证；S1 Gate 仍未全部通过**，2026-09-28。
+状态：**真实模型（Coding Plan · `gpt-6-sol` 验收默认档）六路径 11/11 通过，离线 wheelhouse/哈希锁与 HTTP-SSE 消费已验证；S1 Gate 仍未全部通过**，2026-09-28。
 本文件是 QA 对照用的验收文档：每条 Gate 指向可复述的证据或命令，不把规划写成已完成。
 真实模型的咨询/确认/拒绝/失败/取消/跨渠道与首响数字见 §4.2；**网页音频与浏览器实测仍为空**，只有脚本回放的时延/资源样本，见 §5。
 
@@ -114,16 +114,16 @@ cd <repo> && PYTHONPATH=. s1-verify/bin/python -m loomrise.cli replay --out runs
 - 脚本回放的一次样本：macOS Apple 芯片、Python 3.13.15、11 案例，`/usr/bin/time -l` 得到 0.99s wall、0.65s user + 0.12s sys、峰值 RSS 90,554,368 字节；`c1` 事件时间从 `run.started` 到首条 `reply.text` 为 7ms（同轮结束亦为 7ms）。单次 CLI 启动、脚本模型与合成帧，**不能作为真实首响、音频打断恢复、典型延迟或容量指标**。模拟失败项：拒绝、工具 error、超时 unknown、取消与播放 unknown。
 - 待执行的单一组合定为 `gpt-4o-mini`（`LOOMRISE_LIVE_MODEL`）+ OpenAI `whisper-1` STT + `tts-1`/`alloy` TTS；这是**待验证配置，不是已集成链路**。当前环境未提供 `OPENAI_API_KEY`，仓库无网页媒体入口及已验证 STT/TTS 组合，因此真实模型的咨询/确认/拒绝/失败及网页音频打断均未运行。设置真实模型名但缺密钥现在显式报错，不会静默回退脚本模型。
 
-### 4.2 真实模型验收（2026-09-28 实跑，`gpt-6-luna` · Coding Plan Responses API）
+### 4.2 真实模型验收（2026-09-28 实跑，`gpt-6-sol` · Coding Plan Responses API · 验收默认档）
 
 复现命令（需要本机凭据；无凭据时脚本直接退出，不会退回脚本模型冒充真实调用）：
 
 ```bash
-PYTHONPATH=. .venv/bin/python scripts/live_model_check.py            # 结果写入 runs/
-PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 换模型对照
+PYTHONPATH=. .venv/bin/python scripts/live_model_check.py            # 默认档：local_config.DEFAULT_MODEL = gpt-6-sol，结果写入 runs/
+PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-luna   # 成本对照档（非验收基线）
 ```
 
-六条路径 11/11 通过（报告：`runs/live-model-20260928-123620.json`）：
+六条路径 11/11 通过（切档后用默认档重跑的报告：`runs/live-model-default-20260928-161013.json`，全部场景 `attempts=1`）：
 
 | 场景 | 终态 | 写入 | 关键证据 |
 |---|---|---|---|
@@ -138,13 +138,13 @@ PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 
 
 | 场景 | 首响（`run.started` → 首个文本/工具产出） | 单轮总耗时 |
 |---|---|---|
-| 咨询 | 10.8 s | 21.8 s |
-| 确认写入 | 14.2 s | 56.5 s |
-| 拒绝 | 13.3 s | 37.9 s |
-| 工具失败 | 14.8 s | 44.8 s |
-| 确认前取消 | 14.8 s | 33.7 s |
+| 咨询 | 3.8 s | 9.8 s |
+| 确认写入 | 3.2 s | 13.9 s |
+| 拒绝 | 3.1 s | 18.0 s |
+| 工具失败 | 4.8 s | 22.9 s |
+| 确认前取消 | 3.0 s | 9.8 s |
 
-首响 10 s 以上是**本轮实测值，不是产品指标**：它同时包含代理排队、模型自身时延和 Responses API 流式切分，未做多轮取样、未分离代理与模型耗时，也不代表其他模型档位。换模型对照见下节。
+这些是**本轮实测值，不是产品指标**：同时包含代理排队、模型自身时延和 Responses API 流式切分，未做多轮取样、未分离代理与模型耗时，也不代表其他模型档位。切换默认档为 `gpt-6-sol` 的直接原因是稳定性——同脚本下该档全部场景 `attempts=1`，不需要重试兜底；`gpt-6-luna` 的对照数据见下节。
 
 真实模型暴露并被修掉的三处缺陷（都是脚本模型掩盖的）：
 
@@ -158,12 +158,12 @@ PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 
 
 同一脚本、同一场景、只换模型名（`--model`）：
 
-| 模型 | 结果 | 首响 | 单轮总耗时 | 说明 |
-|---|---|---|---|---|
-| `gpt-6-luna`（默认，0.05–0.1×） | 11/11 | 10.8–14.8 s | 21.8–56.5 s | 便宜，但指令跟随不稳定：观测到部分轮次不发起 `create_booking`（4 次运行中 1 次失败重试后通过）。脚本对需要写入工具的场景最多重试 3 次，`attempts` 写进报告 |
-| `gpt-6-sol`（1–1.5×） | 11/11 | 2.4–3.4 s | 7.2–14.5 s | 全部场景 `attempts=1`，未出现"停在提问不调用工具"；对照报告 `runs/live-model-gpt-6-sol-20260928-124258.json` |
+| 模型 | 角色 | 结果 | 首响 | 单轮总耗时 | 说明 |
+|---|---|---|---|---|---|
+| `gpt-6-sol`（1–1.5×） | **验收默认档**（`local_config.DEFAULT_MODEL`） | 11/11（跑 2 次） | 2.4–4.8 s | 7.2–22.9 s | 两次运行全部场景 `attempts=1`，未出现"停在提问不调用工具"；报告 `runs/live-model-gpt-6-sol-20260928-124258.json`、`runs/live-model-default-20260928-161013.json`。同档两次单轮耗时差异明显（如拒绝 13.4 s vs 18.0 s），属未做多轮取样的样本波动 |
+| `gpt-6-luna`（0.05–0.1×） | 成本对照档（`--model gpt-6-luna`） | 11/11 | 10.8–14.8 s | 21.8–56.5 s | 最便宜，但指令跟随不稳定：观测到部分轮次不发起 `create_booking`（4 次运行中 1 次失败重试后通过）。脚本对需要写入工具的场景最多重试 3 次，`attempts` 写进报告；报告 `runs/live-model-20260928-123620.json` |
 
-结论：提示改动本身有效（两个模型都能走到写入路径），但**便宜档位的稳定性与时延不适合当验收基线**。若要把真实模型验收做成常规门禁，建议默认改 `gpt-6-sol` 并保留 luna 作为成本对照。两档都只是单轮单次样本，未做多次取样与方差统计。
+结论：提示改动本身有效（两个模型都能走到写入路径），但便宜档的稳定性与时延不适合当验收基线，因此**默认改为 `gpt-6-sol`，`gpt-6-luna` 只留作成本对照**——需要压低额度成本时可显式 `--model gpt-6-luna` 跑，但结论必须带上 `attempts` 与重试说明。两档都只是单轮单次样本，未做多次取样与方差统计。
 
 ### 本轮新增（2026-09-28 实跑）
 
@@ -171,7 +171,7 @@ PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 
 |---|---|---|
 | HTTP/SSE 客户端消费 | `loomrise/web.py` + `web.html`（回环监听），AG-UI 事件经 `text/event-stream` 投送 | **通过（脚本模型）**：`test_web_sse` 起真实 TCP 服务 + HTTP 客户端流式消费，断言文字发起 → 语音继续 → 文字重复提交同源请求/版本/结果、写入仅一次、页面拒绝不写入、取消有 `cancelled` outcome。真实模型下的端到端仍未跑 |
 | 网页语音 + 设备级播出回执 | 浏览器 Web Speech（`zh-CN` 识别 + `speechSynthesis` 播报） | **待人工实测**：回执链路有断言（播出完成/打断分别落 `confirmed`/`unknown`）；中文可懂度、首响、打断恢复数字仍缺 |
-| 真实模型（改走 Coding Plan Responses API） | `local_config.py` + `build_model`（`OpenAIResponseModel`，默认 `gpt-6-luna`）+ `scripts/live_model_check.py` | **已实跑 11/11**：咨询/确认/拒绝/失败/取消/跨渠道六路径全通过，真实首响与单轮耗时见 §4.2；真实模型暴露的三处缺陷已修（见 §4.2）。凭据隔离：仓库外 `~/.config/loomrise/coding-plan.json`、0600、不覆盖、缺密钥不静默回退 |
+| 真实模型（改走 Coding Plan Responses API） | `local_config.py` + `build_model`（`OpenAIResponseModel`，默认 `gpt-6-sol`）+ `scripts/live_model_check.py` | **已实跑 11/11**：咨询/确认/拒绝/失败/取消/跨渠道六路径全通过，真实首响与单轮耗时见 §4.2；真实模型暴露的三处缺陷已修（见 §4.2）。凭据隔离：仓库外 `~/.config/loomrise/coding-plan.json`、0600、不覆盖、缺密钥不静默回退 |
 | 离线 wheelhouse 与哈希锁 | `scripts/build_offline.py`、`scripts/verify_offline.sh` | **通过**：92 个 wheel 逐条 SHA-256；干净环境 `--no-index --require-hashes` 安装 → `pip check` → 11/11 回放 + 自检全通过 → `--offline` 导出 → 第二个干净环境离线恢复 11/11。仅 macOS arm64 / CPython 3.13 |
 
 音频选型说明：**没有引入云端流式 ASR/TTS，也没有引入本地 ASR 运行时**。LifeSub 那套本地方案依赖桌面 Rust 运行时与模型下载，且不含 TTS；本轮先用浏览器原生中文识别与播报做零成本实机验证，代价是**能力跟随浏览器**（Chrome/Edge 可用；Safari 与 Firefox 支持不齐，不支持时录音按钮禁用）。这只是验证手段，不是最终形态——真实音频 Gate 仍要按 §5.2 用固定 STT/TTS 组合在浏览器外重测。
@@ -188,7 +188,7 @@ PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 
 1. **真实音频**：Pipecat 只做到"帧类名 → 播放状态机"的回归，未跑 STT/TTS/浏览器链路；中文可懂度、语音首响、打断恢复、弱网恢复均未测。浏览器 Web Speech 入口已就绪（`python -m loomrise.cli web`，本机 8765），但**必须由人在浏览器里实测并留档**。
 2. **真实链路时延与资源**：真实模型首响/单轮耗时已有样本（§4.2），但只有单轮单次、未分离代理与模型耗时、未做多轮取样；内存/CPU、并发、单位成功任务成本仍无数据。
 3. **客户端端到端协议**：第一方客户端语料 69/69、Loomrise 全 11 案例投影 schema 检查、`test_web_sse` 的真实 HTTP/SSE 消费断言，三者是独立证据且均已通过；但**都只在脚本模型下跑过**。真实模型驱动的事件流经 SSE 送入客户端尚未形成留档。
-4. **模型档位稳定性**：`gpt-6-luna` 会在部分轮次不发起写入工具（§4.3）。当前靠脚本重试兜底，验收结论不能写成"该模型稳定通过"。
+4. **模型档位稳定性**：默认档已切到 `gpt-6-sol`（两次运行共 10 个需写入场景全部 `attempts=1`），但仍是单轮少量样本，未做多轮取样与方差统计，不能写成"该模型长期稳定"。成本对照档 `gpt-6-luna` 会在部分轮次不发起写入工具（§4.3），靠脚本重试兜底；用它跑出的结论必须带上 `attempts`。
 5. **同进程共存**：AgentScope 与 Pipecat 分装两个环境（符合"可选 Voice Worker"部署形态），未在同一进程内实测。
 6. **持久化与外部撤销**：取消在当前执行任务中已专项验证，已完成写入无法撤销；重启后业务请求/幂等账本恢复、真实媒体跨渠道和真实业务撤销仍未实现。
 

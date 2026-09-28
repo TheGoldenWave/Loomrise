@@ -11,6 +11,10 @@ from urllib.parse import urlsplit
 # 放在仓库外：仓库里的文件再怎么 .gitignore，都挡不住 git add -f 或误提交。
 CONFIG_PATH = Path.home() / ".config" / "loomrise" / "coding-plan.json"
 
+# 验收默认档位：gpt-6-sol（1–1.5×）指令跟随稳定、无需重试兜底；
+# gpt-6-luna（0.05–0.1×）只作成本对照，不作为验收基线（见 S1-BUILD-REPORT §4.3）。
+DEFAULT_MODEL = "gpt-6-sol"
+
 
 def _validate(base_url: str, model: str, key: str) -> None:
     url = urlsplit(base_url)
@@ -47,7 +51,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, str] | None:
 
 def configure() -> None:
     base_url = input("Coding Plan API root (HTTPS, ending in /v1): ").strip()
-    model = input("Model [gpt-6-luna]: ").strip() or "gpt-6-luna"
+    model = input(f"Model [{DEFAULT_MODEL}]: ").strip() or DEFAULT_MODEL
     key = getpass.getpass("Coding Plan key (hidden): ")
     save_config(base_url, model, key)
     print(f"Credential stored at {CONFIG_PATH} (owner-only); no key was printed.")

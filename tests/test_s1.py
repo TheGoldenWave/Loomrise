@@ -300,10 +300,12 @@ def test_offline_lock() -> None:
 
 
 def test_coding_plan_config() -> None:
-    from loomrise.local_config import CONFIG_PATH, load_config, save_config
+    from loomrise.local_config import CONFIG_PATH, DEFAULT_MODEL, load_config, save_config
     from loomrise.adapters.agentscope_runtime import build_model, ScriptedChatModel
     from agentscope.model import OpenAIResponseModel
 
+    # 验收默认档必须是实测稳定的档位；换档要同步改这里与 VERSION-PINS/S1-BUILD-REPORT。
+    check("验收默认档为 gpt-6-sol", DEFAULT_MODEL == "gpt-6-sol", DEFAULT_MODEL)
     with tempfile.TemporaryDirectory() as dest:
         path = Path(dest) / "coding-plan.json"
         save_config("https://example.test/v1", "gpt-6-sol", "test-placeholder", path=path)

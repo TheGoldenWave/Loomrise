@@ -1,6 +1,6 @@
 # Loomrise
 
-> **状态（2026-09-28）：S0 文档 Gate 已完成；S1 确定性回放 11/11、真实模型六路径 11/11、离线依赖锁定均已实跑通过，退出 Gate 仍未全部通过。** AgentScope 已锁定实际验证 commit；真实模型走本机 Coding Plan 凭据（`gpt-6-luna` 默认、`gpt-6-sol` 对照）。**仍缺的是网页音频实测（中文可懂度、语音首响、打断恢复）与真实模型下的端到端 SSE 留档**，尚无公开服务。逐条证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
+> **状态（2026-09-28）：S0 文档 Gate 已完成；S1 确定性回放 11/11、真实模型六路径 11/11、离线依赖锁定均已实跑通过，退出 Gate 仍未全部通过。** AgentScope 已锁定实际验证 commit；真实模型走本机 Coding Plan 凭据（验收默认 `gpt-6-sol`，`gpt-6-luna` 仅作成本对照）。**仍缺的是网页音频实测（中文可懂度、语音首响、打断恢复）与真实模型下的端到端 SSE 留档**，尚无公开服务。逐条证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
 
 Loomrise 是一个面向 **AI 产品经理、解决方案人员和小团队开发者** 的开源 Agent 交付工作台，帮助业务团队把获授权的资料、流程和工具做成可试用、可验收、可部署、可持续改进的 Agent 应用。业务 PM／运营是重要使用者和最终验收者，但项目首先优化的是交付者的搭建与验证体验。
 
@@ -23,6 +23,8 @@ Loomrise 是一个面向 **AI 产品经理、解决方案人员和小团队开�
    - [参考项目的 Agent 配置后台对比](docs/AGENT-CONFIGURATION-COMPARISON.md)
 9. [开源与私有工作区边界](docs/OPEN-SOURCE-BOUNDARY.md)
 10. [命名决策](docs/NAMING.md)
+11. [初始化与摄入通道](docs/INTAKE-AND-INITIALIZATION.md)（提案，待确认：上传 vs 本地 CLI/MCP）
+12. [S2 评测门禁与改进循环提案](docs/S2-EVAL-GATE-PROPOSAL.md)（决策一已确认：Reserve 走 blind 批次、golden 只判不退步；同条件配对评估、改进 run 预算与状态机仍待确认）
 
 ## S1 代码：怎么跑
 
@@ -39,9 +41,9 @@ PYTHONPATH=. .venv/bin/python tests/test_s1.py                                  
 真实模型验收（需要本机 Coding Plan 凭据；**无凭据时脚本直接退出，不会退回脚本模型冒充真实调用**）：
 
 ```bash
-PYTHONPATH=. .venv/bin/python -m loomrise.cli configure-model   # 一次性录入 → ~/.config/loomrise（仓库外，0600）
+PYTHONPATH=. .venv/bin/python -m loomrise.cli configure-model   # 一次性录入 → ~/.config/loomrise（仓库外，0600）；模型默认 gpt-6-sol
 PYTHONPATH=. .venv/bin/python scripts/live_model_check.py       # 咨询/确认/拒绝/失败/取消/文字→语音，结果写 runs/
-PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-sol   # 换档位对照
+PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-luna   # 成本对照档（非验收基线）
 ```
 
 本机网页试用（**只监听 127.0.0.1**，不是公开服务）：

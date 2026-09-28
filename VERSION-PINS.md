@@ -119,8 +119,8 @@ python3 -m venv s1-voice && s1-voice/bin/pip install "pipecat-ai[tracing]==1.12.
 
 ## 7. 本机 Coding Plan 凭据（不出仓库）
 
-- 一次性录入：`python -m loomrise.cli configure-model`，交互三项：API root（HTTPS，形如 `https://<host>/v1`）、模型名（默认 `gpt-6-luna`，低倍率档，可改）、密钥（getpass 隐藏输入）。
+- 一次性录入：`python -m loomrise.cli configure-model`，交互三项：API root（HTTPS，形如 `https://<host>/v1`）、模型名（默认 `gpt-6-sol`，验收基线；`gpt-6-luna` 为低倍率成本对照档，可改）、密钥（getpass 隐藏输入）。
 - 存放位置：**`~/.config/loomrise/coding-plan.json`（仓库外）**。放在仓库里再怎么 `.gitignore` 都挡不住 `git add -f` 或误提交，所以默认路径不进工作树。
 - 保护方式：目录 `0700`、文件 `0600`；拒绝通过符号链接写入；重复录入不覆盖（抛 `FileExistsError`，需人工先删除）；读取时校验权限位，非仅所有者可读即报错。
 - 密钥不进入任何运行事件、账本、导出包与日志；导出包从不含任何 `coding-plan.json`（自检有断言）。**Gitignored 存储不等于密钥管理器**，仅限本机开发试用。
-- 真实模型实测（2026-09-28）：`scripts/live_model_check.py` 在 `gpt-6-luna`（默认）与 `gpt-6-sol`（对照）两档下均 11/11；首响 `gpt-6-luna` 10.8–14.8 s、`gpt-6-sol` 2.4–3.4 s（单轮单次，含代理往返，未做多轮取样）。`gpt-6-luna` 偶发"不发起写入工具"，脚本最多重试 3 次并把 `attempts` 写进报告。模型名不是版本钉：Coding Plan 侧的档位与倍率随时可变，换档位必须重跑该脚本。
+- 真实模型实测（2026-09-28）：`scripts/live_model_check.py` 在 `gpt-6-sol`（**验收默认**，跑 2 次）与 `gpt-6-luna`（成本对照，跑 1 次）下均 11/11；首响 `gpt-6-sol` 2.4–4.8 s、`gpt-6-luna` 10.8–14.8 s（单轮单次，含代理往返，未做多轮取样）。`gpt-6-luna` 偶发"不发起写入工具"，脚本最多重试 3 次并把 `attempts` 写进报告；`gpt-6-sol` 全部场景 `attempts=1`。默认档位由 `loomrise/local_config.py:DEFAULT_MODEL` 决定，改档位要同步改这里并重跑脚本。模型名不是版本钉：Coding Plan 侧的档位与倍率随时可变，换档位必须重跑该脚本。
