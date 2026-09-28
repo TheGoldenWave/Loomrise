@@ -115,6 +115,7 @@ python3 -m venv s1-voice && s1-voice/bin/pip install "pipecat-ai[tracing]==1.12.
 - 适用面：**仅 macOS arm64 / CPython 3.13**；换平台必须重跑脚本并按平台改名。语音 Worker（`voice-requirements.txt`）不进本锁，仍按 §3 单独安装。
 - 实测（2026-09-28）：`bash scripts/verify_offline.sh` 一遍跑完——锁定 **92 个 wheel**（含 agentscope 2.0.8，由 `a388212` 源码本地构建）；干净虚拟环境 `--no-index --find-links=.build/offline/wheels --require-hashes` 安装成功，`pip check` 无冲突；11/11 案例回放 + 自检全部通过；`export --offline` 导出后，在**第二个干净环境**用同一份锁与 wheelhouse 离线安装并再次 11/11 回放。
 - 自检 `test_offline_lock` 校验锁内每条依赖都带 `--hash=sha256:` 且对应 wheel 在库内（锁缺失时跳过，不判红）。
+- 回归：真实模型改动（`kb.course_catalog` 片段、输出合同、`AgentState` 复用、拒绝记账）落地后于 2026-09-28 13:00 重跑 `verify_offline.sh`，`pip check` 无冲突，核心与导出恢复两处仍 11/11。
 
 ## 7. 本机 Coding Plan 凭据（不出仓库）
 
