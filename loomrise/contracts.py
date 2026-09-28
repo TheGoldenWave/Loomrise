@@ -312,6 +312,7 @@ class Case:
     expected_outcome_contains: str = ""
     forbidden: list[str] = field(default_factory=list)
     confirm_responses: list[bool] = field(default_factory=list)
+    cancel_on_confirm: bool = False
     tool_failure_mode: str = "none"  # none | error | timeout_unknown
     context_budget_tokens: int = 0  # 覆盖 AgentVersion 预算，用于验证 budget_capped
     script: list[dict[str, Any]] = field(default_factory=list)

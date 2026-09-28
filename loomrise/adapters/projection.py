@@ -42,6 +42,7 @@ class AguiProjector:
     def __init__(self) -> None:
         self._seq = 0
         self._text_open: dict[str, bool] = {}
+        self._tool_ids: dict[str, list[tuple[str, str]]] = {}
 
     def _nid(self, prefix: str) -> str:
         self._seq += 1
@@ -55,35 +56,40 @@ class AguiProjector:
             yield {"type": "RUN_STARTED", "threadId": e.request_id, "runId": rid}
         elif t == "run.finished":
             state = p.get("request_state")
-            if state in ("failed", "cancelled"):
+            if state == "failed":
                 yield {
                     "type": "RUN_ERROR",
                     "message": f"request_state={state}",
-                    "rawEvent": p,
                 }
+            elif state == "cancelled":
+                yield {"type": "RUN_FINISHED", "threadId": e.request_id, "runId": rid, "outcome": {"type": "cancelled"}}
             else:
                 yield {"type": "RUN_FINISHED", "threadId": e.request_id, "runId": rid}
-        elif t == "reply.text":
+        elif t == "reply.text" and isinstance(p.get("text"), str):
             mid = p.get("block_id") or self._nid("msg")
             yield {"type": "TEXT_MESSAGE_START", "messageId": mid, "role": "assistant"}
             yield {"type": "TEXT_MESSAGE_CONTENT", "messageId": mid, "delta": p.get("text", "")}
             yield {"type": "TEXT_MESSAGE_END", "messageId": mid}
         elif t == "tool.call_start":
             tid = p.get("tool_call_id") or self._nid("tool")
+            self._tool_ids.setdefault(rid, []).append((p.get("tool"), tid))
             yield {
                 "type": "TOOL_CALL_START",
                 "toolCallId": tid,
                 "toolCallName": p.get("tool"),
-                "parentMessageId": None,
             }
+            yield {"type": "TOOL_CALL_END", "toolCallId": tid}
         elif t == "tool.outcome":
-            tid = p.get("tool_call_id") or self._nid("tool")
+            pending = self._tool_ids.get(rid, [])
+            match = next((i for i, (name, _) in enumerate(pending) if name == p.get("tool")), None)
+            if match is None:
+                return
+            _, tid = pending.pop(match)
             yield {
                 "type": "TOOL_CALL_RESULT",
                 "toolCallId": tid,
                 "messageId": self._nid("res"),
-                "result": p.get("outcome"),
-                "result_id": p.get("result_id"),
+                "content": str(p.get("result_id") or p.get("outcome") or ""),
             }
         elif t == "model.call_end":
             yield {"type": "STEP_STARTED", "stepName": "model_call"}

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import inspect
 from typing import Any, AsyncGenerator, Callable
 
 from agentscope.agent import Agent, ContextConfig, InjectionConfig, ReActConfig
@@ -145,8 +146,25 @@ class ScriptedChatModel(ChatModelBase):
 
 
 def build_model(script: list[dict[str, Any]] | None = None) -> ChatModelBase:
-    """默认脚本模型；设置 LOOMRISE_LIVE_MODEL 时走真实 OpenAI 兼容 API。"""
-    if os.environ.get("LOOMRISE_LIVE_MODEL") and os.environ.get("OPENAI_API_KEY"):
+    """Explicit script replay, or local Coding Plan Responses API credential."""
+    if script is not None:
+        return ScriptedChatModel(script=script)
+    from ..local_config import load_config
+
+    config = load_config()
+    if config:
+        from agentscope.credential import OpenAICredential
+        from agentscope.model import OpenAIResponseModel
+
+        return OpenAIResponseModel(
+            credential=OpenAICredential(api_key=config["key"], base_url=config["base_url"]),
+            model=config["model"],
+            stream=True,
+            max_retries=0,
+        )
+    if os.environ.get("LOOMRISE_LIVE_MODEL"):
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError("LOOMRISE_LIVE_MODEL requires OPENAI_API_KEY")
         from agentscope.model import OpenAIChatModel
 
         return OpenAIChatModel(
@@ -375,10 +393,21 @@ def project_event(evt: Any, emit: Callable[..., Any]) -> str:
         )
         return "model.call_end"
     if isinstance(evt, RequireUserConfirmEvent):
+        def arguments(call: Any) -> dict[str, Any]:
+            try:
+                value = json.loads(getattr(call, "input", "{}") or "{}")
+                return value if isinstance(value, dict) else {}
+            except (ValueError, TypeError):
+                return {}
+
         emit(
             "permission.confirm_required",
             supplier_reply_id=evt.reply_id,
             tools=[getattr(t, "name", None) for t in evt.tool_calls],
+            tool_calls=[
+                {"name": getattr(t, "name", ""), "arguments": arguments(t)}
+                for t in evt.tool_calls
+            ],
         )
         return "permission.confirm_required"
     if isinstance(evt, UserConfirmResultEvent):
@@ -406,6 +435,7 @@ async def drive_reply(
     first_input: Any,
     ask_confirm: Callable[[list[Any]], list[bool]],
     confirms: ConfirmLedger | None = None,
+    is_cancelled: Callable[[], bool] = lambda: False,
     max_confirm_rounds: int = 3,
 ) -> AsyncGenerator[tuple[str, Any], None]:
     """驱动一次 reply，处理人工确认与恢复。
@@ -419,6 +449,8 @@ async def drive_reply(
     while True:
         need_confirm: RequireUserConfirmEvent | None = None
         async for evt in agent.reply_stream(pending, yield_final_msg=True):
+            if is_cancelled():
+                return
             if isinstance(evt, Msg):
                 yield "reply.final", evt
                 continue
@@ -434,6 +466,11 @@ async def drive_reply(
             emit("run.confirm_rounds_exhausted", rounds=rounds)
             return
         answers = ask_confirm(list(need_confirm.tool_calls))
+        if inspect.isawaitable(answers):
+            answers = await answers
+        if is_cancelled():
+            emit("permission.confirm_aborted", reason="run_cancelled")
+            return
         emit(
             "permission.confirm_answered",
             answers=answers,

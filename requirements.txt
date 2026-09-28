@@ -3,7 +3,7 @@
 
 # 核心执行内核（Agent 运行适配）
 # 基线：上游 main 快照 a388212（源码版本字符串 2.0.8），非发行 tag
-agentscope==2.0.8
+agentscope @ git+https://github.com/agentscope-ai/agentscope.git@a38821287f35e9e45ed193d9d864cb46f263c946
 
 # 观测（可选导出）。semconv 必须钉 0.66b0：由 opentelemetry-instrumentation 精确锁定，
 # 且 GenAI 语义约定仍处于实验/迁移期，Loomrise 自持属性映射。
@@ -12,7 +12,10 @@ opentelemetry-sdk==1.45.0
 opentelemetry-semantic-conventions==0.66b0
 opentelemetry-exporter-otlp==1.45.0
 
-pydantic>=2.10
+pydantic==2.13.5
+
+# 最小本机网页/HTTP-SSE 入口（仅 loopback 试用，不是公开服务）
+aiohttp==3.14.3
 
 # 语音 Worker 单独环境安装，不要混进核心环境：
 #   pip install "pipecat-ai[tracing]==1.12.0"

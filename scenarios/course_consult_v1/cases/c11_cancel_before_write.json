@@ -1,0 +1,23 @@
+{
+  "case_id": "c11_cancel_before_write",
+  "title": "确认时取消：执行端停止，模拟写入不得发生",
+  "channel": "text",
+  "turns": [{ "role": "user", "text": "帮我预约数据分析入门，周二晚" }],
+  "script": [
+    {
+      "tool": "create_booking",
+      "args": {
+        "course_id": "data-analysis-101",
+        "learner_name": "测试用户",
+        "slot": "周二晚 20:00",
+        "idempotency_key": "idem-c11"
+      }
+    },
+    { "text": "已创建预约。" }
+  ],
+  "expected_state": "cancelled",
+  "expected_write_count": 0,
+  "confirm_responses": [true],
+  "cancel_on_confirm": true,
+  "notes": "回调即使尝试同意，取消仍优先；要求执行端确认，无业务撤销伪证。"
+}

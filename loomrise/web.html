@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loomrise · 课程咨询</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #222a2c; background: #f4f6f4; }
+    * { box-sizing: border-box; letter-spacing: 0; }
+    body { margin: 0; }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; border-radius: 5px; border: 1px solid #bac5c3; background: white; color: #263839; min-height: 38px; padding: 7px 13px; }
+    button:hover:not(:disabled) { background: #eaf2ef; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button:focus-visible, textarea:focus-visible { outline: 2px solid #007f83; outline-offset: 2px; }
+    .primary { background: #116c69; border-color: #116c69; color: white; }
+    .primary:hover:not(:disabled) { background: #0b5654; }
+    .danger { color: #a14233; border-color: #d6a99f; }
+    header { height: 64px; border-bottom: 1px solid #d5ddda; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 max(20px, calc((100vw - 1240px)/2)); gap: 12px; }
+    h1 { font-size: 19px; margin: 0; font-weight: 680; }
+    .tag { font-size: 12px; border: 1px solid #b6c5c1; padding: 4px 8px; border-radius: 3px; white-space: nowrap; }
+    main { max-width: 1240px; margin: auto; min-height: calc(100dvh - 64px); display: grid; grid-template-columns: minmax(0, 1fr) 270px; }
+    .work { display: flex; flex-direction: column; min-width: 0; min-height: calc(100dvh - 64px); }
+    .headline { padding: 24px 26px 18px; border-bottom: 1px solid #d5ddda; }
+    h2 { margin: 0 0 6px; font-size: 18px; }
+    .muted { color: #62716f; font-size: 13px; }
+    .transcript { flex: 1; padding: 24px 26px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+    .message { max-width: min(670px, 95%); padding: 13px 16px; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #cbd6d2; background: white; border-radius: 5px; }
+    .message.user { align-self: flex-end; background: #e7f1ed; border-color: #b7d2c9; }
+    .message.error { border-color: #d6a99f; color: #963b31; }
+    .speaker { font-size: 11px; font-weight: 700; color: #60726d; margin-bottom: 5px; }
+    .confirm { border-left: 3px solid #bb823d; padding: 12px 15px; background: #fff; max-width: 670px; line-height: 1.5; }
+    .confirm strong { display: block; margin-bottom: 6px; }
+    .confirm .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .composer { border-top: 1px solid #d5ddda; padding: 16px 26px 24px; background: #fff; }
+    textarea { width: 100%; min-height: 75px; padding: 10px 12px; border: 1px solid #aebfba; border-radius: 5px; resize: vertical; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 9px; }
+    .toolbar .spacer { flex: 1; }
+    #status { font-size: 12px; color: #53716c; min-height: 20px; margin-top: 8px; }
+    aside { border-left: 1px solid #d5ddda; padding: 24px 18px; background: #f9faf9; }
+    aside h3 { margin: 0 0 16px; font-size: 13px; }
+    dl { margin: 0; font-size: 12px; }
+    dt { color: #687874; margin-top: 16px; }
+    dd { margin: 4px 0 0; font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+    #events { margin-top: 25px; font-size: 11px; color: #586b65; max-height: 38vh; overflow: auto; }
+    #events div { padding: 7px 0; border-top: 1px solid #e0e6e3; }
+    @media (max-width: 720px) { header { padding: 0 16px; } main { display: block; } .work { min-height: 78dvh; } aside { border-left: 0; border-top: 1px solid #d5ddda; } .headline, .transcript, .composer { padding-left: 16px; padding-right: 16px; } .transcript { min-height: 32dvh; } }
+  </style>
+</head>
+<body>
+<header><h1>Loomrise <span class="muted">/ 课程咨询</span></h1><span class="tag">虚构课程 · 模拟预约</span></header>
+<main>
+  <section class="work" aria-label="咨询对话">
+    <div class="headline"><h2>课程咨询</h2><span class="muted">数据分析入门 · 网页文字与语音</span></div>
+    <div id="transcript" class="transcript" role="log" aria-live="polite"></div>
+    <div class="composer">
+      <label for="input" class="muted">消息</label>
+      <textarea id="input" placeholder="输入课程问题或预约需求"></textarea>
+      <div class="toolbar">
+        <button id="record" title="开始或停止中文语音识别">录音</button>
+        <button id="stop-audio" title="打断当前播报" disabled>打断播报</button>
+        <button id="cancel" class="danger" disabled>取消执行</button>
+        <span class="spacer"></span><button id="send" class="primary">发送</button>
+      </div>
+      <div id="status" role="status"></div>
+    </div>
+  </section>
+  <aside aria-label="运行信息">
+    <h3>当前请求</h3>
+    <dl><dt>状态</dt><dd id="state">等待输入</dd><dt>请求 ID</dt><dd id="request-id">—</dd><dt>版本</dt><dd id="version">—</dd><dt>结果 ID</dt><dd id="result-id">—</dd></dl>
+    <div id="events" aria-label="运行事件"></div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let requestId = null, runId = null, busy = false, recognition = null, utterance = null, fragmentId = null, playbackRun = null;
+const status = text => { $('status').textContent = text; };
+function message(kind, text) {
+  const item = document.createElement('div'); item.className = `message ${kind}`;
+  const label = document.createElement('div'); label.className = 'speaker'; label.textContent = kind === 'user' ? '你' : 'Loomrise';
+  const body = document.createElement('div'); body.textContent = text;
+  item.append(label, body); $('transcript').append(item); item.scrollIntoView({block: 'end'});
+  return body;
+}
+function logEvent(type) {
+  const line = document.createElement('div'); line.textContent = type;
+  $('events').prepend(line); while ($('events').children.length > 24) $('events').lastChild.remove();
+}
+async function post(path, data) {
+  const response = await fetch(`/api/${path}`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)});
+  if (!response.ok) throw new Error((await response.text()).slice(0, 160));
+  return response.json();
+}
+function stopSpeech() {
+  if (!utterance) return;
+  speechSynthesis.cancel(); utterance = null; $('stop-audio').disabled = true;
+  if (fragmentId) post('playback', {action:'interrupted', request_id:requestId, run_id:playbackRun, fragment_id:fragmentId}).catch(() => {});
+  fragmentId = null; status('播报已打断');
+}
+function speak(text, currentRun) {
+  if (!text || !('speechSynthesis' in window)) return;
+  stopSpeech();
+  const speech = new SpeechSynthesisUtterance(text); speech.lang = 'zh-CN'; speech.rate = 1;
+  utterance = speech; playbackRun = currentRun;
+  let started;
+  speech.onstart = () => {
+    $('stop-audio').disabled = false; status('正在播报');
+    started = post('playback', {action:'started', request_id:requestId, run_id:currentRun, text})
+      .then(data => { fragmentId = data.fragment_id; return fragmentId; });
+  };
+  speech.onend = async () => {
+    if (utterance !== speech) return;
+    utterance = null; $('stop-audio').disabled = true;
+    try { const id = await started; await post('playback', {action:'finished', request_id:requestId, run_id:currentRun, fragment_id:id}); status('播报完成'); }
+    catch { status('播报结束，回执未确认'); }
+    fragmentId = null;
+  };
+  speech.onerror = () => { if (utterance === speech) stopSpeech(); };
+  speechSynthesis.speak(speech);
+}
+async function confirmCard(value) {
+  const card = document.createElement('div'); card.className = 'confirm';
+  const title = document.createElement('strong'); title.textContent = '确认模拟预约？'; card.append(title);
+  const args = value.tool_calls?.[0]?.arguments || {};
+  const detail = document.createElement('div'); detail.textContent = `${args.course_id || '课程'} · ${args.learner_name || '学员'} · ${args.slot || '时段'}`; card.append(detail);
+  const actions = document.createElement('div'); actions.className = 'actions';
+  for (const [label, yes] of [['确认', true], ['拒绝', false]]) {
+    const button = document.createElement('button'); button.textContent = label;
+    if (yes) button.className = 'primary';
+    button.onclick = async () => { for (const b of actions.children) b.disabled = true; try { await post('confirm', {request_id:requestId, confirmed:yes}); status(yes ? '已确认，继续执行' : '已拒绝'); } catch (err) { status(err.message); } };
+    actions.append(button);
+  }
+  card.append(actions); $('transcript').append(card); card.scrollIntoView({block:'end'});
+}
+async function submit(text, channel='text') {
+  text = text.trim(); if (!text || busy) return;
+  stopSpeech(); busy = true; $('send').disabled = true; $('record').disabled = true; $('cancel').disabled = false;
+  $('input').value = ''; message('user', text); status('正在执行'); $('state').textContent = '运行中';
+  let reply = null, finalText = '', finished = false;
+  function receive(evt) {
+    logEvent(evt.type === 'CUSTOM' ? evt.name : evt.type);
+    if (evt.type === 'RUN_STARTED') { requestId = evt.threadId; runId = evt.runId; $('request-id').textContent = requestId; }
+    if (evt.type === 'TEXT_MESSAGE_CONTENT') { if (!reply) reply = message('assistant', ''); reply.textContent += evt.delta; }
+    if (evt.type === 'CUSTOM' && evt.name === 'loomrise.require_user_confirm') { $('state').textContent = '等待确认'; confirmCard(evt.value); }
+    if (evt.type === 'CUSTOM' && evt.name === 'loomrise.summary') {
+      const v = evt.value; requestId = v.request_id; runId = v.run_id; finalText = v.text || '';
+      $('version').textContent = v.version; $('state').textContent = v.state;
+      $('result-id').textContent = v.result_id || '—';
+      if (finalText && !reply) reply = message('assistant', finalText);
+      if (channel === 'voice' && finalText) speak(finalText, runId);
+      finished = true;
+    }
+    if (evt.type === 'RUN_ERROR') { if (evt.message !== 'request_state=failed') message('error', evt.message); $('state').textContent = '失败'; }
+  }
+  try {
+    const response = await fetch('/api/runs', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text, channel, request_id:requestId})});
+    if (!response.ok) throw new Error((await response.text()).slice(0,160));
+    const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+    while (true) {
+      const {done, value} = await reader.read(); if (done) break;
+      buffer += decoder.decode(value, {stream:true}); let boundary;
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0,boundary); buffer = buffer.slice(boundary+2);
+        const data = frame.split('\n').filter(line => line.startsWith('data: ')).map(line => line.slice(6)).join('\n');
+        if (data) receive(JSON.parse(data));
+      }
+    }
+    if (!finished) status('连接结束，未收到完成回执');
+    else if (!utterance) status('执行完成');
+  } catch (err) { message('error', err.message); status('请求失败'); $('state').textContent = '失败'; }
+  finally { busy = false; $('send').disabled = false; $('record').disabled = !recognition; $('cancel').disabled = true; }
+}
+const Recognizer = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (Recognizer) {
+  recognition = new Recognizer(); recognition.lang = 'zh-CN'; recognition.interimResults = true; recognition.continuous = false;
+  recognition.onresult = event => {
+    const parts = Array.from(event.results); $('input').value = parts.map(result => result[0].transcript).join('');
+    if (parts.some(result => result.isFinal)) { const text = $('input').value; recognition.stop(); submit(text, 'voice'); }
+  };
+  recognition.onerror = event => { status(`语音识别失败：${event.error}`); $('record').textContent = '录音'; };
+  recognition.onend = () => { $('record').textContent = '录音'; };
+} else { $('record').disabled = true; $('record').title = '当前浏览器不支持语音识别'; }
+$('record').onclick = () => {
+  if ($('record').textContent === '停止录音') { recognition.stop(); $('record').textContent = '录音'; return; }
+  stopSpeech(); try { recognition.start(); $('record').textContent = '停止录音'; status('正在听取中文语音'); }
+  catch (err) { status(`录音未启动：${err.message}`); }
+};
+$('stop-audio').onclick = stopSpeech;
+$('send').onclick = () => submit($('input').value);
+$('cancel').onclick = async () => { if (requestId && runId) { try { await post('cancel', {request_id:requestId, run_id:runId}); status('取消请求已发送，等待执行端确认'); } catch (err) { status(err.message); } } };
+$('input').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit($('input').value); } };
+fetch('/api/status').then(r => r.json()).then(data => { $('version').textContent = data.version; if (!data.configured) status('未配置模型：请先在本机运行 configure-model'); else status(data.scripted ? '脚本模式 · 模拟写入' : 'Coding Plan · 模拟写入'); });
+</script>
+</body>
+</html>

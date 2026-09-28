@@ -47,6 +47,9 @@ async def run_case(
     cursor = {"i": 0}
 
     def ask(calls: list[Any]) -> list[bool]:
+        if case.cancel_on_confirm:
+            started = svc.ledger.find("run.started")[-1]
+            svc.cancel(started.request_id, run_id=started.run_id)
         out = []
         for _ in calls:
             i = cursor["i"]
@@ -105,6 +108,12 @@ async def run_case(
     agui = project_all(svc.ledger.events)
     write_count = sum(len(r.written_result_ids) for r in results)
     checks = _check(case, last, text, playback, write_count)
+    if case.cancel_on_confirm:
+        checks.append({
+            "name": "执行端确认取消且未写入",
+            "ok": bool(svc.ledger.find("run.cancel_confirmed")) and write_count == 0,
+            "detail": "run.cancel_confirmed / zero writes",
+        })
     return {
         "case_id": case.case_id,
         "title": case.title,
@@ -275,31 +284,30 @@ def cmd_export(args: argparse.Namespace) -> int:
         out / "loomrise" / "adapters",
         dirs_exist_ok=True,
     )
-    (out / "requirements.txt").write_text(
-        "\n".join([
-            "# S1 固定依赖（版本钉见 VERSION-PINS.md）",
-            "agentscope==2.0.8   # 基线为上游 main 快照 a388212，见 VERSION-PINS.md",
-            "pipecat-ai[tracing]==1.12.0",
-            "opentelemetry-api==1.45.0",
-            "opentelemetry-sdk==1.45.0",
-            "opentelemetry-semantic-conventions==0.66b0",
-            "opentelemetry-exporter-otlp==1.45.0",
-            "pydantic>=2.10",
-            "",
-        ]),
-        encoding="utf-8",
-    )
+    shutil.copy(ROOT / "requirements.txt", out / "requirements.txt")
+    shutil.copy(ROOT / "VERSION-PINS.md", out / "VERSION-PINS.md")
+    shutil.copy(ROOT / "loomrise" / "web.html", out / "loomrise" / "web.html")
+    if getattr(args, "offline", False):
+        lock = ROOT / "requirements-offline-macos-arm64-py313.txt"
+        wheels = ROOT / ".build" / "offline" / "wheels"
+        if not lock.exists() or not wheels.is_dir():
+            raise RuntimeError("Build the offline wheelhouse first: python scripts/build_offline.py")
+        shutil.copy(lock, out / lock.name)
+        shutil.copytree(wheels, out / "wheels", dirs_exist_ok=True)
+    (out / "voice-requirements.txt").write_text("pipecat-ai[tracing]==1.12.0\n", encoding="utf-8")
     (out / "README.md").write_text(
         "\n".join([
             "# Loomrise S1 交付包（虚构数据 · 模拟写入）",
             "",
             "```bash",
-            "pip install -r requirements.txt",
-            "python -m loomrise.cli replay --out replay.json",
+            "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+            ".venv/bin/python -m loomrise.cli replay --out replay.json",
             "```",
             "",
             "- 资料、配置与案例均为虚构；写入工具为模拟实现，不触达真实系统。",
             "- 回放使用脚本化确定性模型，不需要 API 密钥。",
+            "- AgentScope 锁到 a388212；语音 Worker 单独安装 voice-requirements.txt，安装限制见 VERSION-PINS.md。",
+            "- 使用 --offline 导出的包含 macOS arm64/Python 3.13 wheelhouse，可用 --no-index --find-links=wheels --require-hashes 安装 requirements-offline-macos-arm64-py313.txt。",
             "",
         ]),
         encoding="utf-8",
@@ -351,11 +359,20 @@ def main(argv: list[str] | None = None) -> int:
 
     e = sub.add_parser("export", help="导出可迁移交付包")
     e.add_argument("--out", default=str(ROOT / "dist" / "loomrise-s1"))
+    e.add_argument("--offline", action="store_true", help="附带平台专用 wheelhouse 与哈希锁")
     e.set_defaults(func=cmd_export)
 
     a = sub.add_parser("audit", help="查看账本与上下文审计")
     a.add_argument("--ledger", required=True)
     a.set_defaults(func=cmd_audit)
+
+    c = sub.add_parser("configure-model", help="一次性录入本机 Coding Plan 凭据")
+    c.set_defaults(func=lambda _: __import__("loomrise.local_config", fromlist=["configure"]).configure() or 0)
+
+    w = sub.add_parser("web", help="仅在本机提供文字/语音与 AG-UI SSE 试用页")
+    w.add_argument("--port", type=int, default=8765)
+    w.add_argument("--scripted", action="store_true", help="显式使用脚本模型，不调用真实模型")
+    w.set_defaults(func=lambda args: __import__("loomrise.web", fromlist=["serve"]).serve(args.port, scripted=args.scripted))
 
     args = p.parse_args(argv)
     fn = args.func

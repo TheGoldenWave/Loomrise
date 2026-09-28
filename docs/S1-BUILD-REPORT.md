@@ -1,8 +1,8 @@
-# S1 交付与验收 v0.2
+# S1 交付与验收 v0.3
 
-状态：**代码已落地，已有 10/10 人工审定案例的确定性回放记录，S1 Gate 未全部通过**，2026-09-27。
+状态：**精确依赖的干净环境 11/11 确定性回放通过，离线 wheelhouse/哈希锁与 HTTP-SSE 消费已验证，S1 Gate 仍未全部通过**，2026-09-28。
 本文件是 QA 对照用的验收文档：每条 Gate 指向可复述的证据或命令，不把规划写成已完成。
-运行级（L-D）结论仍为空——真实模型、真实音频、时延与资源均未实测，见 §5。
+真实模型与网页音频运行级结论仍为空；只有脚本回放的时延/资源样本，见 §5。
 
 ## 1. 交付物
 
@@ -20,9 +20,14 @@ loomrise/                          S1 执行内核（7 个模块 + 3 个适配�
     agentscope_runtime.py          AgentScope 适配：中间件 + 事件投影 + 脚本化确定性模型
     voice.py                       Pipecat 适配：播放四态账本（自建"已确认播出"）
     projection.py                  AG-UI 单向投影 + OTel 属性映射与可选导出
-scenarios/course_consult_v1/       虚构场景包：pack.json + 10 个人工审定案例
+  local_config.py                 本机 Coding Plan 凭据（~/.config/loomrise，0600，仓库外）
+  web.py / web.html               回环监听的网页入口：AG-UI SSE + 页面人工确认/拒绝/取消
+scripts/
+  build_offline.py                平台专用 wheelhouse + SHA-256 哈希锁
+  verify_offline.sh               离线安装 → 回放 → 自检 → 导出包离线恢复，一遍跑完
+scenarios/course_consult_v1/       虚构场景包：pack.json + 11 个人工审定案例
 tests/test_s1.py                   自检脚本（不依赖 pytest）
-runs/replay-s1.json                最近一次回放报告（10/10）
+runs/replay-s1.json                旧回放报告（10/10）；本次新报告在临时目录（11/11）
 VERSION-PINS.md                    版本钉与安装证据
 ```
 
@@ -58,9 +63,9 @@ VERSION-PINS.md                    版本钉与安装证据
 
 见 [`NAMING.md`](NAMING.md)。要点：`ServiceRequest` 更准确（跨多轮、含多次 Run、带业务终态）；`SkillManifest` 与上游 Markdown 目录 `Skill` 是"合同 vs 载体"的区别；`app/`（含 IM channel 与 ag-ui 中间件）不采用，但 AG-UI **映射关系**可参照实现。
 
-### 3.3 版本钉：改钉 `a388212`
+### 3.3 版本钉：已锁定 `a388212`
 
-见 [`VERSION-PINS.md`](../VERSION-PINS.md)。基线由发行 tag `v2.0.8`/`c7d8e31` 改为实际使用的 main 快照 `a388212`；报告中一律标注"源码版本字符串 2.0.8"。
+见 [`VERSION-PINS.md`](../VERSION-PINS.md)。`requirements.txt` 使用完整 VCS commit；源码版本字符串仍为 2.0.8，不以发行 tag 代替。
 
 ## 4. Gate 对照
 
@@ -72,16 +77,18 @@ cd <repo> && PYTHONPATH=. s1-verify/bin/python -m loomrise.cli replay --out runs
 
 | S1 Gate | 结果 | 证据 |
 |---|---|---|
-| 文字和语音使用同一个 `request_id`、`AgentVersion`、权限判断和业务结果 | **部分** | `c9_voice_same_request` 验证模拟语音调用共用执行内核；未覆盖同一请求从文字切换到语音的专项断言，真实媒体链路未接 |
+| 文字和语音使用同一个 `request_id`、`AgentVersion`、权限判断和业务结果 | **代码级通过，媒体待验证** | `test_cross_channel_same_request`：文字发起 → 模拟语音确认 → 文字重复提交，同请求 ID/版本/权限与结果 ID；尚无真实媒体链路 |
 | 同一确认最多产生一次模拟业务写入，并有稳定 `result_id` | **通过** | `c2_booking_confirmed`（写 1 次，有 `result_id`）；`c8_duplicate_write`（同幂等键第二轮被拒，总写入仍为 1） |
-| 失败、取消、超时、未知播放状态可在 `RunEvent` 中区分 | **部分** | `c3`（denied）、`c6`（error）、`c7`（unknown）与模拟播放打断已有记录；`cancel()` 仅发出 `run.cancel_requested`，不实际中止执行或确认撤销，无取消专项案例 |
+| 失败、取消、超时、未知播放状态可在 `RunEvent` 中区分 | **模拟通过，真实打断待验证** | `c11_cancel_before_write` 验证 `run.cancel_requested` → `run.cancel_confirmed` 且零写入；`c3/c6/c7` 与合成打断覆盖其他状态。已写入结果不宣称可撤销 |
 | 固定输入、版本和模拟环境可再次回放 | **通过** | `replay` 连续两次运行结果一致；报告写入 `runs/replay-s1.json` |
-| 导出包可在干净目录恢复配置和模拟结果 | **部分** | `export` 命令已实现（场景包 + 代码 + requirements + README）；**未在新目录实跑恢复** |
-| 记录固定版本、许可证、安装步骤 | **部分** | `VERSION-PINS.md` 已记录历史安装证据；`requirements.txt` 的 `agentscope==2.0.8` 未锁到验证快照 `a388212`，干净安装复现未完成 |
+| 导出包可在干净目录恢复配置和模拟结果 | **通过（联网 + 离线两种路径）** | 导出目录独立创建新虚拟环境，安装导出依赖、加载包并 11/11 回放；不依赖原工作区或 `_reference/`。`export --offline` 附带 wheelhouse 与哈希锁，第二个干净环境 `--no-index --require-hashes` 安装后再 11/11 |
+| 依赖可离线、可哈希校验地固定 | **通过（仅 macOS arm64 / CPython 3.13）** | 92 个 wheel 逐条 SHA-256 写入 `requirements-offline-macos-arm64-py313.txt`；`bash scripts/verify_offline.sh` 复现；自检 `test_offline_lock` 守着"有锁就必须有哈希和 wheel" |
+| 客户端经 HTTP/SSE 消费 Loomrise 事件 | **代码级通过，真实模型端到端待验证** | `test_web_sse` 起真实 TCP 站点 + HTTP 流式消费 AG-UI 事件，覆盖事件顺序、跨渠道同请求、页面确认/拒绝/取消；目前只在脚本模型下跑过 |
+| 记录固定版本、许可证、安装步骤 | **核心通过，语音待重跑** | 完整 commit VCS pin、`pip freeze` 与 `pip check`、独立导出恢复；Pipecat 版本/许可证为历史安装证据 |
 | 至少能回答：本轮加载了哪些上下文、哪些被跳过、为什么跳过、是否因预算截断、对应版本 | **通过** | `audit` 命令 / 每条报告的 `context_audit`：`loaded` / `skipped`(含 `skip_reason`) / `expired` / `budget_capped` |
-| 资源占用、首响、打断、失败项（运行级） | **未验证** | 需真实模型与真实音频，见 §5 |
+| 资源占用、首响、打断、失败项（运行级） | **仅模拟基线** | 脚本回放样本见 §5；真实模型/网页语音仍未测，Gate 不通过 |
 
-### 案例回放（10/10）
+### 案例回放（11/11，脚本模型）
 
 | 案例 | 场景 | 期望终态 | 期望写入 | 结果 |
 |---|---|---|---|---|
@@ -95,14 +102,33 @@ cd <repo> && PYTHONPATH=. s1-verify/bin/python -m loomrise.cli replay --out runs
 | c8_duplicate_write | 重复提交 | success | 1（第二次被去重） | PASS |
 | c9_voice_same_request | 语音入口 | success | 1 | PASS |
 | c10_budget_capped | 上下文预算截断 | success | 0（记录 budget_capped） | PASS |
+| c11_cancel_before_write | 确认点取消 | cancelled | 0（执行端确认停止） | PASS |
 
 `voice-sim` 额外验证播放四态：打断后未确认的片段全部落到 `unknown`，`confirmed` 为空——**未知不是成功**。
 
-### 本次 Git 进度复核（2026-09-27）
+### 本次重新运行（2026-09-27）
+
+- 新建两个隔离虚拟环境：核心环境从 `requirements.txt` 安装，导出目录从自身的同名文件安装；两处 `pip freeze` 均显示 `agentscope @ git+https://github.com/agentscope-ai/agentscope.git@a38821287f35e9e45ed193d9d864cb46f263c946`，`pip check` 均无冲突。
+- 核心环境运行 `python tests/test_s1.py` 全部通过，`loomrise.cli replay` 11/11；导出环境从导出目录运行 `loomrise.cli replay` 11/11。两份回放及事件 JSONL 在临时目录，未作为公开原始日志提交。
+- AG-UI 上游参考树 commit `b8ebd02`：用 pnpm 10.33.4 执行第一方 TypeScript 客户端 `src/conformance`，**69/69 通过**。这是上游客户端回归，不是 Loomrise 流接入客户端的端到端验证；Loomrise 自检另外用同一份 spec 1.0 schema 校验全部 11 个案例的投影事件，并对照取消 outcome 语料。
+- 脚本回放的一次样本：macOS Apple 芯片、Python 3.13.15、11 案例，`/usr/bin/time -l` 得到 0.99s wall、0.65s user + 0.12s sys、峰值 RSS 90,554,368 字节；`c1` 事件时间从 `run.started` 到首条 `reply.text` 为 7ms（同轮结束亦为 7ms）。单次 CLI 启动、脚本模型与合成帧，**不能作为真实首响、音频打断恢复、典型延迟或容量指标**。模拟失败项：拒绝、工具 error、超时 unknown、取消与播放 unknown。
+- 待执行的单一组合定为 `gpt-4o-mini`（`LOOMRISE_LIVE_MODEL`）+ OpenAI `whisper-1` STT + `tts-1`/`alloy` TTS；这是**待验证配置，不是已集成链路**。当前环境未提供 `OPENAI_API_KEY`，仓库无网页媒体入口及已验证 STT/TTS 组合，因此真实模型的咨询/确认/拒绝/失败及网页音频打断均未运行。设置真实模型名但缺密钥现在显式报错，不会静默回退脚本模型。
+
+### 本轮新增（2026-09-28 实跑）
+
+| 新增 | 位置 | 验收结果 |
+|---|---|---|
+| HTTP/SSE 客户端消费 | `loomrise/web.py` + `web.html`（回环监听），AG-UI 事件经 `text/event-stream` 投送 | **通过（脚本模型）**：`test_web_sse` 起真实 TCP 服务 + HTTP 客户端流式消费，断言文字发起 → 语音继续 → 文字重复提交同源请求/版本/结果、写入仅一次、页面拒绝不写入、取消有 `cancelled` outcome。真实模型下的端到端仍未跑 |
+| 网页语音 + 设备级播出回执 | 浏览器 Web Speech（`zh-CN` 识别 + `speechSynthesis` 播报） | **待人工实测**：回执链路有断言（播出完成/打断分别落 `confirmed`/`unknown`）；中文可懂度、首响、打断恢复数字仍缺 |
+| 真实模型（改走 Coding Plan Responses API） | `local_config.py` + `build_model`（`OpenAIResponseModel`，默认 `gpt-6-luna`） | **待录入凭据**：隔离与不回退逻辑已验证（权限位、仓库外存放、不覆盖、缺密钥不静默回退）；**本机未配置密钥，真实调用未跑** |
+| 离线 wheelhouse 与哈希锁 | `scripts/build_offline.py`、`scripts/verify_offline.sh` | **通过**：92 个 wheel 逐条 SHA-256；干净环境 `--no-index --require-hashes` 安装 → `pip check` → 11/11 回放 + 自检全通过 → `--offline` 导出 → 第二个干净环境离线恢复 11/11。仅 macOS arm64 / CPython 3.13 |
+
+音频选型说明：**没有引入云端流式 ASR/TTS，也没有引入本地 ASR 运行时**。LifeSub 那套本地方案依赖桌面 Rust 运行时与模型下载，且不含 TTS；本轮先用浏览器原生中文识别与播报做零成本实机验证，代价是**能力跟随浏览器**（Chrome/Edge 可用；Safari 与 Firefox 支持不齐，不支持时录音按钮禁用）。这只是验证手段，不是最终形态——真实音频 Gate 仍要按 §5.2 用固定 STT/TTS 组合在浏览器外重测。
+
+### 历史记录（替代前，2026-09-27）
 
 - 原 Git HEAD 为 `2f0633a`（S0 文档 Gate）；S1 代码、虚构场景、测试和本报告此前尚未提交，属于本次公开同步范围。
-- 本地 `runs/replay-s1.json` 的生成时间为 `2026-09-27T10:07:59`，汇总 10/10、失败 0；这是已有记录，**不是本次重新执行完整回放所得**。运行报告和事件日志保持 Git 忽略，不上传原始日志。
-- 本次用 Python 3.13.15 执行 `python3 tests/test_s1.py`：账本、硬规则、上下文、压缩边界、播放状态和事件投影共 **20 条断言通过**；进入案例回放时因缺少 `pydantic` 中止，完整自检未通过，也未验证 SDK 兼容性。
+- 本地旧 `runs/replay-s1.json` 的生成时间为 `2026-09-27T10:07:59`，汇总 10/10；此前完整自检因缺少 `pydantic` 中止。本次新运行证据见上节，不将旧文件当新报告。
 - 本次另行核验已有报告中的逐例判定，以及 10 份 JSONL 账本的序号、前序哈希和内容哈希，共 214 条事件通过完整性检查；这只证明已有工件一致，不等于重跑或新增验收覆盖。
 - 当前请求/模拟结果与幂等状态在内存中；CLI 事件 JSONL 的落盘不等于完整业务存储和重启恢复已完成。
 
@@ -110,18 +136,16 @@ cd <repo> && PYTHONPATH=. s1-verify/bin/python -m loomrise.cli replay --out runs
 
 1. **真实模型**：回放全部用脚本化确定性模型；真实模型在同一配置下的路由、工具调用与拒绝行为未测。
 2. **真实音频**：Pipecat 只做到"帧类名 → 播放状态机"的回归，未跑 STT/TTS/浏览器链路；中文可懂度、首响、打断恢复、弱网恢复均未测。
-3. **时延与资源**：首响、轮次延迟、内存/CPU、单位成功任务成本均无数据。
-4. **导出包恢复**：`export` 已实现但未在干净目录实跑恢复。
-5. **AG-UI 一致性**：投影已实现，未跑 `spec/1.0/conformance/streams/*.json` 第一方语料。
-6. **同进程共存**：AgentScope 与 Pipecat 分装两个环境（符合"可选 Voice Worker"部署形态），未在同一进程内实测。
-7. **完整取消与跨渠道请求**：仅有取消请求事件，未实现中止和撤销确认；同一请求文字/语音切换尚无专项验收。
-8. **干净环境安装**：发行包版本不等于验证 commit；需锁定实际 SDK 构件并重跑完整自检与回放。
+3. **真实链路时延与资源**：脚本回放有单次样本；真实首响、轮次延迟、内存/CPU、单位成功任务成本仍无数据。
+4. **客户端端到端协议**：第一方客户端语料 69/69、Loomrise 全 11 案例投影 schema 检查、`test_web_sse` 的真实 HTTP/SSE 消费断言，三者是独立证据且均已通过；但**都只在脚本模型下跑过**，真实模型驱动的事件流送入客户端仍未验证。
+5. **同进程共存**：AgentScope 与 Pipecat 分装两个环境（符合"可选 Voice Worker"部署形态），未在同一进程内实测。
+6. **持久化与外部撤销**：取消在当前执行任务中已专项验证，已完成写入无法撤销；重启后业务请求/幂等账本恢复、真实媒体跨渠道和真实业务撤销仍未实现。
 
 ## 6. 已知限制（代码层面）
 
 - token 估算是启发式（中文 1 字≈1 token，西文 4 字符≈1 token），精度上限约 ±30%，只用于预算记账，不用于计费。
-- `ScriptedChatModel` 只实现 `_call_api`，不实现真实协议；真实模型走 `LOOMRISE_LIVE_MODEL` + `OPENAI_API_KEY`（未实测）。
-- 幂等账本在 `ExecutionService` 进程内存中，重启即失；S2 需要持久化。
+- `ScriptedChatModel` 只实现 `_call_api`，不实现真实协议；真实模型优先读本机 Coding Plan 凭据（`secrets/`，走 Responses API），其次 `LOOMRISE_LIVE_MODEL` + `OPENAI_API_KEY`（缺密钥显式报错），两者都未配置时 `cli run` 仍会落到脚本模型——使用前先看 `/api/status` 或 `"configured"` 字段，不要把脚本输出当成真实模型结果。
+- 幂等账本在 `ExecutionService` 进程内存中，重启即失；S2 需要持久化。直接依赖固定了 AgentScope commit、OTel、Pydantic 与 aiohttp；离线 wheelhouse 与哈希锁（`scripts/build_offline.py`）已实跑通过，但只针对 macOS arm64 / CPython 3.13，换平台要重跑并改名；语音 Worker 不在该锁内。
 - 路由是关键词匹配（确定性），不是模型路由，也不支持条件表达式。
 - 单租户（`tenant_demo`），未做租户隔离。
-- 未传入确认回调时默认返回同意，仅适用于确定性模拟；尚无可供真实用户操作的确认界面，不代表生产级审批已实现。
+- 未传入确认回调时默认拒绝；回放显式传入脚本确认，CLI 没有人工确认界面，不代表生产级审批已实现。

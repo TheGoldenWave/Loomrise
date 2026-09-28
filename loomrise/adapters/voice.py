@@ -153,13 +153,30 @@ class VoiceSession:
     # -- 客户端回执（Loomrise 自建） --------------------------------------
     def ack_playback(self, fragment_id: str, *, at: str = "") -> bool:
         for rec in self.records:
-            if rec.fragment_id == fragment_id:
+            if rec.fragment_id == fragment_id and rec.state == PlaybackState.SENT:
                 rec.state = PlaybackState.CONFIRMED
                 rec.ack_at = at or "(runtime)"
                 rec.note = "客户端确认播出"
                 self._emit_playback(rec, rec.note)
                 return True
         return False
+
+    def mark_sent(self, fragment_id: str) -> bool:
+        for rec in self.records:
+            if rec.fragment_id == fragment_id and rec.state == PlaybackState.GENERATED:
+                rec.state = PlaybackState.SENT
+                self._emit_playback(rec, "浏览器报告开始播出")
+                return True
+        return False
+
+    def start_fragment(self, text: str) -> str:
+        """Browser speech synthesis started; audio is real but delivery is not yet confirmed."""
+        self._seq += 1
+        rec = PlaybackRecord(fragment_id=f"{self.session_id}_frag_{self._seq}", text=text)
+        self.records.append(rec)
+        self._emit_playback(rec, "浏览器开始合成播报")
+        self.mark_sent(rec.fragment_id)
+        return rec.fragment_id
 
     def mark_unknown(self, fragment_id: str, *, note: str = "超时未取得播出回执") -> bool:
         for rec in self.records:

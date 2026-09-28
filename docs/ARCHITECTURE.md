@@ -1,6 +1,6 @@
 # 架构与对象权威 v0.5
 
-状态：产品边界已确认，S1 最小领域合同、执行内核及渐进式上下文加载已有代码，2026-09-27；六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)。源码/安装与确定性回放证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，不代表真实模型、真实音频、完整取消或生产兼容性已验证。以下架构图和对象表同时包含已实现切片与后续目标；工作台、发布闭环、多租户等仍是规划。开放接入和验收规则见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
+状态：产品边界已确认，S1 最小领域合同、执行内核及渐进式上下文加载已有代码，2026-09-27；六层职责见[六层配置合同](CONFIGURATION-LAYERS.md)。干净安装/回放、执行中取消与跨渠道代码级证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，不代表真实模型、真实音频、持久化恢复或生产兼容性已验证。以下架构图和对象表同时包含已实现切片与后续目标；工作台、发布闭环、多租户等仍是规划。开放接入和验收规则见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
 
 项目采用单一交付工作台与统一执行内核，区分**产品控制面**、**业务执行**、**媒体与渠道**、**外部信息与知识**、**业务工具**、**观测与评测**。首版以单 Agent 为主；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -68,7 +68,7 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 
 ## 领域合同目标与 S1 实现边界
 
-`loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和 `ChangeProposal` 合同尚未实现。S1 请求与幂等账本在进程内，CLI 回放可持久化事件 JSONL；完整业务持久化和取消确认仍待补齐。
+`loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和 `ChangeProposal` 合同尚未实现。S1 请求与幂等账本在进程内，CLI 回放可持久化事件 JSONL；执行中取消及确认已有代码级验证，完整业务持久化、重启恢复及真实写入撤销仍待补齐。
 
 - `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置引用和合同版本，不携带凭据；动态外部数据须保留每次读取的来源/版本证据。
 - `ServiceRequest@v1`：业务请求可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。AgentScope 的 `state.Task` 是运行时子任务清单，适配器内部只以 `RuntimeTask`/`PlanTask` 称呼，不进入本合同。

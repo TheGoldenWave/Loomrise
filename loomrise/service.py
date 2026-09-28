@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -85,10 +86,11 @@ class ExecutionService:
         self.pack = pack
         self.ledger = ledger or EventLedger()
         self.tenant_id = tenant_id
-        self.ask_confirm = ask_confirm or (lambda calls: [True] * len(calls))
+        self.ask_confirm = ask_confirm or (lambda calls: [False] * len(calls))
         self.failure_mode = failure_mode
         self.compaction = CompactionPolicy(compaction_mode)
         self.requests: dict[str, ServiceRequest] = {}
+        self._active: dict[str, asyncio.Task[Any]] = {}
         # 幂等写入账本：跨轮次、跨渠道共享（文字发起、语音确认也只写一次）
         self._writes: dict[str, str] = {}
 
@@ -132,17 +134,31 @@ class ExecutionService:
             failure_mode=failure_mode,
         )
 
-    def cancel(self, request_id: str, *, run_id: str, reason: str = "user_cancel") -> None:
+    def cancel(self, request_id: str, *, run_id: str, reason: str = "user_cancel") -> bool:
         """取消请求已发送 ≠ 业务动作已撤销：两件事分别记账。"""
+        started = next((e for e in self.ledger.find("run.started") if e.run_id == run_id and e.request_id == request_id), None)
+        if started is None:
+            return False
         self.ledger.emit(
             "run.cancel_requested",
             request_id=request_id,
             run_id=run_id,
             tenant_id=self.tenant_id,
             agent_version=self.pack.agent_version.version_id,
-            channel=Channel.TEXT.value,
+            channel=started.channel,
             reason=reason,
         )
+        task = self._active.get(run_id)
+        if task is None or task.done():
+            self.ledger.emit(
+                "run.cancel_not_revoked", request_id=request_id, run_id=run_id,
+                tenant_id=self.tenant_id, agent_version=self.pack.agent_version.version_id,
+                channel=started.channel, reason="run_already_finished",
+            )
+            return False
+        self.requests[request_id].state = RequestState.CANCELLING
+        task.cancel()
+        return True
 
     # -- 执行 --------------------------------------------------------------
     async def _handle(
@@ -161,6 +177,7 @@ class ExecutionService:
         self.requests[req.request_id] = req
         run_id = new_id("run")
         req.state = RequestState.RUNNING
+        self._active[run_id] = asyncio.current_task()
 
         def emit(event_type: str, **payload: Any):
             return self.ledger.emit(
@@ -215,6 +232,8 @@ class ExecutionService:
             return to_tool_response(r)
 
         async def _book(course_id: str, learner_name: str, slot: str, idempotency_key: str):
+            if req.state is RequestState.CANCELLING:
+                raise asyncio.CancelledError()
             r: ToolResult = await sandbox.create_booking(
                 course_id, learner_name, slot, idempotency_key,
             )
@@ -265,19 +284,39 @@ class ExecutionService:
 
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""
-        async for etype, evt in drive_reply(
-            agent,
-            emit,
-            first_input=Msg(name="user", role="user", content=[TextBlock(text=text)]),
-            ask_confirm=ask_confirm or self.ask_confirm,
-            confirms=confirms,
-        ):
-            if etype == "reply.text":
-                final_text = evt.text or final_text
-            elif etype == "reply.final":
-                final_text = _msg_text(evt) or final_text
-            elif etype == "tool.result":
-                supplier_states.append(str(getattr(evt, "state", "")))
+
+        def finish_cancel() -> RunResult:
+            req.state = RequestState.SUCCESS if written else RequestState.CANCELLED
+            req.updated_at = now_iso()
+            if written:
+                req.result_id = written[0]
+                req.outcome = {"result_ids": written, "bookings": sandbox.bookings}
+            emit("run.cancel_confirmed", write_prevented=not written, business_action_revoked=False, result_ids=written)
+            emit("run.finished", request_state=req.state.value, write_count=len(written), result_ids=written)
+            return RunResult(req, run_id, written_result_ids=written, context_audit=ctx.audit_answer(), outcomes=outcomes)
+
+        try:
+            async for etype, evt in drive_reply(
+                agent,
+                emit,
+                first_input=Msg(name="user", role="user", content=[TextBlock(text=text)]),
+                ask_confirm=ask_confirm or self.ask_confirm,
+                confirms=confirms,
+                is_cancelled=lambda: req.state is RequestState.CANCELLING,
+            ):
+                if etype == "reply.text":
+                    final_text = evt.text or final_text
+                elif etype == "reply.final":
+                    final_text = _msg_text(evt) or final_text
+                elif etype == "tool.result":
+                    supplier_states.append(str(getattr(evt, "state", "")))
+        except asyncio.CancelledError:
+            return finish_cancel()
+        finally:
+            self._active.pop(run_id, None)
+
+        if req.state is RequestState.CANCELLING:
+            return finish_cancel()
 
         # 6) 终态：模型说"完成"不算完成，必须有持久化的业务结果
         state = self._final_state(outcomes + supplier_states, written)
