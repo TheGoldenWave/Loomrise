@@ -35,6 +35,7 @@ from agentscope.event import (
 from agentscope.middleware import MiddlewareBase
 from agentscope.model import ChatModelBase, ChatResponse, ChatUsage
 from agentscope.permission import PermissionBehavior, PermissionDecision
+from agentscope.state import AgentState
 from agentscope.message import Msg, TextBlock, ToolCallBlock, ToolResultState
 from agentscope.tool import FunctionTool, Toolkit, ToolResponse
 
@@ -301,6 +302,7 @@ def build_agent(
     toolkit: Toolkit,
     middlewares: list[MiddlewareBase],
     max_iters: int = 10,
+    state: "AgentState | None" = None,
 ) -> Agent:
     return Agent(
         name=name,
@@ -308,6 +310,8 @@ def build_agent(
         model=model,
         toolkit=toolkit,
         middlewares=middlewares,
+        # 传入同一业务请求的既有 state：跨渠道/跨轮次续接对话历史
+        state=state or AgentState(),
         # 关闭运行时注入（时间/任务/上下文/工具错误四维，见 _agent.py:1407）
         injection_config=InjectionConfig(inject_runtime_state=False),
         # 压缩由 ContextGuardMiddleware 拦截；图片卸载在 S1 无输入，显式归零
@@ -480,6 +484,15 @@ async def drive_reply(
             cid = getattr(tc, "id", "")
             if cid:
                 (confirms.confirmed if a else confirms.denied).add(cid)
+            # SDK 拒绝后不再回权限钩子，账本在这里留人工裁决证据
+            emit(
+                "permission.decision",
+                tool=getattr(tc, "name", ""),
+                behavior="allow" if a else "deny",
+                rule_ids=["confirm.human_allow" if a else "confirm.human_deny"],
+                reason="人工确认允许该工具调用" if a else "人工拒绝该工具调用",
+                tool_call_id=cid,
+            )
         pending = UserConfirmResultEvent(
             reply_id=need_confirm.reply_id,
             confirm_results=[

@@ -250,7 +250,10 @@ async def test_cross_channel_same_request() -> None:
 def test_live_model_requires_key() -> None:
     from loomrise.adapters.agentscope_runtime import build_model
 
-    with patch.dict(os.environ, {"LOOMRISE_LIVE_MODEL": "fixed-model"}, clear=True):
+    # 隔离本机凭据：本用例验证的是"没有凭据时不许静默退回脚本模型"
+    with patch.dict(os.environ, {"LOOMRISE_LIVE_MODEL": "fixed-model"}, clear=True), patch(
+        "loomrise.local_config.load_config", return_value=None
+    ):
         try:
             build_model()
         except RuntimeError:

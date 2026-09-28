@@ -42,8 +42,10 @@ from agentscope.message import Msg, TextBlock
 
 OUTPUT_CONTRACT = """输出合同（必须遵守）：
 1. 只依据已加载上下文与工具返回的资料回答，不得补造事实。
-2. 涉及业务写入时必须调用工具，并在调用前取得人工确认。
-3. 无法确认的信息要说明缺失，不得猜测。"""
+2. 涉及业务写入时必须调用工具；人工确认由系统在工具调用前收集，不要改用提问代替执行。
+3. 用户已提供课程、学员姓名与时段并明确要求报名时，直接调用 create_booking，
+   不得再询问"是否确认"——确认由系统弹给人工处理。
+4. 无法确认的信息要说明缺失，不得猜测。"""
 
 
 class SearchKnowledgeInput(BaseModel):
@@ -93,6 +95,8 @@ class ExecutionService:
         self._active: dict[str, asyncio.Task[Any]] = {}
         # 幂等写入账本：跨轮次、跨渠道共享（文字发起、语音确认也只写一次）
         self._writes: dict[str, str] = {}
+        # 对话状态按业务请求复用：同一请求换渠道/换轮次时模型仍看得到前文
+        self._states: dict[str, Any] = {}
 
     # -- 对外入口 ----------------------------------------------------------
     async def handle_text(
@@ -280,7 +284,9 @@ class ExecutionService:
             model=model,
             toolkit=toolkit,
             middlewares=[guard, policy_mw],
+            state=self._states.get(req.request_id),
         )
+        self._states[req.request_id] = agent.state
 
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""

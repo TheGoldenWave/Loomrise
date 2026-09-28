@@ -29,7 +29,7 @@
       "applies_when": "用户询问课程内容、价格、开班时间，或表达报名/预约意向",
       "goal": "基于已授权资料回答课程信息，并在取得确认后创建一条模拟预约",
       "exit_when": "用户问题已回答且（如需）预约已写入并返回 result_id",
-      "knowledge_ids": ["kb.pricing", "kb.schedule", "kb.refund_policy"],
+      "knowledge_ids": ["kb.pricing", "kb.schedule", "kb.course_catalog", "kb.refund_policy"],
       "tool_ids": ["search_knowledge", "create_booking"],
       "escalate_when": "用户要求折扣承诺、投诉或涉及真实付款时转人工",
       "source_ref": "scenarios/course_consult_v1/skills/course_consult_booking.json"
@@ -157,6 +157,15 @@
       "source_ref": "scenarios/course_consult_v1/knowledge/pricing.md",
       "source_version": "v1",
       "priority": 60
+    },
+    {
+      "fragment_id": "kb.course_catalog",
+      "scope": "evidence",
+      "title": "课程标识与可选时段",
+      "content": "「数据分析入门」course_id = data-analysis-101；可选时段：周二晚 20:00、周四晚 20:00（最近一期 2026-10-12 开班）。创建预约必须提供 course_id 与可选时段之一。",
+      "source_ref": "scenarios/course_consult_v1/knowledge/course_catalog.md",
+      "source_version": "v1",
+      "priority": 58
     },
     {
       "fragment_id": "kb.schedule",
