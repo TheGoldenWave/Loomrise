@@ -51,6 +51,8 @@ S1 将复杂业务 Agent 配置压缩为可审计的六层：`ContextSnapshot` �
 
 S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）、`activation_reason`、`source_ref`、`source_version`、`token_estimate` 和 `load_status`（loaded/skipped/expired/budget_capped）。加载与跳过都记录事件，便于区分“规则未命中”“上下文未加载”“检索无结果”和“模型误判”。S1 不实现自动摘要、长期记忆优化或基于评测结果的动态调参。
 
+长期记忆拟接入外部记忆内核，但方向是「受治理的 Context Pack 来源」，不新增第七层、也不改变上段的加载合同。候选与裁决见[用户记忆模块基石接入设计](MEMORY-FOUNDATION-DESIGN.md)（提案，待确认）：记忆内容一律作为带来源与有效期的片段进入 `evidence` 段并留证，不由外部系统把记忆混进提示词，也不授予权限。
+
 这六层是对实际 Agent 配置中阶段、路由、规则、工具和结果结构的公开抽象，不包含任何真实业务配置、内部标识或私有提示词。S1 只实现入站消息触发；`ServiceRequest` 保留可关联触发来源的字段，暂不实现定时器、条件触达或主动发送队列。
 
 ## 权威对象

@@ -25,6 +25,10 @@ Loomrise 是一个面向 **AI 产品经理、解决方案人员和小团队开�
 10. [命名决策](docs/NAMING.md)
 11. [初始化与摄入通道](docs/INTAKE-AND-INITIALIZATION.md)（提案，待确认：上传 vs 本地 CLI/MCP）
 12. [S2 评测门禁与改进循环提案](docs/S2-EVAL-GATE-PROPOSAL.md)（决策一已确认：Reserve 走 blind 批次、golden 只判不退步；同条件配对评估、改进 run 预算与状态机仍待确认）
+13. [用户记忆模块基石接入设计](docs/MEMORY-FOUNDATION-DESIGN.md)（提案，待确认：以 TencentDB Agent Memory 为记忆内核的选型、边界红线与分期；**未实现**）
+14. [S2 平台信息架构与主菜单定义](docs/S2-IA-NAV.md)（**S2 工作台设计的权威**：6 域 / 16 二级页 / 22 面；设计草案待定稿）
+15. [配置化后台启动方案](docs/S2-CONSOLE-KICKOFF.md)（执行方案：前置依赖、启动顺序 T0–T3、契约缺口、待确认五项）
+16. [S2 前端设计启动简报](docs/S2-FRONTEND-DESIGN-BRIEF.md)（设计立项汇总：页面与功能总表、页面关系、文档关联）
 
 ## S1 代码：怎么跑
 
