@@ -24,7 +24,7 @@
 理由：
 
 1. `Task` 在业界几乎专指"执行单元"（Celery/Airflow/AgentScope 皆是）。Loomrise 的对象可以包含多次 `Run`、多轮对话、多次工具调用，把执行单元和业务请求混用一个词，会让"这轮跑了几次""这个请求完了没有"永远说不清。
-2. `ServiceRequest` 是 CRM/ITIL 的既有词汇，目标用户（AI PM、解决方案、运营）无需学习；它天然带"提出—确认—履约—结案"的状态机，与 S1 的 `queued/running/waiting_confirm/cancelling/success/failed/cancelled` 对齐。
+2. `ServiceRequest` 是 CRM/ITIL 的既有词汇，目标用户（**AI 产品 / 产研**、解决方案、**策略运营**）无需学习；它天然带"提出—确认—履约—结案"的状态机，与 S1 的 `queued/running/waiting_confirm/cancelling/success/failed/cancelled` 对齐。
 3. 改名后词表不再含糊：`ServiceRequest`（业务请求）／`Run`（执行尝试）／`RunEvent`（执行事实）／`EvalCase`（评测样本）／`Task`（执行单元，只在上游适配器内）。
 4. 被否决的备选：`Case`（与评测样本撞名，且中文"案例"歧义）、`Ticket`/`WorkOrder`（偏人工工单，与 Agent 履约语义不符）、`Engagement`（行业黑话）。
 
