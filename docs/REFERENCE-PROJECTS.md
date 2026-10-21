@@ -1,17 +1,23 @@
-# Agent 交付工作台：参考项目分级与采用边界 v0.8
+# Agent 交付工作台：参考项目分级与采用边界 v0.14
 
-> 2026-09-27。本文件记录可以公开复述的候选清单；源码级与安装级验证的具体范围见[S1 验证结论与轻量适配](S1-VALIDATION-AND-ADAPTATION.md)。S1 精确安装、执行中取消、跨渠道及导出恢复已有确定性证据；真实模型/网页音频和运行级门禁仍待验证，见[S1 交付与验收](S1-BUILD-REPORT.md)。详细讨论和个人判断保留在本地工作区。
+> 2026-10-16 新增：Tencent Hy Memory 2.0 三层开源架构（Hy Memory 框架 / Hy-Memory-30A3B 模型 / MemHub 应用）已完成独立调研并给出采用裁决，列为记忆方向的**第二个具名候选**，与 TencentDB Agent Memory 并列、同条件对照；**未安装、未联调、未选定底座**。详见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)。同次调研确认 MemHub 属**搭建者个人层**工具，不是产品依赖；产品侧「业务用户记忆 + 专家记忆」的分工见[专家-用户记忆体系](EXPERT-USER-MEMORY-SYSTEM.md)。
+>
+> 2026-10-14。本文件记录可公开复述的参照与采用边界。新增方向已确认，完整网页客服与用户自有云快捷部署仍为规划，见[网页客服交付计划](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。源码级与安装级验证范围见[S1 验证结论与轻量适配](S1-VALIDATION-AND-ADAPTATION.md)。S1 精确安装、执行中取消、跨渠道及导出恢复已有确定性证据；真实网页音频与运行级门禁仍待验证，见[S1 交付与验收](S1-BUILD-REPORT.md)。Hindsight 已完成源码与文档核查、尚未运行；详见[智能体迭代能力分析](HINDSIGHT-ITERATION-ANALYSIS.md)。
 
 各项目是否提供 Agent 配置化后台、配置对象与交付侧重的逐项对比见[参考项目的 Agent 配置后台对比](AGENT-CONFIGURATION-COMPARISON.md)。
 
+Knocket 的折叠配置、配置旁预览、资料入口与安装反馈，以及 Loomrise 当前配置设计的优化需求，见[配置后台体验优化](CONFIGURATION-UX-OPTIMIZATION.md)（2026-10-14，体验原则已确认，具体布局/分期提案未实现）。该分析是 UI/产品参照；第三方 Agent 的统一 API、MCP + 配套 Skills、可选 CLI 与后台 harness 已进入[高优先级开发计划](AGENT-INTEGRATION-PLAN.md)，具体 SDK／Provider 与兼容性仍待实测，不改变既有在线运行候选。
+
+外部接入参照：MCP 官方 [Skills 扩展](https://modelcontextprotocol.io/extensions/skills/overview)提供发现与按需资源读取，host 实现与批准机制须逐项核验；外部使用指导不等同于内部业务 `SkillManifest` 或授权。后台通用 harness 候选参考 [Codex SDK](https://learn.chatgpt.com/docs/codex-sdk)和 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview)，仅用于创建、诊断、候选改进与治理辅助。先一 Provider 联调，再做可替换性对照；正式版本、产品使用方式、身份、隔离与成本记录待验证，本轮不安装或宣称已支持。
+
 ## 0. 已确认的产品前提
 
-- 核心使用者：**AI 产品 / 产研（搭建与对接）/ 解决方案人员 / 小团队开发者**；**策略运营**（对 Agent 整体效果负责，含人评与标注）是共同使用者和验收者。**一线客服 / 销售不进 Loomrise**——其操作面（实时接管 / 点踩 / 撤回）由业务应用自建（见[产品定义 §定位 §使用者分层](PRODUCT.md)）。
+- 工作台使用者：**AI 产品 / 产研（搭建与对接）/ 解决方案人员 / 小团队开发者**；**策略运营**负责效果、人评与标注。官方客服应用承载访客与一线坐席的实时回复、接管与坏例反馈，共享同一 `ServiceRequest/RunEvent`；业务方可以扩展或替换应用前端，不再要求全部自建（见[产品定义 §定位 §使用者分层](PRODUCT.md)）。
 - 独立定位：**从业务资料到可运行、可验收、可部署、可持续改进的 Agent 交付工作台**，而不是底层模型、聊天壳或上游框架的品牌分叉。
 - 展示场景：明确标注虚构的成人在线课程咨询；二手车预约用于验证复用。不得使用雇主、第三方或客户的未授权内容、内部 Prompt、真实个人数据。
 - 网页文字与网页语音同步做最小纵向切片，共享同一业务请求、权限、工具和结果。电话外呼是后续独立渠道。
-- 默认采用“本地应用 + 外部模型 API”降低试用门槛；完全离线是另一种配置，不是首版默认能力。
-- 产品形态决策：单一工作台、统一执行内核与分类适配器，首版单 Agent；具体接入和测评门禁见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
+- Lite 保留“本地应用 + 外部模型 API”试用方式；Server 规划提供可部署到用户自有云的客服服务。完全离线是另一种配置，不是默认能力。标准发行物与薄云模板共用业务合同，腾讯云、阿里云为优先候选，AWS、Azure 后续待验证。
+- 产品形态决策：交付工作台、官方网页客服应用、统一执行内核与分类适配器，执行以单 Agent 为主。覆盖已核的 Knocket 网页客服能力，再提供业务执行、验收与持续改进；具体接入和测评门禁见[产品形态与开放接入规范](PRODUCT-FORM-AND-INTEGRATION.md)。
 
 ## 1. 首选研究/试接项目
 
@@ -24,6 +30,8 @@
 | **P0-5** | **Microsoft SkillOpt + Alibaba skill-up**：受控优化与评测 | 受限文本修改、独立验证集、环境隔离、工具行为和报告 | 业务成功判定、模拟工具、真实副作用与人工审批；不能把研究 benchmark 当生产保证 | **机制参照；优化器无生产写权限**。同源方法论的 EvoOntology 已单独评估，只取评估与门禁机制，见[S2 评测门禁与改进循环提案](S2-EVAL-GATE-PROPOSAL.md) |
 | **P0-6** | **AG-UI**：前端事件协议 | 文字增量、工具状态、人工交接和自定义业务事件 | 最小事件子集、版本冻结、脱敏和投影成本 | **兼容目标**，不决定内部领域模型。已核 spec 1.0：31 个事件类型中**无人工确认/中断事件**，确认与取消只能走 `CUSTOM`；以 schema 协议版本字段为准，不以 `ag-ui-protocol` 包版本推断 |
 | **P0-7** | **可插拔 DecisionProvider**：混合决策 | 规则先过滤；必要时使用分类、评分或小型生成模型做选择、拒选和回退 | 分数类型、校准版本、延迟、成本和错误均需记录；无 Provider 时产品仍可运行 | **可选增强，不是首版前置条件** |
+| **P0-8** | **Hindsight**：有来源的记忆归纳与经验反思 | `retain → observation consolidation → recall/reflect`；支持证据关联、矛盾修正与长期结论刷新，可用于失败模式归纳和改进假设 | 只用脱敏且授权的运行摘要；bank 隔离、来源撤销、异步完成、成本与延迟需实测；与具名 TencentDB Agent Memory 候选同条件对照 | **重点机制参考，源码/文档已核、未联调**。不采用自动 LLM Wrapper 注入，不把 `reflect` 当真值或发布门禁；分析见[Hindsight 智能体迭代能力](HINDSIGHT-ITERATION-ANALYSIS.md) |
+| **P0-9** | **Tencent Hy Memory 2.0**：模型/框架/应用三层开源 | 三类记忆（聊天/工作/代码）的存储、更新与进化；冲突消解与版本链；专用记忆模型；跨工具个人记忆应用 | 只读 Adapter 同条件对照；工作/代码记忆与冲突消解是真实增量；适用条件可确定性求值；无鉴权多租户、图谱默认关、HTTP Server 无 token 校验 | **并列具名候选，源码/论文已核、极新（发布 1 天）、未联调**。**不采用其权重**（`hy_v3` 未发 modeling 代码、无量化、评测不可复现）；自动 reconcile **必须降级为候选生成器**；不 fork、不用 Proxy 注入、不暴露其 HTTP Server。裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md) |
 
 ### 渐进式上下文加载的参考判断
 
@@ -33,7 +41,7 @@
 - **AgentScope 等运行 SDK**：工具描述与工具结果通常按调用边界进入运行上下文，可借鉴“工具按需暴露、结果按需注入”；权限、确认和业务结果仍由 Loomrise `ExecutionService` 负责。
 - **MCP**：能力发现与资源读取天然支持先看声明、再取具体内容，可借鉴“元数据先行、内容后取”；外部声明不能直接授予 Loomrise 工具权限。
 - **SkillOpt / skill-up / SkillHone**：更接近技能选择、受限改动和历史证据管理，说明稳定规则与可优化文本应分离；它们不是 S1 的运行时上下文加载器，也不构成已验证的兼容承诺。
-- **长期上下文/记忆系统**：可作为受治理的 Context Pack 来源，适合后续摘要、检索和跨会话加载；不承担 Loomrise 的任务、权限、工具或发布权威。首个具名评估见[用户记忆模块基石接入设计](MEMORY-FOUNDATION-DESIGN.md)：结论是「适配器接入 + 只读取用」，并否决把记忆 blend 进 system prompt 的 Proxy 注入方式，因为它会与本节「每次加载可解释、留证」的要求冲突。
+- **长期上下文/记忆系统**：可作为受治理的 Context Pack 来源，适合后续摘要、检索和跨会话加载；不承担 Loomrise 的任务、权限、工具或发布权威。具名候选现为**两个并列**（2026-10-16 起）：**TencentDB Agent Memory**（L0–L3 记忆内核，MIT，108 接口，有 ACL 可见性模型）与 **Tencent Hy Memory 2.0**（聊天/工作/代码三类记忆，Apache-2.0，冲突消解与状态更新更强但无鉴权无多租户）。两者均采用「适配器 + 只读取用」，均否决把记忆 blend 进 system prompt 的 Proxy 注入（Hy Memory 的 hook 主动注入属同形态，即使工程细致也不采用）。**先冻结合同与故障集，再挑一个实测，不叠加多个内核。** 裁决见[既有内核提案](MEMORY-FOUNDATION-DESIGN.md)（TDAI，待确认）与[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)
 
 因此，Loomrise 的选择是“借鉴相邻模式，保持自己的执行合同”：S1 只做三段式加载和事件审计；S2 再验证更细的检索、摘要、缓存和质量门禁，并把 Skill 自进化限定为候选生成、独立评测和人工审批后的版本发布。当前这些判断属于架构参照，未完成兼容性或性能实测。
 
@@ -65,15 +73,23 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 
 | 项目 | 学习价值 | 当前不当主底座的原因或适用条件 |
 |---|---|---|
+| **Knocket（TRTC 控制台内网页客服）** | Widget、联系页、Inbox、联系人、AI 配置、FAQ/URL/File 摄入状态、转人工、通知、渠道、统计与 WebView 的产品体验 | 作为网页客服应用的功能覆盖参照，不继承其托管控制面或对象权威。2026-10-14 控制台界面与公开资料核查不等于真实渠道、知识索引或接管端到端验收；无代码复用或许可兼容承诺。Knocket 不等于 TRTC 语音 Agent，WhatsApp 等 PLANNED 项不计为已上线功能。覆盖范围与分期见[交付计划](CUSTOMER-SERVICE-DELIVERY-PLAN.md) |
 | **TencentCloud/Octop** | 自托管、多用户、Web／IM、Agent 管理体验 | 整体 fork 会增加产品模型、升级和品牌耦合；作为应用参照和紧急交付备选 |
 | **Dify / Langflow** | 模板、业务人员冷启动、知识与工作流体验 | 产品体验基准；不必对等建设全部画布，代码复用需另查许可 |
 | **LiveKit / LiveKit Agents** | WebRTC 房间、SIP 与电话能力 | 网页语音扩到多人媒体或电话时再评估；不与 Pipecat 同时作为默认主栈 |
 | **Omni-Interaction-Agent / Gander** | 全双工、改目标和过期结果处理 | 研究标杆；官方配置依赖较高资源，不进入普通 PC 默认部署 |
 | **Tencent/SkillHone** | 决策历史、版本审阅和提案持久化 | P1 产品参照；首版不强迫本地 Lite 安装 Git 工作台 |
-| **钉钉官方 Connector / Stream SDK** | 渠道事件、授权和消息去重 | 第二阶段验证具体宿主、接口类型与租户连接所有权 |
-| **长期上下文系统（可选外部系统）** | 经治理的 Context Pack 来源 | 不承担 Loomrise 的运行、Agent 配置、渠道或发布权威。首个具名候选为 **TencentDB Agent Memory**（L0–L3 记忆内核，MIT），采用「适配器 + 只读取用」，不用其 Proxy 注入、不 fork 代码；裁决与红线见[用户记忆模块基石接入设计](MEMORY-FOUNDATION-DESIGN.md)（提案，待确认） |
+| **钉钉官方 Connector / Stream SDK** | 渠道事件、授权和消息去重 | 作为 S4 其他渠道候选，具体宿主、接口类型与连接所有权待验证；S2-b 先做 Telegram/Email 授权沙盒 |
+| **长期上下文系统（可选外部系统）** | 经治理的 Context Pack 来源 | 不承担 Loomrise 的运行、Agent 配置、渠道或发布权威。具名候选为**两个并列**（2026-10-16 起，均未选定底座）：**TencentDB Agent Memory**（MIT，L0–L3 分层 + ACL 可见性）与 **Tencent Hy Memory 2.0**（Apache-2.0，工作/代码记忆与冲突消解更强）。均「适配器 + 只读取用」，均不用 Proxy/hook 注入，均不 fork。裁决与红线见[既有内核提案](MEMORY-FOUNDATION-DESIGN.md)与[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)（均为提案，待确认） |
+| **Tencent MemHub** | 本地个人记忆管理应用；跨工具记忆汇聚与实时同步；读/写双开关与 Broker 二次鉴权 | **属搭建者个人层工具，不是 Loomrise 产品依赖**。无鉴权多租户、本地明文 SQLite、抽取默认走托管端点。与产品侧「业务用户记忆 + 专家记忆」主体不同，见[专家-用户记忆体系 §1/§7](EXPERT-USER-MEMORY-SYSTEM.md)。若评估接入，**只允许工具按需拉取**，禁用 hook 主动注入 |
 
 排除项：研究性自我修改系统不直接用于生产配置；模型训练、音色克隆、数字人、批量营销外呼不进入首版。
+
+### Task 与用户上下文的补充参照（2026-10-14，未选型/未联调）
+
+[Task设计](TASK-SYSTEM-DESIGN.md)、[用户上下文设计](USER-CONTEXT-DESIGN.md)和[联合计划](TASK-MEMORY-INTEGRATION-PLAN.md)归并了获授权业务经验与开源官方机制。Temporal/DBOS仅作耐久执行、队列/幂等/取消的候选对照；LangGraph/LangMem参考线程与跨会话记忆分层、结构化profile和collection；Letta参考常驻/按需读取与版本化记忆。Hindsight/TencentDB Agent Memory保留既有候选，AgentScope保持当前在线运行基线。先合同与故障集，再一个Adapter/Provider实测，不叠加多内核或换底座。
+
+参考原文：[Temporal Activity](https://docs.temporal.io/activity-definition)、[Temporal取消](https://docs.temporal.io/activity-execution)、[DBOS Queues](https://docs.dbos.dev/python/tutorials/queue-tutorial)、[LangGraph Memory](https://docs.langchain.com/oss/python/concepts/memory)、[LangMem Concepts](https://langchain-ai.github.io/langmem/concepts/conceptual_guide/)、[Letta Memory](https://docs.letta.com/agent-sdk/memory)。最新官方能力与S1已锁构件分开；不采用框架自带计划/记忆作为Loomrise的任务、事实或授权权威。
 
 ## 3. 保持独立产品的四条规则
 
@@ -81,6 +97,8 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 2. **供应商依赖只在 Adapter**：AgentScope、Pipecat、Qwen、AG-UI、OpenTelemetry 和观测后端可替换；不沿用上游私有类型作为公开领域对象。
 3. **案例包是传播资产**：发布可以下载、导入和验证的虚构场景包，包含资料、期望行为、坏例和回放报告，明确数据为模拟。
 4. **传播围绕真实证据**：公开冷启动时间、任务成功、语音失败类型、前后对照与部署门槛；未运行的功能标记“规划”或“待验证”，不把仓库声明转成交付承诺。
+
+客服会话、联系人、坐席占用与 Widget 呈现属于客服应用；行业资料、FAQ、SOP、字段与工具绑定进入 `ScenarioPack`。核心继续掌握配置版本、权限、执行、结果、验收与发布。云接入模板只映射基础设施，不改变框架适配边界，也不成为业务状态权威。
 
 供应商“开放兼容”先指可版本化的接入合同，不意味着已实现多家供应商。MCP 或 OpenAPI 可以作为业务方自定义工具的入口候选，但必须经过 Loomrise 的权限、确认、幂等、沙盒回放和结果审计；第三方工具声明本身不是授权。
 
@@ -97,6 +115,7 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 
 ## Sources
 
+- Knocket 控制台入口：https://console.trtc.io/（2026-10-14 界面核查；不公开账户、凭据或私人材料）
 - AgentScope: https://github.com/agentscope-ai/agentscope
 - Pipecat: https://github.com/pipecat-ai/pipecat
 - Qwen Audio Agent: https://github.com/QwenAudio/qwen-audio-agent
@@ -112,3 +131,5 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 - AG-UI: https://github.com/ag-ui-protocol/ag-ui
 - Langfuse: https://github.com/langfuse/langfuse
 - OpenTelemetry GenAI: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai
+- Hindsight: https://github.com/vectorize-io/hindsight（MIT；核查 commit `3ca6a67`；机制与应用边界见[分析报告](HINDSIGHT-ITERATION-ANALYSIS.md)）
+- Tencent Hy Memory: https://github.com/Tencent-Hunyuan/Hy-Memory（Apache-2.0；2026-10-16 调研 main `fba347a`，发布 1 天、star 40、open issues 0；未安装未联调）· 模型 https://huggingface.co/tencent/Hy-Memory-30B-A3B（Apache-2.0，downloads 0）· 技术报告 arXiv:2610.22196；三层裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)

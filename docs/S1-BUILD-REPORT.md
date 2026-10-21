@@ -1,6 +1,6 @@
-# S1 交付与验收 v0.3
+# S1 交付与验收 v0.4
 
-状态：**真实模型（Coding Plan · `gpt-6-sol` 验收默认档）六路径 11/11 通过，离线 wheelhouse/哈希锁与 HTTP-SSE 消费已验证；S1 Gate 仍未全部通过**，2026-09-28。
+状态：**真实模型（Coding Plan · `gpt-6-sol` 验收默认档）六路径 11/11 通过，离线 wheelhouse/哈希锁与 HTTP-SSE 消费已验证；S1 Gate 仍未全部通过**。验收证据截至 2026-09-28；2026-10-13 同步不支持语音识别时的页面入口描述，未新增 S1 Gate 证据。
 本文件是 QA 对照用的验收文档：每条 Gate 指向可复述的证据或命令，不把规划写成已完成。
 真实模型的咨询/确认/拒绝/失败/取消/跨渠道与首响数字见 §4.2；**网页音频与浏览器实测仍为空**，只有脚本回放的时延/资源样本，见 §5。
 
@@ -174,7 +174,7 @@ PYTHONPATH=. .venv/bin/python scripts/live_model_check.py --model gpt-6-luna   #
 | 真实模型（改走 Coding Plan Responses API） | `local_config.py` + `build_model`（`OpenAIResponseModel`，默认 `gpt-6-sol`）+ `scripts/live_model_check.py` | **已实跑 11/11**：咨询/确认/拒绝/失败/取消/跨渠道六路径全通过，真实首响与单轮耗时见 §4.2；真实模型暴露的三处缺陷已修（见 §4.2）。凭据隔离：仓库外 `~/.config/loomrise/coding-plan.json`、0600、不覆盖、缺密钥不静默回退 |
 | 离线 wheelhouse 与哈希锁 | `scripts/build_offline.py`、`scripts/verify_offline.sh` | **通过**：92 个 wheel 逐条 SHA-256；干净环境 `--no-index --require-hashes` 安装 → `pip check` → 11/11 回放 + 自检全通过 → `--offline` 导出 → 第二个干净环境离线恢复 11/11。仅 macOS arm64 / CPython 3.13 |
 
-音频选型说明：**没有引入云端流式 ASR/TTS，也没有引入本地 ASR 运行时**。LifeSub 那套本地方案依赖桌面 Rust 运行时与模型下载，且不含 TTS；本轮先用浏览器原生中文识别与播报做零成本实机验证，代价是**能力跟随浏览器**（Chrome/Edge 可用；Safari 与 Firefox 支持不齐，不支持时录音按钮禁用）。这只是验证手段，不是最终形态——真实音频 Gate 仍要按 §5.2 用固定 STT/TTS 组合在浏览器外重测。
+音频选型说明：**没有引入云端流式 ASR/TTS，也没有引入本地 ASR 运行时**。LifeSub 那套本地方案依赖桌面 Rust 运行时与模型下载，且不含 TTS；本轮先用浏览器原生中文识别与播报做零成本实机验证，代价是**能力跟随浏览器**（Chrome/Edge 可用；Safari 与 Firefox 支持不齐，不支持时不展示录音按钮）。这只是验证手段，不是最终形态——真实音频 Gate 仍要按 §5.2 用固定 STT/TTS 组合在浏览器外重测。
 
 ### 历史记录（替代前，2026-09-27）
 

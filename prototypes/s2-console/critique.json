@@ -1,0 +1,22 @@
+{
+  "kind": "critique-panel",
+  "score": 4,
+  "axes": {
+    "clarity": {"score": 4, "notes": "业务名与工程合同分开；未决规则形状明确阻断，不冒充正式后台。"},
+    "hierarchy": {"score": 4, "notes": "六域侧栏、版本上下文与单一主动作；四段证据与两栏验收独立。"},
+    "typography": {"score": 4, "notes": "沿用 SF 字体；补长标识与内容换行、固定表格列及小屏单栏；完整多宽度未实测。"},
+    "motion": {"score": 4, "notes": "仅导航与按钮轻量过渡，尊重减少动态效果偏好。"},
+    "brand": {"score": 4, "notes": "使用指定中性表面与蓝色动作 tokens，无额外装饰色、图标堆叠或捏造指标。"}
+  },
+  "verification": {
+    "pages": 15,
+    "domAssertions": 596,
+    "result": "pass",
+    "renderedScreen": "screens/persona.html",
+    "viewportMatrix": "已补响应式规则并通过静态断言；10 个指定宽度的真实排版测量仍待验证",
+    "navigation": "遮罩关闭、Escape、Tab 循环、恢复焦点与遮罩去重通过 DOM 测试",
+    "primaryContrast": "默认 4.70:1，悬停及按下 5.57:1；主链接白字不被通用悬停覆盖",
+    "backend": "未接入",
+    "releaseGate": "缺独立改善证据，保持阻断"
+  }
+}

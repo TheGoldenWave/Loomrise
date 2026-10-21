@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototypes/s2-console/screens/boundary.html",
+  "entry": "prototypes/s2-console/screens/boundary.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-10-12T09:15:14.239Z",
+  "updatedAt": "2026-10-12T09:15:14.239Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

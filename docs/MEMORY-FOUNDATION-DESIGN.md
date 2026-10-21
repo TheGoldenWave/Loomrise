@@ -1,6 +1,8 @@
-# 用户记忆模块基石：TencentDB Agent Memory 接入设计 v0.1
+# 用户记忆模块基石：TencentDB Agent Memory 接入设计 v0.2
 
 状态：**提案，待确认**。2026-10-09。本文给出把 [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)（下称 **TDAI**）作为 Loomrise「用户记忆」模块基石的选型结论、边界裁决、分期路径与验收判据。**不代表已实现，也未运行任何 TDAI 服务或做过端到端联调。** 已确认的产品边界仍以[产品定义](PRODUCT.md)和[六层配置合同](CONFIGURATION-LAYERS.md)为准；阶段与 Gate 见[验证路线](ROADMAP.md)。
+
+> 2026-10-14 补充：本文件保留TDAI历史核查与供应商候选提案，正文“采用”表示当时推荐，不是已批准/已联调的正式选型。[用户上下文设计](USER-CONTEXT-DESIGN.md)管理记忆、画像和上下文模块职责，[联合计划](TASK-MEMORY-INTEGRATION-PLAN.md)安排TM工作包。旧M分期和参数仍是提案，具体Provider及映射未定；不得因本文件而跳过稳定主体、用途/撤销和严格时间合同。
 
 ## 0. 本文要解决的问题
 
@@ -87,14 +89,14 @@ TDAI Proxy 的工作方式是把记忆 blend 进 system prompt。INSTALLED.md �
 | 按场景恢复工作上下文 | 仅 `context_scope=task` 局部 | L2 scenario 文件树 |
 | 检索式回退 | 无 | BM25 + 向量 + RRF |
 | 记忆可见性与所有权 | 无 | `private`/`team`/`restricted`/`agent` + Owner |
-| 删除/撤销入口 | 无（`ContextFragment.valid_until` 未接线） | 上游 `*/delete`、`chat-memory/clear` |
+| 删除/撤销入口 | 已有带时区合法日期的过期选择；缺严格时间/主体/用途/撤销和长期记忆治理 | 上游 `*/delete`、`chat-memory/clear` |
 
 **结论：方向正确，能补真实空白，且不侵入 Loomrise 权威。**
 
 ### 2.4 必须承认的三处不匹配
 
 1. **提炼时机 vs 发布纪律冲突**。TDAI 的 L1→L2→L3 是**自动异步**的；而 [CONFIGURATION-LAYERS.md](CONFIGURATION-LAYERS.md) §7.4 与 [INTAKE-AND-INITIALIZATION.md](INTAKE-AND-INITIALIZATION.md) §6.2 要求「CLI 的产物一律是 `candidate`，不是 `published`」。**裁决：TDAI 自动提炼的记忆一律视为 `candidate`，进 `ContextFragment` 时 `sensitivity` 默认 `internal`、`activation_reason` 必填来源，永不自动进入已发布 `AgentVersion`。** 需要进配置的，必须经人工确认写成 `fragments`。
-2. **三元组隔离 vs Loomrise 的 tenant + 版本模型**。上游强制 `team_id + agent_id + user_id` 三元组（缺省回落 `default` 桶）。Loomrise 的隔离维度是 `tenant_id` + `agent_version`，且强调「禁止跨租户可见」。**裁决：映射 `team_id ← tenant_id`、`agent_id ← agent_version`、`user_id ← 业务用户标识`，且三元组必须显式传齐，禁止依赖 `default` 回落**（回落等于把不同租户的 L0 混进同一桶）。
+2. **三元组隔离 vs Loomrise 的 tenant + 版本模型**。上游强制 `team_id + agent_id + user_id` 三元组（缺省回落 `default` 桶）。Loomrise 的隔离维度是 `tenant_id` + `agent_version`，且强调「禁止跨租户可见」。**原候选映射**：`team_id ← tenant_id`、`agent_id ← agent_version`、`user_id ← 业务用户标识`。此映射尚未确认，会按版本分桶；需与稳定应用/服务作用域方案比较跨会话、跨版本连续性及权限。若沿用版本桶，必须显式登记经授权的迁移/读取政策。三元组必须传齐，禁止依赖 `default` 回落（回落等于把不同租户的 L0 混进同一桶）。
 3. **Python SDK 未发 PyPI**。两个候选包名均 404。**裁决：按 `LICENSE` 与 `_reference/README.md` 的既有规则，采用「链接或按文档重实现」路径——优先直接调用 MemoryCore v3 HTTP 接口（Loomrise 依赖里 `httpx==0.28.1` 已存在，满足上游 `httpx>=0.24.0`），暂不把未发布 SDK 引入 `requirements.txt`。** 若后续要引入，必须先在 [VERSION-PINS.md](../VERSION-PINS.md) 钉定来源 revision。
 
 ## 3. 边界红线（不可越界）
@@ -117,7 +119,7 @@ TDAI Proxy 的工作方式是把记忆 blend 进 system prompt。INSTALLED.md �
 
 - 产出本文档，确认 §2 选型结论与 §3 七条红线。
 - 明确隔离三元组映射、记忆写入是否进 `RunEvent`、TDAI 部署归属（谁运维、凭据谁管）。
-- **退出条件**：Jason 确认本文档；§6 待决策项逐条有结论。
+- **退出条件**：负责产品与架构的人员确认具体选型与合同；§6 待决策项逐条有结论。
 
 ### M1 · 只读适配器（最小可验证切片）
 
@@ -163,7 +165,8 @@ TDAI Proxy 的工作方式是把记忆 blend 进 system prompt。INSTALLED.md �
 3. **记忆是否进 `RunEvent`**：进则可审计但体积增大；不进则需独立的记忆事件流。
 4. **Prompt 模式**：`MEMORY_PROMPT_MODE` 有 `code`（默认，面向工程协作）与 `chat`（面向个人对话/persona 类记忆）。Loomrise 面向业务用户咨询，默认 `chat` 更合适，但需实测。
 5. **存储后端**：sqlite（零依赖，上游推荐上手）还是 MongoDB（实验特性，需 7.0+ mongot）。
-6. **是否与 Jason 个人知识库打通**：`/Users/goldenwave/KnowledgeBase/` 已有 L0–L3 分级体系。**默认不打通**（私人知识库与产品运行时数据边界必须显式），如需打通须单独立项并先过隐私分级。
+6. **是否接入个人知识库**：默认不打通。个人资产与产品运行时数据边界须显式；如需接入，单独立项并核验来源、用途与分享权限。
+7. **严格有效性与撤销**：当前S1已过滤带时区合法有效期，但格式异常返回未过期，无时区日期可能比较异常。接入前按TM-02校验显式时区、主体/用途/撤销；本轮没有修改代码或新增回归验证。
 
 ## 7. 与既有文档的关系
 

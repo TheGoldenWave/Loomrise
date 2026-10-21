@@ -35,8 +35,12 @@ private/
 
 # Local agent working state (session memory, scratch data)
 .workbuddy/
+.od-skills/
 
 # S1 运行产物与本地构建临时目录
 runs/
 .build/
 *.log
+
+# Local browser captures and QA logs
+.playwright-mcp/

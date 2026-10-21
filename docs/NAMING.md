@@ -1,6 +1,6 @@
-# Loomrise 命名决策 v0.3
+# Loomrise 命名决策 v0.4
 
-状态：已确认，2026-09-27。本版新增「对象命名裁决」：与上游 AgentScope 同名对象的冲突按"谁更准确"裁决，不因为项目刚立项就沿用初建命名。
+状态：S1 对象命名已确认，原裁决日期 2026-09-27。2026-10-14 补充 Task 体系的事项合同命名提案；新增合同未实现。与上游 AgentScope 同名对象的冲突按"谁更准确"裁决，不因为项目刚立项就沿用初建命名。
 
 项目名采用 **Loomrise**，本地目录与公开仓库使用同一名称。
 
@@ -50,6 +50,14 @@
 3. 自带 `AGUIProtocolMiddleware` 源码自述"per-instance state，不支持并发流"，且绑定上游私有事件模型。
 
 **但"不采用实现"不等于"不参考映射"**：AG-UI 事件映射可参照上游 `app/middleware/_protocol/_agui.py` 的 1:1 对照关系，实现放在 Loomrise 自己的投影层（`loomrise/adapters/projection.py`），投影输入是 `RunEvent`，不是上游事件。
+
+### 1.4 Task 体系与持久事项（2026-10-14，合同命名提案）
+
+产品可使用“Task 体系”表达运营策略与会话 TODO 的统一协调；新的持久服务义务暂称 `TaskItem`，候选为 `TaskProposal`，领取/调度尝试为 `TaskAttempt`。正式类名、ID 和事件字段在联合合同评审后登记，当前未加入 S1 代码。
+
+`TaskItem` 管未来义务、来源、计划、停止与协同；业务请求继续叫 `ServiceRequest`，实际执行仍通过 `ExecutionService/Outcome` 留证。上游模型内待办继续使用 Adapter 内部 `RuntimeTask/PlanTask`，不反向覆盖事项账本。现有 S1 的 `request_id` 与历史 Task→ServiceRequest 改名保持不变。
+
+详见[Task设计](TASK-SYSTEM-DESIGN.md)、[联合计划](TASK-MEMORY-INTEGRATION-PLAN.md)。这一补充不把裸 `Task` 类重新引入公共业务合同，也不宣称任何上游类型已兼容新事项模型。
 
 ## 2. 命名边界速查
 

@@ -1,0 +1,145 @@
+# Qwen-Audio-3.1-Realtime 架构对照与 Loomrise 对齐提案 v0.1
+
+状态：研究提案，2026-10-21。依据 Qwen Audio 公众号技术解读（2026-10-21）与 Loomrise 现行文档逐条对照，**未改动任何既有文档结论**；文中"建议动作"待 Jason 确认后才进入相应文档。上游演示效果与论文指标不等于 Loomrise 已复现的集成，沿用[实时语音协同验证计划](VOICE-COORDINATION-VALIDATION.md)的核验纪律。来源：技术解读（微信公众号 `ZbrsVtMyawrvKw04JQRZuw`）、技术报告 arxiv 2609.25176、项目主页 `qwenaudio.github.io/qwen-audio-3.1-realtime`、Voice Harness 仓库 `github.com/QwenAudio/qwen-audio-agent`。
+
+## 1. 结论
+
+**总判定：主干没偏，语音模态有三处真实偏移，外呼方向正确但缺一环。**
+
+Loomrise 现行方案里四个最核心的判断——任务台账唯一事实源、硬规则模型外执行、分层注入、前后台分流——与 Qwen-Audio-3.1-Realtime 给出的范式同向，且多数更严（Loomrise 多出人工审批、版本冻结、未知对账）。偏移不在这些主干上，而在**语音模态的交互契约层**：Qwen 把"是否/何时/如何说话"做成了模型能力加 Harness 策略的一等对象，Loomrise 还把它当作媒体适配器的工程细节。外呼的合规架构（独立 Gate、回执分层、`OutreachPolicy`）是对的且领先于 Qwen（后者根本没有外呼故事），但"通话中委派后台任务、结果按序回流"这一环没有架构级表述。
+
+| # | 判定 | 内容 |
+|---|---|---|
+| A1 | **对齐** | 任务台账唯一事实源 + "打断播报 ≠ 取消任务"：Loomrise 四种事实区分（停止播报/生成取消/后台任务确认取消/外部工具实际结果）比 Qwen 表述更细 |
+| A2 | **对齐** | 分层注入 + 安全红线：Qwen"核心规则/人设/记忆分层注入，角色设定与记忆无权逾越工具权限"≡ Loomrise 渐进式上下文加载 + 硬规则模型外 + 记忆不授予权限 |
+| A3 | **对齐** | 前后台分流原则：Loomrise 协同验证计划已有"前台低延迟简短回应/澄清，后台较长时间检索比较"的同构表述 |
+| A4 | **对齐** | MCP 作为工具种子：Qwen 自进化环境以开源工具 + MCP 服务为种子；Loomrise MCP 为自定义工具导入候选入口 |
+| D1 | **偏移** | 全双工决策层没有配置化落点：打断/插话/恢复播报/进展汇报节奏在六层配置里无家，语音 Gate 无对应验收口径 |
+| D2 | **偏移** | 语音模型选型与验收口径停在上一代：S1 网页语音是浏览器 Web Speech + 浏览器合成，Pipecat 是工程链路主线，但**原生全双工模型层没有作为命名候选进入路线**，Full-Duplex 类指标未进门禁 |
+| D3 | **偏移** | 前后台分工停留在"可选实验"：未升格为语音模态的规划能力，也未与 Task 体系的 `TaskAttempt`/后台执行接通（后者目前只服务治理产物） |
+| E1 | **可借** | 多粒度反馈（对话级/里程碑级/轮次级）显式化进评测合同 |
+| E2 | **可借** | 环境演化方法论（稳定加难/失败修环境/保留暴露弱点任务）进 EvalSet 运营 |
+| E3 | **可借** | 共情/语气维度进软质量人评与 Skill 表达风格 |
+| N1 | **不靠** | 自动自进化发布（GRPO 直发）：Loomrise 保留人工审批与版本冻结，这是交付工作台的合规立场 |
+| N2 | **不靠** | 把安全裁决交给模型内：硬规则继续模型外执行，全双工决策是交互策略不是安全边界 |
+
+## 2. 对照基准：这篇文章给的架构要点
+
+1. **双链路模型结构**：用户语音进两条链路——全双工决策模型结合音频、历史与系统状态，决定继续倾听/开始说话/停止播报/恢复播报；Speech-to-Text 模型承担语音理解后的内容生成；上下文感知语音渲染模块结合历史、声音线索与声学上下文生成流式语音。最终输出"不仅取决于准备说什么，也取决于当前是不是合适的说话时机"。
+2. **持续交互回路**：边听、边想、边说、边动并行，工具的异步反馈与用户新输入即时汇入回路。
+3. **Voice Harness 前后台分工**：前台实时对话 + 低延迟操作；复杂任务委派后台异步编排（规划—执行—观察—修正闭环）；**依任务性质而非调用次数划分**——即时闭环留前台，重计算/重探索剥离后台。
+4. **任务台账唯一事实源**：前台提交目标/约束/输入 → 编排运行时创建持久任务记录并返回受理事件 → 前台继续交流；阶段进展、上下文追加、权限审批、最终结果与任务锚定，按序回流前台；**打断播报不等于取消任务**。
+5. **分层注入与安全底线**：核心规则、人设画像、个人记忆分层注入；任何角色设定与历史记忆无权逾越工具权限与安全红线。
+6. **自进化环境**：开源工具 + MCP 服务为种子构建含业务规则与数据库的可执行环境；回放验证 → 多轮执行评分（终态达标/写入合规/确认核验与进展表达）→ 环境演化 → 多粒度 GRPO 反馈（对话级/里程碑级/轮次级）。
+7. **厂商自报指标**（仅作方向参考，引用须标注未经复现）：Audio MultiChallenge 52.21%（GPT-Realtime-2 50.33%）；EchoMind 共情 4.03（3.20）；多语言 BBA 88.1%（82.1%）；Full-Duplex-Bench v1.5 背景人声误响应率 13.0%（GPT-Realtime-2 72.0%）、附和场景响应延迟 1.700s（1.913s）、打断场景响应率 84.5%（83.5%）。
+
+## 3. 逐项对照
+
+| Qwen 架构组件 | Loomrise 现有落点 | 判定 |
+|---|---|---|
+| 全双工决策模型（是否/何时/如何说话） | 无对应对象。媒体适配负责"传输、流式音频、轮次、打断"（Pipecat 角色），六层配置无话轮策略落点 | **D1 偏移** |
+| 前台实时 + 后台异步编排 | [VOICE-COORDINATION-VALIDATION.md](VOICE-COORDINATION-VALIDATION.md) 拟验证的前后台分工（可选实验）；[TASK-SYSTEM-DESIGN.md](TASK-SYSTEM-DESIGN.md) `TaskAttempt`/后台 Worker 目前只承接治理产物（诊断/候选），不承接会话内长程业务任务 | **D3 偏移**（原则已在，地位未升） |
+| 任务台账唯一事实源 | `ServiceRequest/RunEvent/Outcome` + `TaskItem/TaskAttempt`；"打断播报≠取消"已落四种事实区分；unknown→reconciling 先对账 | **对齐（更严）** |
+| 分层注入（规则/人设/记忆） | 渐进式上下文加载（常驻基线→任务局部→按需证据）+ Harness 渐进披露 L0/L1/L2 + 记忆经治理才进 `ContextSnapshot` | **对齐（更严）** |
+| 角色设定/记忆不逾越工具权限与安全红线 | 硬规则模型外执行；专家记忆只能经 `ChangeProposal`；记忆不授予权限 | **对齐（更严）** |
+| 分工依任务性质而非调用次数 | 协同验证计划"简短回应/澄清 vs 较长时间检索、比较、任务建议"已是任务性质口径 | **对齐**（但停留实验） |
+| 自进化环境（回放验证/多轮评分/环境演化/多粒度 GRPO） | 固定评测集 + 配对回放 + 确定性裁决优先 + 人工审批发布；轮次信号在 `RunEvent`/`CaseNomination`，里程碑在 `TaskAttempt`，但**三粒度未显式化**，无环境演化方法论 | **部分对齐，E1/E2 可借** |
+| 上下文感知渲染/声音线索（共情） | 软质量人评（人评与修正页）无共情/语气固定维度；Skill/SOP 无表达风格配置点 | **E3 可借** |
+| MCP 服务为种子 | MCP 为自定义工具声明导入候选入口，导入后须映射 `ToolManifest` 并沙盒验证 | **对齐** |
+| 电话外呼 | 无 Qwen 对照物。Loomrise：S4 独立授权试点、`call_id` 回执分层、`OutreachPolicy` 随版本冻结、批量营销外呼排除 | **方向正确，缺通话内前后台协同表述（§5）** |
+
+## 4. 三处真实偏移
+
+### D1 全双工决策层没有配置化落点
+
+**现象**：Qwen 把"是否/何时/如何说话"做成模型能力 + Harness 策略，覆盖调用工具前是否说明、何时发起确认、执行中如何汇报进展。Loomrise 侧，打断/插话/恢复播报只存在于媒体适配与协同验证计划的指标清单里；六层配置（`ContextSnapshot/RequestRouting/Skill-SOP/HardRule/ToolPolicy/Outcome`）没有话轮策略的家。后果：一个为语音配置的 Agent 除了"带了个喇叭"之外，交互行为与文字 Agent 没有区别——正是 Qwen 打破的"线性时序依赖"。
+
+**为什么不是硬规则**：打断恢复、汇报节奏是交互策略，不是权限/安全边界。按 Loomrise 自己的规则（新增硬规则前先判断失败归因），它不该进 `HardRule`，也不该靠 Prompt 堆叠。
+
+**建议动作**（待确认后改 [CONFIGURATION-LAYERS.md](CONFIGURATION-LAYERS.md) 与语音 Gate）：
+1. 落点选 **Skill/SOP 扩展 + `AgentSpec` 模态作用域行为 profile**（与 `task_blueprints` 平行，暂名 `voice_interaction`）：话轮策略（何时说/何时等）、插话与恢复播报语义、确认时机、进展汇报节奏、静默语义。随 `AgentVersion` 冻结、评测、回滚。
+2. 明确声明：这是**模态交互契约，不是第七个业务配置层**；不改变六层执行顺序，只改变语音模态"何时发声"——与"文字和语音入口只改变输入输出适配"兼容，需补一句说明防止未来混淆。
+3. 语音 Gate 增加对应验收口径：打断恢复率、背景人声误响应率、附和场景延迟、首响（指标名参照 Full-Duplex-Bench v1.5，阈值测试前登记）。
+
+### D2 语音模型选型与验收口径停在上一代
+
+**现象**：[PRODUCT.md](PRODUCT.md) 记录 S1 网页语音为浏览器 Web Speech + 浏览器合成（非云端 ASR/TTS），真实音频可懂度、首响、打断恢复未验收；[REFERENCE-PROJECTS.md](REFERENCE-PROJECTS.md) 把 Pipecat v1.12.0 定为语音主线候选（工程链路：传输/轮次/打断插件），Qwen Audio Agent 为"架构参照 + 限时对照"（pinned `2b70ebc`，未做源码级验证）。但原生全双工模型（Qwen-Audio-3.1-Realtime、GPT-Realtime 类）作为**模型层候选**没有进入路线，Full-Duplex 类指标没有进门禁。风险：沿 ASR→LLM→TTS 管线做生产语音，等于用上一代交互架构参赛。
+
+**关键架构分叉**（这是本提案最需要 Jason 拍的点）：全双工决策的智能放哪——
+- **模型内**（Qwen 式）：实时模型原生决定话轮，harness 只做业务投影；
+- **harness 工程式**（Pipecat 式 smart turn detection + 自建播出回执）：模型仍可换，话轮逻辑自持。
+两者成本结构、可替换性、验收口径都不同。Pipecat 作为工程链路与实时模型 API 并不互斥（Pipecat 可作传输/编排层），但"只维护一条默认链路"的纪律要求先选定模型层再定工程层。
+
+**建议动作**（待确认后改 [VOICE-COORDINATION-VALIDATION.md](VOICE-COORDINATION-VALIDATION.md) 与 [REFERENCE-PROJECTS.md](REFERENCE-PROJECTS.md)）：
+1. 候选表增加全双工实时模型层（Qwen-Audio-3.1-Realtime、GPT-Realtime-2），Pipecat 明确退为工程链路/传输候选；刷新 Qwen Audio Agent pinned 版本并补源码级核对（文章发布日 2026-10-21 晚于现 pinned）。
+2. 退出门指标增加 Full-Duplex-Bench 式口径（打断响应率、背景人声误响应率、附和延迟、首响）与"失效结果不播报"的确定性检查，阈值测试前登记。
+3. 所有上游指标标注"厂商自报、未经 Loomrise 复现"。
+
+### D3 前后台分工停留在"可选实验"，未接通 Task 体系
+
+**现象**：Qwen 的 Voice Harness 把前后台分流做成运行时一等架构（委派→受理事件→后台闭环→按序回流），Task 台账是唯一事实源。Loomrise 协同验证计划有同构原则，但定位是"仅在基线暴露明确问题后才考虑"的可选实验，且以"双模型协同"框架表述；[TASK-SYSTEM-DESIGN.md](TASK-SYSTEM-DESIGN.md) 的后台执行（`TaskAttempt`/受限 Worker）目前只承接治理产物（诊断、候选），不承接**会话内长程业务任务**（如通话中"帮我比较这三个方案"）。客服/销售场景里后者才是高频需求。
+
+**建议动作**（待确认后改 [VOICE-COORDINATION-VALIDATION.md](VOICE-COORDINATION-VALIDATION.md) §拟验证的前后台分工、[TASK-SYSTEM-DESIGN.md](TASK-SYSTEM-DESIGN.md) §8）：
+1. 分工依据改写为任务性质口径（即时闭环留前台 / 重计算、重探索剥离后台），去掉"调用次数"暗示。
+2. 委派行为配置化：`task_blueprints`/Skill 声明哪些任务类型可委派后台、进展汇报节奏、结果有效期待遇；运行时复用已设计的交接合同（`request_id/run_id/任务代次/版本/有效期`，回流前校验任务仍有效、目标未变、权限确认仍成立，失效结果留审计不播报）——这部分设计已经就绪，缺的是从"实验"升格为"语音模态规划能力"并指定 Gate。
+3. 阶段建议：S2-c 网页语音验收内先验委派闭环，S4 外呼复用同一契约（见 §5）。
+
+## 5. 外呼架构专项
+
+### 5.1 现状判定：合规架构没偏，且领先于 Qwen
+
+现行口径（[PRODUCT.md](PRODUCT.md) 模态表、[PRODUCT-FORM-AND-INTEGRATION.md](PRODUCT-FORM-AND-INTEGRATION.md) 电话段、[TASK-SYSTEM-DESIGN.md](TASK-SYSTEM-DESIGN.md) §8）全部维持：电话 S4 独立授权试点；**不是网页语音的一个开关**；`call_id` 关联媒体事件与业务请求，拨打/振铃/接通/结束/转写/人工承接/业务结果分层记账，乱序去重；`OutreachPolicy`（渠道/身份/许可/时段/冷却/频次/去重/退订/回执）随 `AgentVersion` 冻结；批量营销外呼排除。Qwen 没有外呼叙事，这部分是 Loomrise 自己的正确设计，不动。
+
+### 5.2 缺的一环：通话中的前后台协同
+
+外呼比网页语音**更**需要 Voice Harness 模式：通话中用户说"你查一下再告诉我"，前台需要能委派后台检索/比对、按序回流播报，且打断播报不取消任务。现行文档只说了"网页语音的媒体交互可以异步进行，但业务请求仍进入同一 `ExecutionService`"（架构边界层面正确），但没有把"通话内委派"写成架构级能力——它是 D1/D3 在外呼场景的表现，不是新问题。
+
+### 5.3 目标架构（建议表述，待确认后写入 PRODUCT-FORM-AND-INTEGRATION.md 电话段）
+
+```text
+OutreachPolicy 触达候选 → 采用判定 → ServiceRequest（主动触发，trigger_kind 记录来源）
+   → 全双工语音媒体会话（与网页语音同一交互契约 D1；传输 PSTN/SIP、授权与回执独立）
+   → call_id 关联媒体事件与业务请求
+   → 通话内可委派后台任务（D3：任务性质分流，TaskAttempt 租约/代次）
+   → 进展与结果按序回流，失效不播报
+   → Outcome + 分层回执（接通≠完成）
+```
+
+要点：**交互契约与网页语音共享，传输与授权独立**。这正好落在既定的两根轴（模态轴 × 发起模式轴）上——共享的是模态轴的交互契约，独立的是发起模式轴的授权与频控。"电话不是网页语音的开关"继续指合规侧，不妨碍架构侧复用同一全双工契约。
+
+### 5.4 前置依赖与不动边界
+
+- 前置：D1（交互契约有落点）、D2（全双工模型选型落地）、Task 体系 `TaskAttempt`/代次/租约（设计已覆盖）。
+- 不动：S4 独立 Gate、批量营销外呼排除、录音与数据保留独立验证、`call_id` 回执分层、供应商"已接通"不等于目标完成。
+
+## 6. 可借鉴但不照搬
+
+1. **多粒度反馈显式化（E1）**：Qwen 的对话级/里程碑级/轮次级 GRPO 反馈，对应 Loomrise 的 `Case/Outcome`（任务级）、`TaskAttempt`（里程碑级）、`RunEvent`/`CaseNomination`（轮次级）。对象都在，但评测合同没写明三粒度。建议在 [S2-EVAL-GATE-PROPOSAL.md](S2-EVAL-GATE-PROPOSAL.md) 显式化：轮次信号供归因（路由/资料/加载/Skill/工具语义/硬规则六分法已有），里程碑信号供阶段裁决，任务级信号供发布门禁。**不引入自动 GRPO**，反馈只进候选与人工审定。
+2. **环境演化进 EvalSet 运营（E2）**：Qwen 的做法——稳定解决的任务加难度、持续失败的任务诊断并修复环境缺陷、保留暴露模型弱点的有效任务、能力边界案例指导后续生成——正是 Loomrise 评测集运营缺的方法论。建议写入评测门禁提案的 EvalSet 维护规则，零架构成本。
+3. **共情/语气维度（E3）**：EchoMind 式共情评分对客服/销售是核心软质量。建议：人评与修正页的维度集增加"共情与语气"（语音模态）；Skill/SOP 允许携带表达风格要求（软约束，非权限）。
+
+## 7. 刻意不靠（防止为对齐而对齐）
+
+1. **N1 自动自进化发布**：Qwen 用 GRPO 在沙箱内直接改进模型。Loomrise 是业务交付工作台，保留 `ChangeProposal` → 固定集回放 → 人工审批 → 发布/回滚链路。环境演化只借鉴其**评测集运营**含义（E2），不引入自动发布。
+2. **N2 安全裁决模型内化**：Qwen 的"角色设定与记忆无权逾越工具权限"靠训练与注入顺序保证；Loomrise 的硬规则在模型外确定性执行。全双工决策（何时说话）可以进模型/交互契约，**权限、确认、停止、去重继续模型外**。
+
+## 8. 待确认项与下一步
+
+建议确认后登记进 [S2-CONSOLE-KICKOFF.md](S2-CONSOLE-KICKOFF.md) §4 与 [S2-IA-NAV.md](S2-IA-NAV.md) §6.4：
+
+| # | 待确认项 | 影响 |
+|---|---|---|
+| Q1 | 全双工决策放模型内（Qwen/GPT-Realtime 式）还是 harness 工程式（Pipecat smart turn + 自建回执）？ | 语音选型、成本结构、可替换性；D2 的前置 |
+| Q2 | 语音交互契约落点：Skill/SOP 扩展，还是 `AgentSpec` 独立模态 profile（命名待定）？ | D1 的配置形状 |
+| Q3 | 前后台委派进哪个 Gate：S2-c 网页语音先验、S4 外呼复用（建议），还是另立？ | D3 的阶段安排 |
+| Q4 | "共情与语气"是否进人评与修正页固定维度集？ | E3 |
+| Q5 | REFERENCE-PROJECTS.md P0-3 刷新 Qwen Audio Agent pinned 版本并补源码级核对？ | D2 的候选表更新 |
+
+**下一步（Jason 确认后执行）**：按提案修改 VOICE-COORDINATION-VALIDATION.md（候选表 + 指标 + 分工升格）、CONFIGURATION-LAYERS.md（交互契约落点声明）、PRODUCT-FORM-AND-INTEGRATION.md（外呼目标架构段）、S2-EVAL-GATE-PROPOSAL.md（三粒度 + 环境演化）、README 阅读顺序与本文件交叉引用。既有文档只补引注与待确认项，不改结论。
+
+## 参考
+
+- 技术解读：Qwen Audio 微信公众号，2026-10-21（`mp.weixin.qq.com/s/ZbrsVtMyawrvKw04JQRZuw`）
+- 技术报告：arxiv 2609.25176；项目主页：`qwenaudio.github.io/qwen-audio-3.1-realtime`
+- Voice Harness：`github.com/QwenAudio/qwen-audio-agent`
+- Loomrise 侧依据：[配置合同](CONFIGURATION-LAYERS.md)、[架构](ARCHITECTURE.md)、[产品定义](PRODUCT.md)、[产品形态与开放接入](PRODUCT-FORM-AND-INTEGRATION.md)、[Task 设计](TASK-SYSTEM-DESIGN.md)、[语音协同验证计划](VOICE-COORDINATION-VALIDATION.md)、[参考项目](REFERENCE-PROJECTS.md)

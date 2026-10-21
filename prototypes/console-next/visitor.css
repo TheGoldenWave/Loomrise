@@ -1,0 +1,82 @@
+/* 访客体验沿用工作台系统字体、浅灰分区和蓝色主动作。 */
+.visitor-conversation { min-width: 0; }
+.visitor-chat { min-height: 280px; max-height: 580px; padding: 16px 0; scrollbar-gutter: stable; }
+.visitor-chat .chat-message { max-width: min(92%, 520px); flex-shrink: 0; }
+.visitor-chat .message-system { max-width: none; }
+.visitor-chat .empty-state { margin: auto 0; }
+.visitor-examples { padding-bottom: 4px; }
+.visitor-compose { padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.visitor-compose .field { margin-bottom: 0; }
+.visitor-compose-actions { justify-content: flex-start; }
+.visitor-compose-actions .btn { white-space: normal; }
+.visitor-quick-requests { padding: 10px 0 14px; }
+.visitor-quick-requests > .helper { display: block; margin-bottom: 7px; }
+.visitor-quick-request { max-width: 100%; height: auto; white-space: normal; text-align: left; }
+.visitor-attachments { display: grid; gap: 10px; margin-top: 10px; min-width: 0; }
+.visitor-attachment { overflow: hidden; min-width: 0; width: min(100%, 400px); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg); color: var(--fg-2); }
+.visitor-attachment-media { min-height: 44px; background: var(--surface-warm); }
+.visitor-attachment-media img, .visitor-attachment-media video { display: block; width: 100%; max-height: 240px; object-fit: contain; }
+.visitor-attachment-media img:not([src]) { display: none; }
+.visitor-attachment-media img[hidden], .visitor-attachment-media video[hidden] { display: none; }
+.visitor-attachment-media > .helper, .visitor-attachment-media > .notice { padding: 10px 12px; margin: 0; }
+.visitor-attachment-body { padding: 12px; min-width: 0; overflow-wrap: anywhere; }
+.visitor-attachment-body > strong { display: block; font-size: 13px; line-height: 1.5; }
+.visitor-attachment-body .helper { font-size: 12px; margin: 4px 0; }
+.visitor-attachment-body .button-group { margin-top: 10px; gap: 6px; }
+.visitor-attachment-body .btn { padding: 6px 9px; min-height: 32px; font-size: 12px; white-space: normal; }
+.visitor-attachment-body .notice { margin: 8px 0; }
+.visitor-file-name { overflow-wrap: anywhere; }
+.visitor-attachment-state { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 10px 0 0; }
+.visitor-evidence { padding-top: 12px; margin-top: 16px; }
+.visitor-evidence > summary { font-size: 13px; }
+.visitor-trace { list-style: none; padding: 0; margin: 10px 0; }
+.visitor-trace > li { padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+.visitor-trace > li:last-child { border-bottom: 0; }
+.visitor-trace strong { font-size: 12px; font-weight: 600; }
+.visitor-trace .helper { margin: 4px 0 0; }
+.visitor-run-evidence { border-top: 1px solid var(--border-soft); padding-top: 14px; }
+.visitor-run-evidence > h3 { margin-bottom: 6px; }
+.visitor-run-evidence .visitor-attachments { max-width: 440px; }
+.visitor-conversation-compact .visitor-chat { min-height: 180px; max-height: 480px; padding-bottom: 12px; gap: 10px; }
+.visitor-conversation-compact .chat-message { max-width: 100%; padding: 10px; }
+.visitor-conversation-compact .visitor-compose { padding-top: 12px; }
+.visitor-conversation-compact .visitor-compose label { font-size: 12px; }
+.visitor-conversation-compact .visitor-compose .textarea { font-size: 13px; }
+.visitor-conversation-compact .visitor-attachment-body { padding: 10px; }
+.visitor-conversation-compact .visitor-quick-requests { padding-top: 6px; }
+.visitor-conversation-compact .visitor-quick-requests .btn { font-size: 12px; padding: 6px 8px; }
+.visitor-conversation-compact .visitor-attachment-media img,
+.visitor-conversation-compact .visitor-attachment-media video { max-height: 180px; }
+.widget-preview-interactive .widget-body { padding: 14px; }
+.widget-preview-interactive .widget-body > p:first-child { margin-bottom: 12px; }
+.widget-preview-interactive .visitor-evidence { padding-top: 10px; margin-top: 12px; }
+.widget-preview-interactive .visitor-evidence > summary { font-size: 12px; }
+.widget-preview-interactive .visitor-evidence .helper { font-size: 11px; }
+.widget-visitor-preview .section-heading > div { min-width: 0; }
+.widget-visitor-preview .section-heading p { overflow-wrap: anywhere; }
+@media (max-width: 1023px) {
+  .visitor-attachment-body .btn { min-height: 44px; }
+}
+@media (max-width: 800px) {
+  .widget-visitor-layout { display: flex; flex-direction: column; }
+  .widget-visitor-layout > .editor-main,
+  .widget-visitor-layout > .visitor-preview-panel { width: 100%; }
+  .widget-visitor-layout > .visitor-preview-panel { order: -1; }
+  .has-side-panel[data-mobile-panel="editor"] .visitor-preview-panel { display: block; }
+}
+@media (max-width: 599px) {
+  .visitor-chat { min-height: 240px; max-height: 540px; }
+  .visitor-chat .chat-message { max-width: 100%; }
+  .visitor-attachment { width: 100%; }
+  .visitor-compose-actions > .btn-primary { flex: 1; }
+  .visitor-quick-requests .button-group { gap: 6px; }
+  .visitor-conversation-compact .visitor-chat { max-height: 480px; }
+  .widget-visitor-preview { padding: 14px; }
+}
+
+.widget-faq-button { width: 100%; text-align: left; cursor: pointer; line-height: 1.5; overflow-wrap: anywhere; }
+.widget-faq-button:hover { background: var(--surface); }
+.widget-faq-button:disabled { cursor: default; opacity: .65; }
+.widget-field-preview { margin-top: 10px; padding-top: 8px; }
+.widget-field-preview > summary { font-size: 12px; }
+@media (max-width: 1023px) { .widget-faq-button { min-height: 44px; } }

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototypes/s2-console/screens/experts.html",
+  "entry": "prototypes/s2-console/screens/experts.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-10-12T09:15:13.193Z",
+  "updatedAt": "2026-10-12T09:15:13.193Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

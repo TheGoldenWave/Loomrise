@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototypes/s2-console/screens/releases.html",
+  "entry": "prototypes/s2-console/screens/releases.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-10-12T09:15:15.337Z",
+  "updatedAt": "2026-10-12T09:15:15.337Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}
