@@ -1,6 +1,6 @@
-# Loomrise 文档总索引 v0.10
+# Loomrise 文档总索引 v0.11
 
-日期：2026-10-19。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-10-21（补 ElevenLabs 研究参照）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -17,6 +17,8 @@
 | 策略运营如何配置专家与主动服务 | [运营人员后台配置说明](../OPERATOR-CONFIGURATION-GUIDE.md) | 按当前十个模块和 Task/Harness 新增设计组织；本地原型与规划状态明确区分 |
 | 用户记忆、画像与上下文怎样治理 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 主体、字段证据、派生视图、装配/压缩、撤销及Provider对照；模块方向确认，未实现 |
 | 跨用户经验（专家记忆）怎样独立于用户记忆 | [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 三种记忆分工、五个身份合同、写入红线、版本兼容矩阵与 MEM-0–5 路线；方向与规划，未实现 |
+| 语音交互架构怎么定的、全双工指标怎么进门禁 | [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | 两项已定判断（D-01 落点、D-02 指标口径）与理由；指标操作表在验证计划 |
+| Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
 | 到底已经跑通哪些功能 | [S1 交付与验收](../S1-BUILD-REPORT.md)、对应原型报告 | 运行证据与局限；不能用规划或原型代替服务验收 |
@@ -39,7 +41,7 @@
 | 实现 MCP／CLI／Skills | Agent 接入开发计划 → [初始化与摄入](../INTAKE-AND-INITIALIZATION.md) → ARCHITECTURE → [参考项目](../REFERENCE-PROJECTS.md) | 同一应用服务、来源授权、revision／幂等、host 支持矩阵、无直接发布权 |
 | 设计评测、候选改进与治理 | [S2 范围决策](../S2-SCOPE-DECISIONS.md) → [S2 治理设计](../S2-DESIGN.md) → [评测提案](../S2-EVAL-GATE-PROPOSAL.md) → AGI-07–10 | blind 与作者隔离；已定 Gate Reserve 和待定预算／状态机分别核对 |
 | 修改执行合同、规则或依赖 | ARCHITECTURE → 六层合同 → S1 交付与验收 → VERSION-PINS → 对应代码／测试 | 先读 [硬规则提案](../HARD-RULE-MODEL.md) 的状态；目标合同不代表现有代码 |
-| 研究记忆、语音或新的 Provider | 参考项目 → 对应研究／验证提案 → 既有 Adapter 与阶段 Gate | 上游能力、源码核查、安装、真实联调是不同证据等级；记忆候选现为 TDAI 与 Hy Memory 两个并列，先合同后实测 |
+| 研究记忆、语音或新的 Provider | 参考项目 → 对应研究／验证提案或[决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) → 既有 Adapter 与阶段 Gate | 上游能力、源码核查、安装、真实联调是不同证据等级；记忆候选现为 TDAI 与 Hy Memory 两个并列，先合同后实测 |
 | 查旧设计或复现旧结果 | [历史归档索引](../archive/README.md) → 原文及其后继 | 核对记录时点，不把旧阶段名或原型菜单当现行规范 |
 
 ## 3. 文档分类与职责
@@ -76,7 +78,8 @@
 | [S2 界面约束](../S2-UI-DESIGN.md) | 证据分离、状态、内容维护；§9 补事项/披露/迁移约束 | 保留现行治理；新增规划未实现，原 §2 导航已归档 |
 | [配置后台启动方案](../S2-CONSOLE-KICKOFF.md) | 旧 K0/D3/K1 缺口；§8 为 CT-00–06 投影/蓝图/事项/证据/Diff 与联调交接 | 新工作包全待实施，沿用原生模块；CT/B/T 编号均不是新产品阶段，前端不关闭 TM/AGI Gate |
 | [前端设计启动简报](../S2-FRONTEND-DESIGN-BRIEF.md) | 当前基线、关系与 §11 Task/Harness 增量设计输入 | 旧 23 面仅职责对照；新工作面设计不等于页面或服务已交付 |
-| [硬规则表达模型](../HARD-RULE-MODEL.md) | 条件算子、裁决、冲突与字段形状 | 待确认提案；影响配置规格与 AgentSpec 正式合同 |
+| [编排视图前端方案](../S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 「流程」tab 三投影（图/清单/规则）的画布实现：技术选型 `@xyflow/react` v12（含四条理由与不选 X6/LogicFlow 的原因）、四视图态、端口与边界事件的画法、**九条**校验的界面落点、视图模型与组件树、无障碍；**RG-F1–RG-F12 已全部定案** | **未实施**；不新增二级页（修正 RG-1 的「17→18」）；依赖须登记 `VERSION-PINS` |
+| [硬规则表达模型](../HARD-RULE-MODEL.md) | 条件算子、裁决、冲突与字段形状；**v0.2 已裁决**：裁决/授权/路由去向/事项状态四层分开、条件深度 2 层（含边条件）、`state` 四窗口（`cycle` 默认） | 六问已闭合（§9），D3 与 K1 阻塞解除；**代码未同步**（`Behavior.ALLOW` 仍在 `contracts.py`） |
 | [S2 评测门禁提案](../S2-EVAL-GATE-PROPOSAL.md) | Gate Reserve、配对评估、预算与状态机 | §2 已确认且并入治理设计；§3–§5 仍待确认 |
 | [Task 体系设计](../TASK-SYSTEM-DESIGN.md) | 专家内版本蓝图、默认初始化、双来源事项、受限决策、迁移与工作集 | 方案已确定；§9 后台设计后继已登记，UI/服务未实现；ServiceRequest 不变，无共享策略库 |
 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 记忆/画像/上下文模块职责及治理、身份、检索/压缩、遗忘 | 模块方向已确认；接口/字段/Provider提案未实现，六层不变 |
@@ -85,8 +88,10 @@
 | [配置后台 Task/Harness 前端增量开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) | `console-next` 的版本内蓝图、服务事项/Inbox、渐进披露、情景预览与 Diff | 仅前端执行计划，CT-00–06 全待开始；不连接正式 API/调度/渠道，不改变服务 Gate |
 | [用户记忆内核提案](../MEMORY-FOUNDATION-DESIGN.md) | TDAI的历史核查与候选Adapter；模块职责转看用户上下文设计 | 供应商选型/映射待确认，未联调；“采用”是原推荐，不等于已批准或双内核选定 |
 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 腾讯 Hy Memory 2.0 框架/模型/应用三层的源码与论文实测、十个可抄机制、采用与排除裁决 | 与 TDAI 并列的第二个具名候选；发布 1 天、极新；不采用其权重与自动 reconcile；未安装未联调 |
-| [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 业务用户记忆/专家记忆/个人记忆分工、`Experience`最小字段、写入红线W1–W3、版本兼容矩阵、MEM-0–5 | 方向与规划；不改六层、不改§7.4无例外；字段与接口为提案，未实现 |
-| [实时语音协同验证计划](../VOICE-COORDINATION-VALIDATION.md) | 媒体前台／业务后台的可选对照 | 待锁版本、待实测；不新增业务内核或电话承诺 |
+| [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 业务用户记忆/专家记忆/个人记忆分工、`Experience`最小字段、写入红线W1–W3、**C6 证据样本不得自证**、版本兼容矩阵、MEM-0–5；**§10 已决**：`subject_id` 由业务映射提供 + `ephemeral` 兜底、不做身份合并 | 方向与规划；不改六层、不改§7.4无例外；字段与接口为提案，未实现；**I1 阻塞已解除** |
+| [实时语音协同验证计划](../VOICE-COORDINATION-VALIDATION.md) | 媒体前台／业务后台的可选对照；全双工指标登记口径（2026-10-21） | 待锁版本、待实测；不新增业务内核或电话承诺 |
+| [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | D-01 全双工决策落点（harness 工程式）、D-02 指标按业务语义拆解与阈值纪律 | 两项已定；Q2–Q4 与 Q6–Q10 未决（Q5 已完成）；不复制指标表，操作细节在验证计划 |
+| [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 技术报告 + 项目主页 + main `ca2e7e2` 源码：六组机制借鉴、不借五条、对 D-01/D-02/D1 的增量 | 研究提案；证据分四级；未安装、未联调、未核许可证兼容 |
 
 ### C. 实现证据与原型轮次
 
@@ -112,6 +117,9 @@
 | 文件 | 可用于什么 | 不能推出什么 |
 |---|---|---|
 | [Agent 配置后台对比](../AGENT-CONFIGURATION-COMPARISON.md) | 指定上游快照的配置对象与产品体验参照 | 不保证最新商业版能力或已在本项目接入 |
+| [ElevenLabs 配置方案与能力边界](../ELEVENLABS-AGENTS-ANALYSIS.md) | 托管式平台（ElevenAgents）的配置分层、工具执行时序、版本/分支/评测机制与能力边界；可借 30 项、不借 16 项、EL-1…EL-18 待确认；v0.3 含**后台逐页核验状态表**（§12.8），v0.4 §13 深挖 Workflow，**v0.5 扒齐 368 篇官方文档并回改三处过强表述（§0.4）** | 闭源托管，**无源码、未调用 API、无真实会话**；界面级（B+）与 API schema（A-）为主；不构成采用承诺或时延/并发/中文效果结论 |
+| [路由与能力单元](../ROUTE-GRAPH-AND-UNITS.md)（**提案 v0.3**） | 融合形态：**单元＝契约层＋内容层，收起是节点、展开是图**（可分形嵌套）；**五类连接**——跨层只走端口（跳步）或边界事件（异常/挂断/超时），裸跨层边禁；模型在闭集内选（margin + 可校验依据）；**八条**保存前校验（接口诚实 + 连接合法）；L0 逐层路由表摘要 + 虾宝五类知识档位映射；三类测试粒度不对称 | **未采纳**；RG-1–RG-7 已于 2026-10-22 定案（§11）；不改 `HARD-RULE-MODEL`／`CONFIGURATION-LAYERS`／`PRODUCT.md` 任何结论 |
+| [ElevenLabs 专题卷](../competitive/elevenlabs/00-INDEX.md)（9 卷） | 上面那份总纲的**事实层**：配置对象、编排、运行时与语音、知识与记忆、质量体系、渠道与电话、治理与合规、**88 项能力对照矩阵**、**CLI 与 MCP 的定位与落点** | 只承载事实与原文位置，**不产生结论**；判断一律回总纲 §8 / §9 |
 | [Hindsight 迭代机制分析](../HINDSIGHT-ITERATION-ANALYSIS.md) | 来源记忆、经验沉淀与改进假设的机制研究 | 已核源码不等于已联调、已选替代内核或效果提升 |
 | [历史归档索引](../archive/README.md) | 被替代设计的原文、时点与后继关系 | 归档内容不得作为新实现默认规格 |
 
@@ -141,6 +149,7 @@
 | TDAI旧提案写“采用”或SDK记忆模块 = 已决定/已实现用户记忆 | USER-CONTEXT-DESIGN + MEMORY-FOUNDATION-DESIGN逐节状态 | Provider仍候选；稳定主体、用途/时间/撤销和实际联调先过Gate |
 | Task体系 = 原ServiceRequest改回裸Task或上游待办类 | NAMING + TASK-SYSTEM-DESIGN | 产品可称Task体系，事项合同暂称TaskItem；请求与RuntimeTask/PlanTask分离 |
 | 高优先级接入／前端演示 = MCP、后台 Worker、云服务已支持 | AGI 计划 + 实际服务联调证据 | 当前为计划或本地原型，不增加兼容性声明 |
+| ElevenLabs 有分支／灰度／测试／护栏 = 等价于 Loomrise 的评测与审批门禁 | [ElevenLabs 分析](../ELEVENLABS-AGENTS-ANALYSIS.md) §3.3 / §4.4 / §5.1 · [治理卷](../competitive/elevenlabs/07-GOVERNANCE-COMPLIANCE.md) §3 | 它有版本与灰度机制，**有提案评审装置但不是强制门**（管理员可绕过，且合并不要求测试通过）；护栏是自然语言 + 轻量模型的概率判定且不校验工具参数，不能替代模型外确定性裁决 |
 
 ## 6. 新资料落点、归档与会话接力
 

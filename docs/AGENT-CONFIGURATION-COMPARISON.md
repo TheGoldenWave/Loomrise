@@ -1,6 +1,6 @@
-# 参考项目的 Agent 配置后台对比 v0.1
+# 参考项目的 Agent 配置后台对比 v0.2
 
-> 状态：公开资料与本地源码快照核对后的研究结论，非安装或端到端验收。2026-09-28。范围以[参考项目清单](REFERENCE-PROJECTS.md)为准；本地浅克隆索引记录于 2026-09-26，各条公开来源直接指向对应上游提交。上游持续变化，以下只表示所引版本可见的能力，不保证其他部署版本或商业版相同。
+> 状态：公开资料与本地源码快照核对后的研究结论，非安装或端到端验收。2026-09-28；2026-10-21 补入 ElevenLabs ElevenAgents（商业托管，仅文档级核对）。范围以[参考项目清单](REFERENCE-PROJECTS.md)为准；本地浅克隆索引记录于 2026-09-26，各条公开来源直接指向对应上游提交。上游持续变化，以下只表示所引版本可见的能力，不保证其他部署版本或商业版相同。
 
 ## 判定口径与结论
 
@@ -11,6 +11,7 @@
 | **有，产品型配置后台** | **Octop** | Web dashboard 管理多个 Agent；编辑页含名称、默认模型、运行参数、知识库、MCP、工作区等，并另有渠道、定时任务和连接器管理。面向个人/团队助手与多 Agent 使用。见[上游功能](https://github.com/TencentCloud/Octop/blob/c04aacc/README.md)与[编辑表单](https://github.com/TencentCloud/Octop/blob/c04aacc/dashboard/src/pages/Experts/components/EditAgentDrawer.tsx)。 |
 | **有，产品型配置后台** | **Dify** | Web dashboard 中配置应用、Prompt、模型、知识与工具；工作流使用可视画布，Agent 可作为聊天应用或工作流步骤。见[上游功能](https://github.com/langgenius/dify/blob/3960b571/README.md)。 |
 | **有，产品型配置后台** | **Langflow** | 可视化构建 Agent／Flow，组件连接模型、工具、检索等；在 playground 试运行，Flow 可作为 API／MCP 工具或 JSON 导出。见[上游功能](https://github.com/langflow-ai/langflow/blob/df9711c/README.md)。 |
+| **有，产品型配置后台（商业托管，非开源）** | **ElevenLabs ElevenAgents** | 网页后台配置 prompt、LLM、voice、tools（client／webhook／code／MCP／system）、knowledge base、workflow 图、guardrails、evaluation、data collection、widget，并有版本／分支／流量切分、测试、实验与分析。是完整的托管式 Agent 配置与发布台，但**闭源、不可自托管**，配置权威在平台账户。见[配置方案与能力边界](ELEVENLABS-AGENTS-ANALYSIS.md)。 |
 | **有服务 UI，但不等同于业务配置后台** | **AgentScope 2.0** | 除 SDK 外，另有 Agent Service 与示例 Web UI，覆盖会话、MCP／Skill Hub、资源共享、渠道和调度；Agent 定义与业务合同仍偏代码及服务组合。不能据此称它没有 Web UI，也不能把示例 UI 当作完整的业务 Agent 配置／发布台。见[Agent Service](https://github.com/agentscope-ai/agentscope/blob/a388212/README.md)与[示例页面](https://github.com/agentscope-ai/agentscope/tree/a388212/examples/web_ui/frontend/src/pages)。 |
 | **有设置界面，但不是通用 Agent 配置后台** | **Qwen Audio Agent** | WebUI／桌面端提供语音前台、后端 Agent 选择与常用设置；其后端 Agent 的模型、工具、Skill 等配置可以复用外部宿主。重点是实时语音与异步任务协同，而不是创建、评测、发布一套独立业务 Agent。见[功能](https://github.com/QwenAudio/qwen-audio-agent/blob/2b70ebc/README.md)与[配置说明](https://github.com/QwenAudio/qwen-audio-agent/blob/2b70ebc/docs/configuration.md)。 |
 | **有邻接后台，不是 Agent 配置后台** | **Langfuse** | Web 产品管理 Prompt、版本、数据集、实验、Trace，并提供 Playground；不负责定义整个 Agent 的权限、工具执行、业务结果和发布。见[上游功能](https://github.com/langfuse/langfuse/blob/fd5c9ee/README.md)。 |
@@ -20,6 +21,8 @@
 | **无此类后台，研究／协议型** | **Omni-Interaction-Agent (Gander)、AG-UI** | 前者是全双工交互研究与运行样例；后者是前后端 Agent 事件协议及示例，不是替用户管理 Agent 配置的产品。见 [Gander](https://github.com/Omni-Interaction-Gander/Omni-Interaction-Agent)、[AG-UI](https://github.com/ag-ui-protocol/ag-ui)。 |
 
 清单中的 **OpenTelemetry GenAI** 是观测语义约定，**DecisionProvider** 是 Loomrise 的可选适配边界，**钉钉 Connector／Stream SDK** 是渠道接入：它们都不是与 Octop 等同级的 Agent 配置产品。不能因为 Langfuse、SkillHone 或 SkillOpt “有后台／WebUI”，就将它们计为“有 Agent 配置化后台”。
+
+**ElevenLabs 单独说明**：它是本表中唯一的**商业托管服务**（不是开源仓库），因此不参与"源码快照级"的能力比较，也无法核对实现细节。列入本表只为回答一个具体问题——**"配置对象与发布机制做到什么程度算完整"**。它给出两个其他项目都没有的参照：① 配置被显式切成"随版本冻结"与"随实例固定"两组；② 分支 + 确定性流量切分 + 字段级 diff 的发布机制。但它**没有审批门**，合并或改流量即上线，这一点不能作为 Loomrise 的目标。
 
 ## 配置部分：共同点和差异
 

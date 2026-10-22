@@ -1,5 +1,7 @@
-# Agent 交付工作台：参考项目分级与采用边界 v0.14
+# Agent 交付工作台：参考项目分级与采用边界 v0.15
 
+> 2026-10-21 新增：**ElevenLabs ElevenAgents** 已单独调研并列为**重点参考（P0-10）**——托管式全栈 Agent 平台的配置对象模型、工具执行时序、版本/测试机制三处最值得对照；**无源码**；已注册免费账户做过三轮后台界面走查（B+），**未调用 API**；结论为文档级（B）+ 界面级（B+）+ API 契约级（A-），详见[ElevenLabs 配置方案与能力边界](ELEVENLABS-AGENTS-ANALYSIS.md)。新增待确认项 EL-1…EL-5 登记在该文件 §9，均不阻塞出稿。同次调研不改本文件既有条目的裁决。
+>
 > 2026-10-16 新增：Tencent Hy Memory 2.0 三层开源架构（Hy Memory 框架 / Hy-Memory-30A3B 模型 / MemHub 应用）已完成独立调研并给出采用裁决，列为记忆方向的**第二个具名候选**，与 TencentDB Agent Memory 并列、同条件对照；**未安装、未联调、未选定底座**。详见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)。同次调研确认 MemHub 属**搭建者个人层**工具，不是产品依赖；产品侧「业务用户记忆 + 专家记忆」的分工见[专家-用户记忆体系](EXPERT-USER-MEMORY-SYSTEM.md)。
 >
 > 2026-10-14。本文件记录可公开复述的参照与采用边界。新增方向已确认，完整网页客服与用户自有云快捷部署仍为规划，见[网页客服交付计划](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。源码级与安装级验证范围见[S1 验证结论与轻量适配](S1-VALIDATION-AND-ADAPTATION.md)。S1 精确安装、执行中取消、跨渠道及导出恢复已有确定性证据；真实网页音频与运行级门禁仍待验证，见[S1 交付与验收](S1-BUILD-REPORT.md)。Hindsight 已完成源码与文档核查、尚未运行；详见[智能体迭代能力分析](HINDSIGHT-ITERATION-ANALYSIS.md)。
@@ -25,13 +27,14 @@ Knocket 的折叠配置、配置旁预览、资料入口与安装反馈，以及
 |---|---|---|---|---|
 | **P0-1** | **AgentScope 2.0**：文本与工具运行 SDK | Agent、工具调用、状态、权限／人工确认、部署与事件扩展 | 固定稳定版；能否按版本输出结构化事件、支持暂停恢复和人工接管；开发版能力不等于稳定承诺 | **首选 SDK 集成候选**，不 fork 整个平台。S1 基线固定 **main 快照 `a388212`**（源码版本字符串 2.0.8，Apache-2.0；**不是发行 tag `v2.0.8`/`c7d8e31`**，见 [`VERSION-PINS.md`](../VERSION-PINS.md)）。源码级与安装级验证均已通过，S1 代码已跑通。适配点确认为 `MiddlewareBase` + `reply_stream` 事件投影。原生压缩/注入只可由 Loomrise 适配器编排并留证（S1 先关闭，长期收编）；业务 `ServiceRequest`/`SkillManifest` 留 Loomrise，自建 `unknown` 结果态。上游 `app/` 服务层（含 IM channel 与 ag-ui 中间件）不采用，AG-UI 只参考映射 |
 | **P0-2** | **Pipecat**：网页语音工程骨架 | WebRTC／WebSocket、STT/LLM/TTS、打断、轮次和可观测插件 | 一条中文网页语音链路、打断与播出回执、统一 RunEvent、独立 Voice Worker | **语音主线候选**，先用一种供应商组合。固定 **v1.12.0**（BSD 2-Clause）：中断帧、轮次策略、观测挂点、OTel turn span 均已源码级验证；缺口：**无客户端设备级播出回执**，"已确认播出"须自建 |
-| **P0-3** | **Qwen Audio Agent**：前台语音与后台任务样本 | 实时会话、异步任务、取消确认、事件回流和 WebRTC | 能否接同一业务规则、状态、工具与成本账本 | **架构参照 + 限时对照**，不直接套用整套助手（本轮未做源码级验证） |
+| **P0-3** | **Qwen Audio Agent**：前台语音与后台任务样本 | 实时会话、异步任务、取消确认、事件回流和 WebRTC；**双层状态投影、重启恢复矩阵、播报窗口与打断分流、进度节流、记忆准入校验、确定性门禁五维** | 能否接同一业务规则、状态、工具与成本账本 | **架构参照 + 限时对照**，不直接套用整套助手。固定 main **`ca2e7e2`**（2026-10-21，较原参照 `2b70ebc` 新增 31 提交）：**源码级已核**任务状态与恢复、播报窗口与打断分流、记忆运行时同步快照、门禁维度（证据分级见[源码研读](QWEN-AUDIO-AGENT-HARNESS-STUDY.md)）；**未安装、未联调、未核许可证兼容** |
 | **P0-4** | **Langfuse + OTel GenAI**：追踪与评测 | 评分、数据集、实验 UI、OpenTelemetry 导出 | 单机安装负担与数据边界；Lite 可只保存自己的 RunEvent，Langfuse 可选 | **规范先行；完整服务非单机强依赖**。已核：Langfuse 4.46.0 仅接收 OTLP traces（自托管含 6 个服务，`ee/` 另许）；**GenAI 语义约定处于实验/迁移期**，须自 pin 与自持属性映射 |
 | **P0-5** | **Microsoft SkillOpt + Alibaba skill-up**：受控优化与评测 | 受限文本修改、独立验证集、环境隔离、工具行为和报告 | 业务成功判定、模拟工具、真实副作用与人工审批；不能把研究 benchmark 当生产保证 | **机制参照；优化器无生产写权限**。同源方法论的 EvoOntology 已单独评估，只取评估与门禁机制，见[S2 评测门禁与改进循环提案](S2-EVAL-GATE-PROPOSAL.md) |
 | **P0-6** | **AG-UI**：前端事件协议 | 文字增量、工具状态、人工交接和自定义业务事件 | 最小事件子集、版本冻结、脱敏和投影成本 | **兼容目标**，不决定内部领域模型。已核 spec 1.0：31 个事件类型中**无人工确认/中断事件**，确认与取消只能走 `CUSTOM`；以 schema 协议版本字段为准，不以 `ag-ui-protocol` 包版本推断 |
 | **P0-7** | **可插拔 DecisionProvider**：混合决策 | 规则先过滤；必要时使用分类、评分或小型生成模型做选择、拒选和回退 | 分数类型、校准版本、延迟、成本和错误均需记录；无 Provider 时产品仍可运行 | **可选增强，不是首版前置条件** |
 | **P0-8** | **Hindsight**：有来源的记忆归纳与经验反思 | `retain → observation consolidation → recall/reflect`；支持证据关联、矛盾修正与长期结论刷新，可用于失败模式归纳和改进假设 | 只用脱敏且授权的运行摘要；bank 隔离、来源撤销、异步完成、成本与延迟需实测；与具名 TencentDB Agent Memory 候选同条件对照 | **重点机制参考，源码/文档已核、未联调**。不采用自动 LLM Wrapper 注入，不把 `reflect` 当真值或发布门禁；分析见[Hindsight 智能体迭代能力](HINDSIGHT-ITERATION-ANALYSIS.md) |
 | **P0-9** | **Tencent Hy Memory 2.0**：模型/框架/应用三层开源 | 三类记忆（聊天/工作/代码）的存储、更新与进化；冲突消解与版本链；专用记忆模型；跨工具个人记忆应用 | 只读 Adapter 同条件对照；工作/代码记忆与冲突消解是真实增量；适用条件可确定性求值；无鉴权多租户、图谱默认关、HTTP Server 无 token 校验 | **并列具名候选，源码/论文已核、极新（发布 1 天）、未联调**。**不采用其权重**（`hy_v3` 未发 modeling 代码、无量化、评测不可复现）；自动 reconcile **必须降级为候选生成器**；不 fork、不用 Proxy 注入、不暴露其 HTTP Server。裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md) |
+| **P0-10** | **ElevenLabs ElevenAgents**：托管式全栈 Agent 平台的**配置对象模型与交付闭环** | ① 配置分层：`version` 不可变快照，**显式区分「随版本冻结」与「随实例固定」**两组设置；② **工具执行模式枚举**（immediate / pre-tool speech / post-tool speech / async）与"副作用不得先于播报"的时序；③ 版本/分支/字段级 diff/确定性流量切分；④ 测试三分类 + 工具 mock + 概率化 pass rate + 失败分桶；⑤ 评测三值 `success/failure/unknown`；⑥ 护栏退出动作与 streaming/blocking 的延迟—漏出权衡 | 能否接同一业务规则、权限、工具与成本账本；**它是闭源托管服务，无源码、无自托管**，故只能作对照与外部 Provider 候选，不能作底座 | **重点参考（形态重叠最深的外部产品）**：最值得对标的是配置对象模型与工具时序，**不是**它的验收方式。**必须明确的四条边界**：**没有把记忆做成独立对象**（KB 有 agent 级 `Memory (Alpha)`；per-agent 有 `user memories` 设置但官方零文档）· **有提案评审装置但不是强制门**（≥1 名非作者批准、管理员可绕过，且**合并不要求测试通过**——"测试必须过"被官方列为未来几周计划）· Custom Guardrail 是自然语言 + 轻量模型的概率判定，且**不校验工具参数** · Widget 必须公开且关闭鉴权（补偿手段：签名 URL + 域名白名单）。**未调用 API、未跑真实会话、未测时延/并发/中文识别**；待确认项 EL-1…EL-5 见[分析 §9](ELEVENLABS-AGENTS-ANALYSIS.md) |
 
 ### 渐进式上下文加载的参考判断
 
@@ -41,6 +44,7 @@ Knocket 的折叠配置、配置旁预览、资料入口与安装反馈，以及
 - **AgentScope 等运行 SDK**：工具描述与工具结果通常按调用边界进入运行上下文，可借鉴“工具按需暴露、结果按需注入”；权限、确认和业务结果仍由 Loomrise `ExecutionService` 负责。
 - **MCP**：能力发现与资源读取天然支持先看声明、再取具体内容，可借鉴“元数据先行、内容后取”；外部声明不能直接授予 Loomrise 工具权限。
 - **SkillOpt / skill-up / SkillHone**：更接近技能选择、受限改动和历史证据管理，说明稳定规则与可优化文本应分离；它们不是 S1 的运行时上下文加载器，也不构成已验证的兼容承诺。
+- **工作流子节点（ElevenLabs）**：子 agent 切换时会重建编排对象，上下文保留但**知识与工具选择性暴露**，官方自己把"子 agent 之间看不到彼此的资料"称为知识孤岛并作为代价提示。可借鉴"按阶段只暴露该阶段相关知识/工具"，同时记住它的反面：分阶段隔离本身会制造覆盖盲区。
 - **长期上下文/记忆系统**：可作为受治理的 Context Pack 来源，适合后续摘要、检索和跨会话加载；不承担 Loomrise 的任务、权限、工具或发布权威。具名候选现为**两个并列**（2026-10-16 起）：**TencentDB Agent Memory**（L0–L3 记忆内核，MIT，108 接口，有 ACL 可见性模型）与 **Tencent Hy Memory 2.0**（聊天/工作/代码三类记忆，Apache-2.0，冲突消解与状态更新更强但无鉴权无多租户）。两者均采用「适配器 + 只读取用」，均否决把记忆 blend 进 system prompt 的 Proxy 注入（Hy Memory 的 hook 主动注入属同形态，即使工程细致也不采用）。**先冻结合同与故障集，再挑一个实测，不叠加多个内核。** 裁决见[既有内核提案](MEMORY-FOUNDATION-DESIGN.md)（TDAI，待确认）与[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)
 
 因此，Loomrise 的选择是“借鉴相邻模式，保持自己的执行合同”：S1 只做三段式加载和事件审计；S2 再验证更细的检索、摘要、缓存和质量门禁，并把 Skill 自进化限定为候选生成、独立评测和人工审批后的版本发布。当前这些判断属于架构参照，未完成兼容性或性能实测。
@@ -118,7 +122,7 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 - Knocket 控制台入口：https://console.trtc.io/（2026-10-14 界面核查；不公开账户、凭据或私人材料）
 - AgentScope: https://github.com/agentscope-ai/agentscope
 - Pipecat: https://github.com/pipecat-ai/pipecat
-- Qwen Audio Agent: https://github.com/QwenAudio/qwen-audio-agent
+- Qwen Audio Agent: https://github.com/QwenAudio/qwen-audio-agent （main `ca2e7e2`，2026-10-21 源码级核对；机制借鉴清单见[研读](QWEN-AUDIO-AGENT-HARNESS-STUDY.md)）；技术报告 arXiv:2609.25176v2（2026-09-24）
 - Octop: https://github.com/TencentCloud/Octop
 - Dify: https://github.com/langgenius/dify
 - Langflow: https://github.com/langflow-ai/langflow
@@ -133,3 +137,4 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 - OpenTelemetry GenAI: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai
 - Hindsight: https://github.com/vectorize-io/hindsight（MIT；核查 commit `3ca6a67`；机制与应用边界见[分析报告](HINDSIGHT-ITERATION-ANALYSIS.md)）
 - Tencent Hy Memory: https://github.com/Tencent-Hunyuan/Hy-Memory（Apache-2.0；2026-10-16 调研 main `fba347a`，发布 1 天、star 40、open issues 0；未安装未联调）· 模型 https://huggingface.co/tencent/Hy-Memory-30B-A3B（Apache-2.0，downloads 0）· 技术报告 arXiv:2610.22196；三层裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)
+- ElevenLabs ElevenAgents（**闭源托管，无可 pin 的源码**）：产品页 https://elevenlabs.io/zh/agents/ai-customer-support · 文档 https://elevenlabs.io/docs/eleven-agents/overview（2026-10-21 访问；未开户、未调用 API、未实测）· 编排引擎说明 https://elevenlabs.io/zh/blog/unpacking-elevenagents-orchestration-engine · 语音能力与"无内置跨通话记忆" https://elevenlabs.io/blog/voice-agent-capabilities；配置与边界见[ElevenLabs 配置方案与能力边界](ELEVENLABS-AGENTS-ANALYSIS.md)

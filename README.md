@@ -53,9 +53,11 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
+| 编排图在后台怎么落地 | [编排视图前端方案](docs/S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 流程 tab 三投影（图/清单/规则）；`@xyflow/react` v12；坐标不持久化；八条校验的界面落点 |
+| 客服/销售的路由策略怎么配 | [路由与能力单元](docs/ROUTE-GRAPH-AND-UNITS.md)（**提案 v0.3**） | 单元＝契约层＋内容层，收起是节点、展开是图；跨层只走**端口**（跳步）与**边界事件**（异常）；LLM 在闭集里选 + margin 与可校验依据；八条保存前校验；RG-1–RG-7 已定 |
 | 评测、候选改进、审批与回滚 | [S2 治理设计](docs/S2-DESIGN.md) | 范围决策与评测提案的已定／待定部分 |
 | 已实现什么、怎样复现 | [S1 交付与验收](docs/S1-BUILD-REPORT.md)、[版本钉](VERSION-PINS.md) | 代码、测试、安装与运行证据；各轮原型看对应报告 |
-| 选型、竞品、记忆与语音研究 | [参考项目与采用边界](docs/REFERENCE-PROJECTS.md) | 配置对比、记忆／迭代分析与验证提案 |
+| 选型、竞品、记忆与语音研究 | [参考项目与采用边界](docs/REFERENCE-PROJECTS.md) | 配置对比、记忆／迭代分析、语音验证与[语音架构决策记录](docs/VOICE-ARCHITECTURE-DECISIONS.md)；Qwen Audio 的机制借鉴见[源码研读](docs/QWEN-AUDIO-AGENT-HARNESS-STUDY.md)；ElevenLabs 托管平台的配置对象与能力边界见[分析](docs/ELEVENLABS-AGENTS-ANALYSIS.md)与[9 卷专题](docs/competitive/elevenlabs/00-INDEX.md)（368 篇官方文档原文支撑 + 88 项能力对照矩阵） |
 | 旧方案为什么不再适用 | [历史归档索引](docs/archive/README.md) | 原版本、替代范围、现行后继；历史证据仍保留 |
 
 ## 新 Agent 如何接手

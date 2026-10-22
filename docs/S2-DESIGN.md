@@ -57,7 +57,7 @@ Reserve 取 `blind` 批次而非从 `golden` 切割：`golden` 只有 50+ 例且
 - `ChangeProposal` 增加：`origin`（`system_generated` / `human_edit`）、`risk_tier`（低风险 / 高风险）、`merged_source_cases`（按共同原因归并的来源案例，保留逐例追溯）、`policy_profile_ref`、`canary_plan`。
 - `EvalResult` 增加：`case_set_version`、`policy_profile_version`、`threshold_snapshot`。**回放报告必须写明所用的案例集版本与档位版本**，否则历史结论不可比。
 - `SkillManifest`：新建 / 拆分 / 合并时，适用条件、退出条件与转人工条件成为**必填字段**并做 Schema 校验。
-- `Case` 增加：真值审定记录（谁、何时、依据）、归档状态（归档后保留历史判定，不再参与门禁），以及 `usage`（`diagnosable` / `gate_only`）与 `batch_id`（所属批次，用于批次消费与 `consumed` 标记）。
+- `Case` 增加：真值审定记录（谁、何时、依据）、归档状态（归档后保留历史判定，不再参与门禁），以及 `usage`（`diagnosable` / `gate_only`）与 `batch_id`（所属批次，用于批次消费与 `consumed` 标记）。**2026-10-21 待并入**：`origin`（来源标记，见[评测门禁提案 §5.5](S2-EVAL-GATE-PROPOSAL.md)）与时效四字段 `valid_until` / `reviewed_at` / `retire_reason` / `replaced_by_case_id`（§5.7）。**字段以提案为准、尚未并入本节**；出数据模型稿前按提案一次落定，避免二次改表。
 - `EvalResult` 增加：本次评估所用批次的 `batch_id` 与是否属于 Gate（区分「关键回归」与「最终 Gate」两类结论）。
 
 ### 2.3 不受自进化影响的边界
@@ -200,7 +200,7 @@ Reserve 取 `blind` 批次而非从 `golden` 切割：`golden` 只有 50+ 例且
 11. 发布支持灰度；灰度数据不进黄金集。
 12. 确定性红线命中：全量版自动回滚、灰度版自动停止暴露；两者均留证且可被人推翻。
 13. 策略档位可创建、复制、diff、切换、带有效期回落；切换全程留证。
-14. 人工编辑产生的候选与系统候选走同一门禁。
+14. ~~人工编辑产生的候选与系统候选走同一门禁。~~ **2026-10-21 修订**：改为按段型分档——`locked` 段与系统候选走同一门禁；`mutable` 段即时保存生效、完整回放异步补、退步自动回滚并通知。以[范围记录 §20（v0.9）](S2-SCOPE-DECISIONS.md)为准，本条不另立口径。
 15. 配置可导出到干净实例重新运行并复现回放结论。
 16. 示例片段的召回路径被评测覆盖：改示例或调召回参数后，回放能验证「该命中时仍命中、不该命中时被过滤」；盲测集中存在专门覆盖召回路径的案例。
 17. **Reserve 不回流，且 `golden` 不充当改善证据**：诊断、归因与候选迭代过程中不出现当前未消费的 `gate_only` 批次；Gate 用后标记 `consumed` 并强制补抽新批次；不存在因 Reserve 表现差而修改或移出案例的记录；审批页把「不退步（golden）」与「有改善（Reserve）」分两栏显示，`golden` 通过率不得作为改善证据。

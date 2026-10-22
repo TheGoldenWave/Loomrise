@@ -1,6 +1,6 @@
 # Qwen-Audio-3.1-Realtime 架构对照与 Loomrise 对齐提案 v0.1
 
-状态：研究提案，2026-10-21。依据 Qwen Audio 公众号技术解读（2026-10-21）与 Loomrise 现行文档逐条对照，**未改动任何既有文档结论**；文中"建议动作"待 Jason 确认后才进入相应文档。上游演示效果与论文指标不等于 Loomrise 已复现的集成，沿用[实时语音协同验证计划](VOICE-COORDINATION-VALIDATION.md)的核验纪律。来源：技术解读（微信公众号 `ZbrsVtMyawrvKw04JQRZuw`）、技术报告 arxiv 2609.25176、项目主页 `qwenaudio.github.io/qwen-audio-3.1-realtime`、Voice Harness 仓库 `github.com/QwenAudio/qwen-audio-agent`。
+状态：研究提案，2026-10-21；**Q1 已定（2026-10-21，Jason：harness 工程式）**，其余待确认。依据 Qwen Audio 公众号技术解读（2026-10-21）与 Loomrise 现行文档逐条对照，**未改动任何既有文档结论**；文中"建议动作"待 Jason 确认后才进入相应文档。上游演示效果与论文指标不等于 Loomrise 已复现的集成，沿用[实时语音协同验证计划](VOICE-COORDINATION-VALIDATION.md)的核验纪律。来源：技术解读（微信公众号 `ZbrsVtMyawrvKw04JQRZuw`）、技术报告 arxiv 2609.25176、项目主页 `qwenaudio.github.io/qwen-audio-3.1-realtime`、Voice Harness 仓库 `github.com/QwenAudio/qwen-audio-agent`。
 
 ## 1. 结论
 
@@ -15,7 +15,7 @@ Loomrise 现行方案里四个最核心的判断——任务台账唯一事实�
 | A3 | **对齐** | 前后台分流原则：Loomrise 协同验证计划已有"前台低延迟简短回应/澄清，后台较长时间检索比较"的同构表述 |
 | A4 | **对齐** | MCP 作为工具种子：Qwen 自进化环境以开源工具 + MCP 服务为种子；Loomrise MCP 为自定义工具导入候选入口 |
 | D1 | **偏移** | 全双工决策层没有配置化落点：打断/插话/恢复播报/进展汇报节奏在六层配置里无家，语音 Gate 无对应验收口径 |
-| D2 | **偏移** | 语音模型选型与验收口径停在上一代：S1 网页语音是浏览器 Web Speech + 浏览器合成，Pipecat 是工程链路主线，但**原生全双工模型层没有作为命名候选进入路线**，Full-Duplex 类指标未进门禁 |
+| D2 | **偏移** | 语音模型选型与验收口径停在上一代：S1 网页语音是浏览器 Web Speech + 浏览器合成，Pipecat 是工程链路主线，但原生全双工模型层没有作为命名候选进入路线，Full-Duplex 类指标未进门禁（**落点已定 harness 工程式，见 D2**） |
 | D3 | **偏移** | 前后台分工停留在"可选实验"：未升格为语音模态的规划能力，也未与 Task 体系的 `TaskAttempt`/后台执行接通（后者目前只服务治理产物） |
 | E1 | **可借** | 多粒度反馈（对话级/里程碑级/轮次级）显式化进评测合同 |
 | E2 | **可借** | 环境演化方法论（稳定加难/失败修环境/保留暴露弱点任务）进 EvalSet 运营 |
@@ -63,17 +63,15 @@ Loomrise 现行方案里四个最核心的判断——任务台账唯一事实�
 
 ### D2 语音模型选型与验收口径停在上一代
 
-**现象**：[PRODUCT.md](PRODUCT.md) 记录 S1 网页语音为浏览器 Web Speech + 浏览器合成（非云端 ASR/TTS），真实音频可懂度、首响、打断恢复未验收；[REFERENCE-PROJECTS.md](REFERENCE-PROJECTS.md) 把 Pipecat v1.12.0 定为语音主线候选（工程链路：传输/轮次/打断插件），Qwen Audio Agent 为"架构参照 + 限时对照"（pinned `2b70ebc`，未做源码级验证）。但原生全双工模型（Qwen-Audio-3.1-Realtime、GPT-Realtime 类）作为**模型层候选**没有进入路线，Full-Duplex 类指标没有进门禁。风险：沿 ASR→LLM→TTS 管线做生产语音，等于用上一代交互架构参赛。
+**现象**：[PRODUCT.md](PRODUCT.md) 记录 S1 网页语音为浏览器 Web Speech + 浏览器合成（非云端 ASR/TTS），真实音频可懂度、首响、打断恢复未验收；[REFERENCE-PROJECTS.md](REFERENCE-PROJECTS.md) 把 Pipecat v1.12.0 定为语音主线候选（工程链路：传输/轮次/打断插件），Qwen Audio Agent 为"架构参照 + 限时对照"（pinned `2b70ebc`，未做源码级验证）。但全双工交互质量的话轮决策职责没有明确落在工程链路上，Full-Duplex 类指标没有进门禁。风险：沿"模型只负责内容、话轮靠默认行为"的管线做生产语音，等于用上一代交互架构参赛。
 
-**关键架构分叉**（这是本提案最需要 Jason 拍的点）：全双工决策的智能放哪——
-- **模型内**（Qwen 式）：实时模型原生决定话轮，harness 只做业务投影；
-- **harness 工程式**（Pipecat 式 smart turn detection + 自建播出回执）：模型仍可换，话轮逻辑自持。
-两者成本结构、可替换性、验收口径都不同。Pipecat 作为工程链路与实时模型 API 并不互斥（Pipecat 可作传输/编排层），但"只维护一条默认链路"的纪律要求先选定模型层再定工程层。
+**落点已定（2026-10-21，Jason 拍）：harness 工程式。** 是否/何时/如何说话由工程链路承担——Pipecat 轮次策略 + 自建播出回执，模型保持可替换；模型内全双工（Qwen-Audio-3.1-Realtime、GPT-Realtime-2 类）不作为当前主选，列为**后续兼容方向**并登记观察点。理由：当前阶段与各家 LLM 的兼容契合度优先；模型内全双工是未来，项目后续需考虑兼容。Pipecat 作为工程链路与实时模型 API 并不互斥（可作传输/编排层），但"只维护一条默认链路"纪律不变。
 
 **建议动作**（待确认后改 [VOICE-COORDINATION-VALIDATION.md](VOICE-COORDINATION-VALIDATION.md) 与 [REFERENCE-PROJECTS.md](REFERENCE-PROJECTS.md)）：
-1. 候选表增加全双工实时模型层（Qwen-Audio-3.1-Realtime、GPT-Realtime-2），Pipecat 明确退为工程链路/传输候选；刷新 Qwen Audio Agent pinned 版本并补源码级核对（文章发布日 2026-10-21 晚于现 pinned）。
-2. 退出门指标增加 Full-Duplex-Bench 式口径（打断响应率、背景人声误响应率、附和延迟、首响）与"失效结果不播报"的确定性检查，阈值测试前登记。
-3. 所有上游指标标注"厂商自报、未经 Loomrise 复现"。
+1. Pipecat 主线补充全双工决策职责的验证项：smart turn 行为、自建播出回执（现 P0-2 已核"无客户端设备级播出回执，须自建"——正是该职责的缺口）、可替换的话轮策略挂点。
+2. 全双工实时模型列为后续兼容候选：登记观察点（接口形态、成本、与 harness 决策的替换关系），刷新 Qwen Audio Agent pinned 版本并补源码级核对（文章发布日 2026-10-21 晚于现 pinned）。
+3. 退出门指标**按业务语义拆解登记，不照搬 benchmark 指标名与数字**：打断→停止播报（触发 100% + 时延 p95 上限）、打断→不播过期内容（0 容忍）、背景人声误响应（注册集 0 容忍，成对报漏响应）、附和不中断播报（0 次非预期中断）；语料自建（中文、客服/销售场景、固定设备网络），阈值先取 S1 基线再登记。详见[验证计划](VOICE-COORDINATION-VALIDATION.md)「全双工交互指标与登记口径」。注意：决策放 harness 后，这些指标测量的正是 harness 自身行为，验收必要性上升而非下降。
+4. 所有上游指标标注"厂商自报、未经 Loomrise 复现"。
 
 ### D3 前后台分工停留在"可选实验"，未接通 Task 体系
 
@@ -125,15 +123,19 @@ OutreachPolicy 触达候选 → 采用判定 → ServiceRequest（主动触发�
 
 ## 8. 待确认项与下一步
 
-建议确认后登记进 [S2-CONSOLE-KICKOFF.md](S2-CONSOLE-KICKOFF.md) §4 与 [S2-IA-NAV.md](S2-IA-NAV.md) §6.4：
+建议确认后登记进 [S2-CONSOLE-KICKOFF.md](S2-CONSOLE-KICKOFF.md) §4 与 [S2-IA-NAV.md](S2-IA-NAV.md) §6.4（两项已定判断的正式记录见[语音架构决策记录](VOICE-ARCHITECTURE-DECISIONS.md)）：
 
 | # | 待确认项 | 影响 |
 |---|---|---|
-| Q1 | 全双工决策放模型内（Qwen/GPT-Realtime 式）还是 harness 工程式（Pipecat smart turn + 自建回执）？ | 语音选型、成本结构、可替换性；D2 的前置 |
-| Q2 | 语音交互契约落点：Skill/SOP 扩展，还是 `AgentSpec` 独立模态 profile（命名待定）？ | D1 的配置形状 |
-| Q3 | 前后台委派进哪个 Gate：S2-c 网页语音先验、S4 外呼复用（建议），还是另立？ | D3 的阶段安排 |
-| Q4 | "共情与语气"是否进人评与修正页固定维度集？ | E3 |
-| Q5 | REFERENCE-PROJECTS.md P0-3 刷新 Qwen Audio Agent pinned 版本并补源码级核对？ | D2 的候选表更新 |
+| ~~Q1~~ | ~~全双工决策放模型内（Qwen/GPT-Realtime 式）还是 harness 工程式（Pipecat smart turn + 自建回执）？~~ **已答（2026-10-21）：harness 工程式。** 话轮/打断/恢复播报由工程链路承担，模型保持可替换；模型内全双工列为后续兼容方向。理由：与各家 LLM 的兼容契合度优先，模型内是未来 | D2 已按此修订 |
+| ~~Q2~~ | ~~语音交互契约落点：Skill/SOP 扩展，还是 `AgentSpec` 独立模态 profile？~~ **已答（2026-10-21）：四档切分，不新增第七层**——① 平台契约（正确性，业务方不可改）②a 工程参数（产研配，不进 `AgentVersion`）②b 体验开关（策略运营，随版本冻结）③ 业务内容（搭建者）。`AgentSpec` 只装 ②b 与 ③，见[配置合同](CONFIGURATION-LAYERS.md) | D1 的配置形状已定；K1 不阻塞 |
+| ~~Q3~~ | ~~前后台委派进哪个 Gate~~ **已答（2026-10-21）：S2-c 网页语音先验**，S4 复用同一批判据并另加通话回执，见[语音决策 D-04](VOICE-ARCHITECTURE-DECISIONS.md) | D3 的阶段安排已定 |
+| ~~Q4~~ | ~~"共情与语气"是否进人评与修正页固定维度集~~ **已答（2026-10-21）：进，但分场景必填**——语音/销售/投诉安抚必填，其余选填；单独一栏，不与确定性判据合并计分，见 [IA-NAV](S2-IA-NAV.md) 人评与修正页 | E3 已定 |
+| ~~Q5~~ | ~~REFERENCE-PROJECTS.md P0-3 刷新 Qwen Audio Agent pinned 版本并补源码级核对？~~ **已完成（2026-10-21）**：pin 更新为 main `ca2e7e2`，源码级核对见[源码研读](QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | D2 的候选表已更新 |
+
+**2026-10-21 补充**：本提案基于公众号解读，未读技术报告原文与 Harness 源码。补读后新增 **Q6–Q10**（双层状态投影、重启恢复矩阵、播报窗口与播出回执、记忆准入校验、评测污染过滤），并修正 D-01 的一处表述——语义断点在参照实现中由 provider 的 `smart_turn` 承担，不全在 harness。详见[源码研读 §5](QWEN-AUDIO-AGENT-HARNESS-STUDY.md)。
+
+**同日拍定**：Q6–Q10 已于 2026-10-21 全部确认（Q8 由 Jason 修正了一条判定口径），结论与落点见[源码研读 §6](QWEN-AUDIO-AGENT-HARNESS-STUDY.md) 结果表。本节 Q2–Q4 仍未决。
 
 **下一步（Jason 确认后执行）**：按提案修改 VOICE-COORDINATION-VALIDATION.md（候选表 + 指标 + 分工升格）、CONFIGURATION-LAYERS.md（交互契约落点声明）、PRODUCT-FORM-AND-INTEGRATION.md（外呼目标架构段）、S2-EVAL-GATE-PROPOSAL.md（三粒度 + 环境演化）、README 阅读顺序与本文件交叉引用。既有文档只补引注与待确认项，不改结论。
 
