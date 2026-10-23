@@ -30,6 +30,18 @@
 
 ## 3. 接口形状（决定 WP1-1 怎么写）
 
+### 3.0 三个入口不要混（最容易错的一处）
+
+同一个 Workspace 下有**三个不同的根**，拿错一个就会得到 404 或"模型不存在"：
+
+| 用途 | URL 形态 | 说明 |
+|---|---|---|
+| **对话模型**（OpenAI 兼容） | `https://{ws}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` | 走 `/chat/completions`。**这条不能用于语音**——语音没有 OpenAI 兼容形态 |
+| DashScope SDK 的 HTTP 根 | `https://{ws}.cn-beijing.maas.aliyuncs.com/api/v1` | SDK 里叫 `base_http_api_url` |
+| **流式 ASR / 流式 TTS** | `wss://{ws}.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference` | SDK 里叫 `base_websocket_api_url`；语音**只走这条** |
+
+`{ws}` 就是 Workspace ID（形如 `llm-xxxxxxxxxxxxxxxx`）。**三个 URL 都从 Workspace ID 推导，不在代码里手写**——实现见 `loomrise/voice_config.py:endpoints()`。
+
 ### 3.1 ASR：WebSocket 双向流
 
 握手用 `Authorization: Bearer <API_KEY>`，之后四步：
@@ -81,10 +93,26 @@
 
 **一条前置风险**：如果 `dashscope 1.27.7` 不认识 `qwen-audio-3.0-tts-flash`，要么升级 SDK（需要联网装包，会破坏"离线可复现"），要么按 WebSocket 协议直连手写客户端。**这个必须在 WP1-01 第一步验掉**，否则整条 TTS 路径要重写。
 
-## 6. 要落进 `VERSION-PINS` 的字段（key 到位后填）
+## 6. 凭据存哪里（已实现，勿另起一套）
+
+**不在仓库里，也不在 `.env` 里。** 与模型凭据同一套纪律，另存一个文件：
+
+| 项 | 位置 / 做法 |
+|---|---|
+| 文件 | `~/.config/loomrise/aliyun-voice.json`（仓库外，`0600`，父目录 `0700`） |
+| 写入 | `python -m loomrise.cli configure-voice`（交互式，key 用 `getpass`，不回显、不打印） |
+| 覆盖 | **不覆盖**：已存在则 `O_EXCL` 失败，改 key 先手动删文件，留一次显式意图 |
+| 符号链接 | 拒绝写入（防把凭据写到别处） |
+| 读取 | 非 `0600` 或非普通文件直接报错，不做"尽力而为" |
+| 环境变量 | `DASHSCOPE_API_KEY` **优先于**文件——容器/CI 不落盘；两者都没有就返回 `None`，由调用方**显式失败**，不静默回退到浏览器识别 |
+| 导出 | 场景包与 `dist/` 导出**不含**该文件；验收脚本另有断言 |
+
+理由：混进 `coding-plan.json` 会让"轮换一个 key"变成"重写整个模型配置"；放进 `.env` 则会被 `dist/`、demo、截图、`git add -f` 反复咬到。**`VERSION-PINS` 只记模型与参数，不记 key。**
+
+## 7. 要落进 `VERSION-PINS` 的字段（key 到位后填）
 
 ```
-语音地域        华北2（北京）/ WorkspaceId: <待填>
+语音地域        华北2（北京）/ WorkspaceId: <待填，不入公共文档>
 ASR 模型        fun-asr-realtime-2026-02-28        ← 带日期快照，可钉
 ASR 参数        pcm / 16000 / language_hints=[zh] / heartbeat=true / max_sentence_silence=1000
 TTS 模型        qwen-audio-3.0-tts-flash           ← 别名，风险已声明
@@ -94,7 +122,9 @@ SDK             dashscope==<实测可用版本>
 核验日          <填>
 ```
 
-## 7. 还差什么（清单，key 到手后按序做）
+> Workspace ID 本身不是密钥，但它是账号标识：**写在本地凭据文件里，不写进公共仓库**。仓库文档一律用 `{ws}` 占位。
+
+## 8. 还差什么（清单，key 到手后按序做）
 
 - [ ] 控制台核对计费与并发上限，把"未核"两行补上
 - [ ] 验 `dashscope 1.27.7` 能否直接调 `qwen-audio-3.0-tts-flash`；不能则定"升 SDK"或"直连 WebSocket"

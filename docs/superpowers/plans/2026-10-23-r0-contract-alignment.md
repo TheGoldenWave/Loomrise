@@ -59,7 +59,7 @@
 
 ### R0-WP1 · 语音媒体（`M-S1-08…11`）
 
-- [ ] **WP1-0 选型（2026-10-23 已定方向：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照与"锁不住快照"的处置见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。**key 到位后第一步先验 `dashscope 1.27.7` 能否调新模型**——不能则要么升 SDK（破坏离线可复现，须记录）要么直连 WebSocket 手写客户端
+- [ ] **WP1-0 选型（2026-10-23 已定方向：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照与"锁不住快照"的处置见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。凭据录入用 `python -m loomrise.cli configure-voice`（已实现：`~/.config/loomrise/aliyun-voice.json`、`0600`、不覆盖、拒符号链接、`DASHSCOPE_API_KEY` 优先）。**key 到位后第一步先验 `dashscope 1.27.7` 能否调新模型**——不能则要么升 SDK（破坏离线可复现，须记录）要么直连 WebSocket 手写客户端
 - [ ] **WP1-1 音频通道（必须新建，别当成已有能力）**：现状是 `loomrise/web.html` 只有**浏览器端**识别与合成（`webkitSpeechRecognition` + `speechSynthesis`），**没有任何把音频送上服务端的路径**。要满足 `M-S1-08`（真实网页音频）与 `M-S1-09`（服务端固定组合），必须新增最小通道：浏览器 `MediaRecorder` 采集 → 上传（HTTP 或 WebSocket）→ 服务端 STT adapter → 文本进 `ExecutionService`；返回音频同理。这是 R0 里**唯一新增代码的语音部分**，属"换掉假链路"，不是加功能
 - [ ] 真实网页音频采集：走 WP1-1 通道，产出录制件（`M-S1-08`）
 - [ ] 中文可懂度：固定语料逐条判读，记录判读人与原文（`M-S1-10`）

@@ -369,6 +369,9 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("configure-model", help="一次性录入本机 Coding Plan 凭据")
     c.set_defaults(func=lambda _: __import__("loomrise.local_config", fromlist=["configure"]).configure() or 0)
 
+    v = sub.add_parser("configure-voice", help="一次性录入本机阿里云语音凭据与端点")
+    v.set_defaults(func=lambda _: __import__("loomrise.voice_config", fromlist=["configure"]).configure() or 0)
+
     w = sub.add_parser("web", help="仅在本机提供文字/语音与 AG-UI SSE 试用页")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--scripted", action="store_true", help="显式使用脚本模型，不调用真实模型")
