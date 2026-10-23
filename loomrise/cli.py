@@ -317,21 +317,47 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
+    """上下文五问：加载了什么 / 跳过什么 / 为什么 / 是否预算截断 / 对应规则与知识版本。
+
+    这五项必须**在一条命令里答全**，否则"能审计"就只是"有日志"。
+    """
     from .ledger import load_ledger
 
     led = load_ledger(args.ledger)
     frag = [e.payload for e in led.find("context.fragment")]
+    rules = sorted({
+        rid for e in led.find("permission.decision") for rid in e.payload.get("rule_ids", [])
+    })
     print(json.dumps(
         {
             "events": len(led.events),
             "types": sorted(set(led.types())),
             "intact": led.verify(),
-            "loaded": [f["fragment_id"] for f in frag if f["load_status"] == "loaded"],
+            "agent_version": sorted({e.agent_version for e in led.events}),
+            "loaded": [
+                {
+                    "id": f["fragment_id"],
+                    "stage": f.get("stage"),
+                    "source": f"{f.get('source_ref')}@{f.get('source_version')}",
+                    "tokens": f.get("token_estimate"),
+                }
+                for f in frag
+                if f["load_status"] == "loaded"
+            ],
             "skipped": [
-                {"id": f["fragment_id"], "reason": f.get("skip_reason")}
+                {
+                    "id": f["fragment_id"],
+                    "status": f["load_status"],
+                    "reason": f.get("skip_reason"),
+                    "source": f"{f.get('source_ref')}@{f.get('source_version')}",
+                }
                 for f in frag
                 if f["load_status"] != "loaded"
             ],
+            "budget_capped": [
+                f["fragment_id"] for f in frag if f["load_status"] == "budget_capped"
+            ],
+            "rules_hit": rules,
         },
         ensure_ascii=False,
         indent=2,
@@ -369,10 +395,17 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("configure-model", help="一次性录入本机 Coding Plan 凭据")
     c.set_defaults(func=lambda _: __import__("loomrise.local_config", fromlist=["configure"]).configure() or 0)
 
+    v = sub.add_parser("configure-voice", help="一次性录入本机阿里云语音凭据与端点")
+    v.set_defaults(func=lambda _: __import__("loomrise.voice_config", fromlist=["configure"]).configure() or 0)
+
     w = sub.add_parser("web", help="仅在本机提供文字/语音与 AG-UI SSE 试用页")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--scripted", action="store_true", help="显式使用脚本模型，不调用真实模型")
-    w.set_defaults(func=lambda args: __import__("loomrise.web", fromlist=["serve"]).serve(args.port, scripted=args.scripted))
+    w.add_argument("--voice-trace", metavar="DIR", default=None,
+                   help="把语音会话时序写入目录（跑测用；默认不落盘）")
+    w.set_defaults(func=lambda args: __import__("loomrise.web", fromlist=["serve"]).serve(
+        args.port, scripted=args.scripted,
+        voice_trace_dir=Path(args.voice_trace) if args.voice_trace else None))
 
     args = p.parse_args(argv)
     fn = args.func

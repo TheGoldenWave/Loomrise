@@ -4,7 +4,7 @@
 
 **Goal:** 把已写下但未落代码的合同（`Verdict` 四层、`subject_scope`、`state` 窗口、条件深度校验）落到代码并过回归，同时补齐 S1 剩下的媒体与 SSE 证据；**不做新功能、不接 adapter、不合主干**。
 
-**Architecture:** 分两条并行轨道。轨道 A 是语音与 SSE 证据：SSE 与合同是黑盒；**语音不是**——现有网页只有浏览器端识别与合成，没有音频上传通道，`M-S1-08/09` 要求真实音频与可登记的服务端组合，因此 WP1 必须新增一条最小音频通道（只换掉假链路，不改业务逻辑）。轨道 B 是合同迁移（分支开发 + 单测，功能默认不启用）。两轨在 `R0-WP5` 汇合：**先证据齐，再合主干**，同批改 `rules.py` 优先级链与 `adapters/agentscope_runtime.py` 映射，然后重跑自检。
+**Architecture:** 分两条并行轨道。轨道 A 是语音与 SSE 证据：SSE 与合同是黑盒；**语音不是**——原网页只有浏览器端识别与合成，没有音频上传通道，`M-S1-08/09` 要求真实音频与可登记的服务端组合，因此 WP1 新建了一条最小双向媒体通道（**2026-10-23 已实现，服务端侧已验，浏览器侧待人工实测**；只换掉假链路，不改业务逻辑）。轨道 B 是合同迁移（分支开发 + 单测，功能默认不启用）。两轨在 `R0-WP5` 汇合：**先证据齐，再合主干**，同批改 `rules.py` 优先级链与 `adapters/agentscope_runtime.py` 映射，然后重跑自检。
 
 **边界（越界即停）:** 不加 `stop`/`dedupe` 之外的任何能力；不建配置器；不动 `prototypes/`；不改 S2 页面与 `S2-IA-NAV` 计数；不发布、不接真实业务写入、不引入新依赖。
 
@@ -52,60 +52,62 @@
 
 ### R0-WP0 · 预检与登记
 
-- [ ] 0.1–0.5 全过
-- [ ] 语音阈值登记表填写并提交（§2 六项）
-- [ ] `docs/reports/R0-EVIDENCE.md` 建骨架（17 行 Gate 占位）
+- [x] 0.1–0.5 全过（`.venv` 建好、基线 81 项全绿、版本钉已读、证据目录已建、分支 `r0/contract-alignment`）
+- [x] 语音阈值登记表已建（[R0-VOICE-THRESHOLD-REGISTRY.md](../../reports/R0-VOICE-THRESHOLD-REGISTRY.md)，时间戳早于任何停止时延采样）。**六项里「语料版本」标缺**——没有观测语料，这直接导致 `M-S1-13/14` 本轮不成立
+- [x] `docs/reports/R0-EVIDENCE.md` 已按 17 行逐条写结论（v0.4）：**11 通过（08/10 带偏离）/ 2 部分 / 2 未开始（挂账）/ 2 未覆盖**
 - **签核：** 产研 · **证据：** `runs/r0/contract/baseline-test.txt`、登记表 commit
 
 ### R0-WP1 · 语音媒体（`M-S1-08…11`）
 
-- [ ] **WP1-0 选型（2026-10-23 已定方向：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照与"锁不住快照"的处置见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。**key 到位后第一步先验 `dashscope 1.27.7` 能否调新模型**——不能则要么升 SDK（破坏离线可复现，须记录）要么直连 WebSocket 手写客户端
-- [ ] **WP1-1 音频通道（必须新建，别当成已有能力）**：现状是 `loomrise/web.html` 只有**浏览器端**识别与合成（`webkitSpeechRecognition` + `speechSynthesis`），**没有任何把音频送上服务端的路径**。要满足 `M-S1-08`（真实网页音频）与 `M-S1-09`（服务端固定组合），必须新增最小通道：浏览器 `MediaRecorder` 采集 → 上传（HTTP 或 WebSocket）→ 服务端 STT adapter → 文本进 `ExecutionService`；返回音频同理。这是 R0 里**唯一新增代码的语音部分**，属"换掉假链路"，不是加功能
-- [ ] 真实网页音频采集：走 WP1-1 通道，产出录制件（`M-S1-08`）
-- [ ] 中文可懂度：固定语料逐条判读，记录判读人与原文（`M-S1-10`）
-- [ ] 首响采样：≥10 轮，报 p50/p95，记录设备与网络（`M-S1-11`）
+- [x] **WP1-0 选型（2026-10-23 已定：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。凭据录入 `python -m loomrise.cli configure-voice`（`~/.config/loomrise/aliyun-voice.json`、`0600`、不覆盖、拒符号链接、`DASHSCOPE_API_KEY` 优先）。**已验：`dashscope 1.27.7` 直接能调，无需升级**（原风险 R-2 关闭）
+- [x] **WP1-1 双向媒体通道（已实现，服务端侧已验；浏览器侧未验）**：`/ws/voice` 单条 WS——上行 PCM16/16k 二进制帧 + JSON 控制帧，下行同格式音频。新增 `loomrise/adapters/aliyun_voice.py`（ASR/TTS 流式封装、背压、时序）、`web.py:voice_ws`（协议权威在 docstring）、`web.html`（`getUserMedia` → `AudioWorklet` 降采样 → WS；下行 `AudioBufferSource` 队列播放）。**协议与纪律见 [D-05](../../VOICE-ARCHITECTURE-DECISIONS.md)**。验收：`tests/test_voice_ws.py` 33 项 + `scripts/voice_ws_smoke.py` 真云端往返
+- [x] **WP1-1b 浏览器实测（`M-S1-08`）——2026-10-23 人工实测通过**：真人在 Chrome 156 对着本机麦克风点「录音」说一句 → `#input` 出识别文本 → 听到服务端合成语音。**但未开 `--voice-trace`，没留 `ws-*.jsonl`**，矩阵该行通过条件原文「有录制件且可回放」未满足 → 登记偏离 `G-5`（[R0 证据摘要 §5](../../reports/R0-EVIDENCE.md)）
+- [x] 中文可懂度（`M-S1-10`）——**判据降级通过**：负责人据同一次实测判定识别准确可读；**未建语料、无判读表、无第三方判读人** → 偏离 `G-4`，补语料后必须复核
+- [x] 首响采样：**12 轮**，TTS 首包 p50 344 / p95 378 ms，ASR 首 partial p50 227 / p95 288 ms（`runs/r0/voice/latency-*.csv`）。**限服务端链路**：浏览器整链零样本，故 `M-S1-11` 仍记部分
 - **签核：** 产研 · **不做：** 不调轮次策略参数、不改打断逻辑、不接 Pipecat 全链路（那是 S2-c 的语音应用验收）
 
 ### R0-WP2 · 语音交互指标（`M-S1-13`、`M-S1-14`）
 
-- [ ] 埋点：`barge-in` 事件时间戳 → 最后一帧停止时间戳，落 `RunEvent`（字段名与已有事件风格一致）
-- [ ] 跑登记表里的噪声语料，统计声学级误停（目标 0）与漏响应率（防 VAD 过严）
-- [ ] 跑"停—判—续"处置，统计恢复时延 p95 与复读次数
-- [ ] 结果按登记表口径出表；**P1/P2 不测，写"未覆盖"**
+- [x] 埋点：浏览器侧记打断触发 / 音频节点停止 / 首帧播放，服务端记 `tts.cancel` 与 `tts.done.cancel_ms`，统一进 `runs/r0/voice/ws-*.jsonl`（`--voice-trace` 开启）。**口径按 [D-05](../../VOICE-ARCHITECTURE-DECISIONS.md)：不含扬声器与系统混音缓冲，不能直接当声学级 p95**
+- [ ] **本轮不做，决定延后（`G-6`）**——跑登记表里的噪声语料：注册噪声语料未建；用合成音频冒充会让「0 次误停」变成自证
+- [ ] **延后**——跑"停—判—续"处置，统计恢复时延 p95 与复读次数
+- [ ] **延后**——结果按登记表口径出表；**P1/P2 不测，写"未覆盖"**
+
+> **延后不等于放弃**：这四项仍是 S1 的 Gate（`M-S1-13/14`），只是本轮不做。因此 **R0 未退出**，且"语音已验收"这句话在任何文档里都不成立——已验的是链路与可懂度，未验的是声学鲁棒性。
 - **签核：** 产研 · **证据：** `runs/r0/voice/*.csv` + `R0-EVIDENCE.md#m-s1-13`
 
 ### R0-WP3 · 真实模型 SSE（`M-S1-12`）
 
-- [ ] `python -m loomrise.cli web --port 8765`（**不加 `--scripted`**），浏览器端跑通一轮文字咨询
-- [ ] 留档：客户端收到的 AG-UI 事件序列、首包时间、结束时间、中断点
-- [ ] 写明"真实模型驱动"的三项可核标记：模型 ID、`attempts`、请求-响应时间戳
+- [x] 真实模型跑通一轮文字咨询（**用脚本客户端消费流，不是浏览器**）：`scripts/sse_live_check.py`，端到端 9.1 s，事件含 `TEXT_MESSAGE_CONTENT`
+- [x] 留档：`runs/r0/sse/sse-*.json`（时间轴、首包 236 ms、结束、回复全文）
+- [x] 三项标记分开记录：声明模型 `scripted-s1` / 配置模型 `gpt-6-sol` / 事件时间戳。**两者不一致已写入留档**（`model_matches_declared=false`）
 - **签核：** 产研 · **不做：** 不改 `web.py` 的协议形状
 
 ### R0-WP4 · 合同落地（分支开发，不合主干）
 
-- [ ] `Behavior`（`contracts.py:106`，`ALLOW`/`DENY`/`ASK`）→ **`Verdict` 四值** `deny`/`require`/`stop`/`dedupe`；**删除 `Verdict.allow`**——"放行"由 `ToolPolicy` 登记表达，不由规则声明
-- [ ] **授权查询独立于裁决**：先查 `ToolPolicy`，未登记直接拒；`rules.py:52` 现在用 `Behavior.DENY` 报"未在 ToolPolicy 中登记"，改为 `AuthorizationResult`（不产 `Verdict`）
-- [ ] `rules.py:66` 的优先级链 `(DENY, ASK, ALLOW)` 改为 `(deny, stop, require, dedupe)` 的显式顺序，并写单测覆盖两两冲突
-- [ ] `GateOutcome`（`route_to` / `block` / `suspend`）落合同；与 `Verdict` **并列而非从属**
-- [ ] `ServiceRequest` 加 `subject_id` + `subject_scope: mapped | ephemeral`；**禁止"空值即默认主体"**（缺 `subject_id` 只能落 `ephemeral` 且不落库）
-- [ ] 新增 `StateWindow` 枚举：`cycle`（默认）/ `24h` / `forever` / `session`；**本轮只落枚举与校验，不实现计数器**
-- [ ] 新增第九条校验 `validate_condition_depth()`：深度 ≤2 层，`llm` 叶不计层，硬规则 `when` 与路由边 `condition` 共用。建议放新模块 `loomrise/validation.py`（纯函数，R1 配置器直接复用）
+- [x] `Behavior` → **`Verdict` 四值**（`deny`/`require`/`stop`/`dedupe`），`allow` 已删除；场景包同步迁移（两条 `allow` 规则删除、`rule_ids` 同步）
+- [x] 授权查询独立：`AuthorizationResult`（不产 `Verdict`），`DecisionPolicy.authorize()` 先查登记；`check()` 的放行是 `verdict is None`
+- [x] 优先级链 `(deny, stop, require, dedupe)`，**两两冲突 6 组单测**（`tests/test_contract_semantics.py`）
+- [x] `GateOutcome` 落合同，与 `Verdict` 并列（单测验证两者值域不相交）
+- [x] `ServiceRequest` 加 `subject_id` + `subject_scope`；`mapped` 缺 `subject_id` **直接抛错**，`ephemeral` 的 `persistent_subject` 恒为 `None`
+- [x] `StateWindow` 四值已落，**未实现计数器**（按范围）
+- [x] 第九条校验 `loomrise/validation.py`：深度按**组合算子嵌套**计（纯叶子 1 层、`(A or B) and C` 2 层），`llm` 叶不计层；`rule_conditions()` 让硬规则与路由边共用入口
 - **签核：** 产研 · **证据：** 单测（每条新语义至少一正一反）
 - **不做：** 不接 `adapters/agentscope_runtime.py`、不动 `scripts/live_model_check.py`、不改 `web.py`
 
 ### R0-WP5 · 合入与回归（汇合点，前置 = WP1–WP4 全绿）
 
-- [ ] 合主干；同批改 `adapters/agentscope_runtime.py` 的映射（`Behavior` → `Verdict`/`GateOutcome`）
-- [ ] 改写 `tests/test_s1.py` 的"只读放行"断言 → "**授权查询放行**"
-- [ ] 重跑 `.venv/bin/python tests/test_s1.py`（**80 项 ok + 全部通过**）与 `.venv/bin/python -m loomrise.cli replay`（**11/11**），新增语义测试全绿
-- [ ] 与 0.1 的基线快照逐项对比，列出"行为变化清单"（预期内 = 无；有则记录原因）
+- [ ] **合主干**——**未合**，DoD 第 1 条要求 `M-S1-01…14` 全通过，当前 08/10/13/14 未完成 · [x] **已改** `adapters/agentscope_runtime.py` 映射（`_VERDICT_MAP`；`STOP`/`DEDUPE` 有损落 `DENY`，差异留在事件 `verdict` 字段）
+- [x] 断言已改写：「只读放行」→「放行来自授权查询而非规则」，并新增「未登记工具直接拒绝」「重复写入判 dedupe 而非 deny」
+- [x] 重跑：`test_s1.py` **81 项 ok**（原 80 + 新增 1）、`test_contract_semantics.py` **47 项**、`test_voice_ws.py` 33 项、`replay` **11/11**，连续两次一致
+- [x] 行为变化清单见 §5 之后，**3 条预期内变化**，逐条写了原因
 - **签核：** 产研 · **证据：** `runs/r0/contract/after-test.txt` + 行为变化清单
 
 ### R0-WP6 · 证据记录与签核（`M-S1-06`、`M-S1-07`）
 
-- [ ] 六字段台账：AgentScope/Pipecat 版本、许可证、安装步骤、资源占用、首响、失败项
-- [ ] 上下文五问审计可答：加载了什么 / 跳过什么 / 为什么 / 是否预算截断 / 对应规则与知识版本（`python -m loomrise.cli audit --ledger <path>`）
-- [ ] `R0-EVIDENCE.md` 17 行填完；矩阵 `M-S1-01…14`、`M-S1-17` 状态改 `通过`/`不通过`，`M-S1-15/16` 标"未覆盖（S2-c）"
+- [x] 六字段台账：[R0-DEPENDENCY-LEDGER.md](../../reports/R0-DEPENDENCY-LEDGER.md)。**Pipecat 未安装**（声明了但没用），已在台账写明
+- [x] 五问可答（本轮修过：原 `audit` 输出丢掉 `source_version`，第五问在 CLI 上根本答不了）
+- [x] 17 行逐条写结论；矩阵状态已更新（8 通过 / 2 在跑 / 4 未开始 / 2 未覆盖）
 - **签核：** 产研 · **证据：** 摘要文档 + 矩阵状态更新
 
 ## 4. 顺序与并行
@@ -120,19 +122,50 @@ WP0 ──┬─ WP1（选型→媒体→可懂度→首响）──┐
 
 - **可并行**：WP1 / WP3 / WP4 互不依赖，可同时开。
 - **硬串行**：WP2 依赖 WP1 的链路；WP5 依赖 WP1–WP4 全绿；WP6 依赖 WP5。
-- **唯一外部依赖**：WP1-0 的 STT/TTS 选型。选型不决，WP1 不启动，但 WP3/WP4 不受影响。
+- **唯一外部依赖已解除**：WP1-0 的 STT/TTS 选型已定、凭据已录、SDK 已验证可用。**剩余阻塞变成"人工在真浏览器里说一句话"（WP1-1b）**——自动化替代不了，本机 Chromium 的 WebAudio 在自动化环境里不可用。
+
+## 4.1 行为变化清单（WP5 产出）
+
+与 §0 的基线快照（81 项全绿 + 11/11）逐项对比后，**有 4 条可观察变化，均为预期内**。没有一条改变业务结果。
+
+| # | 变化 | 为什么会变 | 是否影响业务终态 |
+|---|---|---|---|
+| C-1 | `permission.decision` 事件的字段 `behavior`（值 `allow`/`deny`/`require_confirm`）改为 `verdict`（值 `pass`/`deny`/`require`/`stop`/`dedupe`） | 合同要求四值且删 `allow`；"放行"不是裁决，因此记为 `pass` 并另带 `authorized` 字段 | 否（只是账本字段与措辞） |
+| C-2 | 重复写入的裁决从 `deny` 变为 `dedupe` | `deny` 说"不允许"，`dedupe` 说"这是同一个写入" —— 两者对账本与重试策略的含义不同 | 否（`create_booking` 仍返回 `DENIED` outcome 与已知 `result_id`） |
+| C-3 | 真实模型路径新增一条 `reply.text` 事件（在 `reply.final` 处补发）；`TextBlockEndEvent.text` 为 `None` 时不再写空事件 | 原行为：账本里有事件、无内容，AG-UI 一条文本都投影不出，前端只能靠 summary 兜底 | 否（回复文本与终态不变，只是现在客户端真能收到文本事件） |
+| C-4 | `loomrise audit` 的 `loaded` 从 id 列表变为对象（含 `stage`/`source`/`tokens`），新增 `agent_version`、`budget_capped`、`rules_hit` | 原输出丢掉 `source_version`，第五问在 CLI 上不可答 | 否（只影响审计输出；有下游脚本解析该 JSON 时需同步） |
+
+**没有变化的**：两条 `allow` 规则删除后，`search_knowledge` 与 `create_booking` 的裁决结果与之前完全一致（登记即放行），11/11 回放与 81 项自检逐条对齐。
 
 ## 5. 完成定义（R0 DoD）
+
+
 
 1. `M-S1-01…14` + `M-S1-17` 在矩阵中全为 `通过`；
 2. `M-S1-15/16` 明确标"未覆盖（S2-c）"，不冒充通过；
 3. `Verdict` / `GateOutcome` / `subject_scope` 三处**合同与代码一致**（同一字段名、同一枚举值）；
-4. 语音登记表**时间戳早于采样**，六项齐全；
-5. 行为变化清单为空，或每条变化都有记录与理由；
+4. 语音登记表**时间戳早于采样**，六项齐全——**本轮「语料版本」项缺**，因此 `M-S1-13/14` 只能未开始；
+5. 行为变化清单为空，或每条变化都有记录与理由（本轮 4 条，见 §4.1）；
 6. `R0-EVIDENCE.md` 可让人不看代码就判断"哪条 Gate 靠哪件工件过去"；
-7. 自检 `tests/test_s1.py`（80 项 ok + "全部通过"）与 `cli replay`（11/11）在本机 `.venv` 上连续两次结果一致——只跑通一次不算。
+7. 自检 `tests/test_s1.py`（**81 项 ok** + "全部通过"）与 `cli replay`（11/11）在本机 `.venv` 上连续两次结果一致——只跑通一次不算。
 
 **任何一条不满足，R0 不退出**——不是"基本完成"。
+
+### 当前状态（2026-10-23 第二轮，据负责人决定）
+
+| DoD | 状态 |
+|---|---|
+| 1 | ✗ **11/14 通过**，但 08/10 是**带偏离的通过**（`G-5` 无原始件、`G-4` 判据降级）；13/14 **零样本、延后挂账 `G-6`** → 按"未通过"对待 |
+| 2 | ✓ 15/16 标未覆盖 |
+| 3 | ✓ 合同与代码一致（`test_contract_semantics.py` 47 项） |
+| 4 | ✗ 六项仍缺「语料版本」（正是 `G-6`） |
+| 5 | ✓（4 条已记录，见 §4.1） |
+| 6 | ✓ |
+| 7 | ✓ 连续两次 81 项 + 11/11 一致 |
+
+**结论：代码完成，Gate 未全绿，R0 未退出。** 已验的是**链路与可懂度**；未验的是**声学鲁棒性**（停止时延、误停）。
+
+**合主干与退出是两件事**：代码可合（81 项 + 11/11 不回退任何已通过项），**合入不改变任何 Gate 状态**，也不产生"R0 已退出"的结论。R1 可以开工——配置器与持久化不依赖声学指标。
 
 ## 6. 提交与分支纪律
 

@@ -1,8 +1,10 @@
-# Agent 交付工作台：参考项目分级与采用边界 v0.15
+# Agent 交付工作台：参考项目分级与采用边界 v0.16
 
 > 2026-10-21 新增：**ElevenLabs ElevenAgents** 已单独调研并列为**重点参考（P0-10）**——托管式全栈 Agent 平台的配置对象模型、工具执行时序、版本/测试机制三处最值得对照；**无源码**；已注册免费账户做过三轮后台界面走查（B+），**未调用 API**；结论为文档级（B）+ 界面级（B+）+ API 契约级（A-），详见[ElevenLabs 配置方案与能力边界](ELEVENLABS-AGENTS-ANALYSIS.md)。新增待确认项 EL-1…EL-5 登记在该文件 §9，均不阻塞出稿。同次调研不改本文件既有条目的裁决。
 >
 > 2026-10-16 新增：Tencent Hy Memory 2.0 三层开源架构（Hy Memory 框架 / Hy-Memory-30A3B 模型 / MemHub 应用）已完成独立调研并给出采用裁决，列为记忆方向的**第二个具名候选**，与 TencentDB Agent Memory 并列、同条件对照；**未安装、未联调、未选定底座**。详见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)。同次调研确认 MemHub 属**搭建者个人层**工具，不是产品依赖；产品侧「业务用户记忆 + 专家记忆」的分工见[专家-用户记忆体系](EXPERT-USER-MEMORY-SYSTEM.md)。
+>
+> 2026-10-23 新增：`@earendil-works/pi-durable@1.4.0` 已完成源码级只读核对，列为执行耐久机制参照（P0-11）。只借鉴原子提交、checkpoint、挂起/唤醒、恢复、有限重试与 crash-loop parking；不引入默认依赖，不采用其领域模型或 storage 作为 Loomrise 业务事实源。适配顺序与故障矩阵见[架构](ARCHITECTURE.md)和[DurableRunAdapter 实施计划](superpowers/plans/2026-10-23-durable-run-adapter.md)。
 >
 > 2026-10-14。本文件记录可公开复述的参照与采用边界。新增方向已确认，完整网页客服与用户自有云快捷部署仍为规划，见[网页客服交付计划](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。源码级与安装级验证范围见[S1 验证结论与轻量适配](S1-VALIDATION-AND-ADAPTATION.md)。S1 精确安装、执行中取消、跨渠道及导出恢复已有确定性证据；真实网页音频与运行级门禁仍待验证，见[S1 交付与验收](S1-BUILD-REPORT.md)。Hindsight 已完成源码与文档核查、尚未运行；详见[智能体迭代能力分析](HINDSIGHT-ITERATION-ANALYSIS.md)。
 
@@ -35,6 +37,7 @@ Knocket 的折叠配置、配置旁预览、资料入口与安装反馈，以及
 | **P0-8** | **Hindsight**：有来源的记忆归纳与经验反思 | `retain → observation consolidation → recall/reflect`；支持证据关联、矛盾修正与长期结论刷新，可用于失败模式归纳和改进假设 | 只用脱敏且授权的运行摘要；bank 隔离、来源撤销、异步完成、成本与延迟需实测；与具名 TencentDB Agent Memory 候选同条件对照 | **重点机制参考，源码/文档已核、未联调**。不采用自动 LLM Wrapper 注入，不把 `reflect` 当真值或发布门禁；分析见[Hindsight 智能体迭代能力](HINDSIGHT-ITERATION-ANALYSIS.md) |
 | **P0-9** | **Tencent Hy Memory 2.0**：模型/框架/应用三层开源 | 三类记忆（聊天/工作/代码）的存储、更新与进化；冲突消解与版本链；专用记忆模型；跨工具个人记忆应用 | 只读 Adapter 同条件对照；工作/代码记忆与冲突消解是真实增量；适用条件可确定性求值；无鉴权多租户、图谱默认关、HTTP Server 无 token 校验 | **并列具名候选，源码/论文已核、极新（发布 1 天）、未联调**。**不采用其权重**（`hy_v3` 未发 modeling 代码、无量化、评测不可复现）；自动 reconcile **必须降级为候选生成器**；不 fork、不用 Proxy 注入、不暴露其 HTTP Server。裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md) |
 | **P0-10** | **ElevenLabs ElevenAgents**：托管式全栈 Agent 平台的**配置对象模型与交付闭环** | ① 配置分层：`version` 不可变快照，**显式区分「随版本冻结」与「随实例固定」**两组设置；② **工具执行模式枚举**（immediate / pre-tool speech / post-tool speech / async）与"副作用不得先于播报"的时序；③ 版本/分支/字段级 diff/确定性流量切分；④ 测试三分类 + 工具 mock + 概率化 pass rate + 失败分桶；⑤ 评测三值 `success/failure/unknown`；⑥ 护栏退出动作与 streaming/blocking 的延迟—漏出权衡 | 能否接同一业务规则、权限、工具与成本账本；**它是闭源托管服务，无源码、无自托管**，故只能作对照与外部 Provider 候选，不能作底座 | **重点参考（形态重叠最深的外部产品）**：最值得对标的是配置对象模型与工具时序，**不是**它的验收方式。**必须明确的四条边界**：**没有把记忆做成独立对象**（KB 有 agent 级 `Memory (Alpha)`；per-agent 有 `user memories` 设置但官方零文档）· **有提案评审装置但不是强制门**（≥1 名非作者批准、管理员可绕过，且**合并不要求测试通过**——"测试必须过"被官方列为未来几周计划）· Custom Guardrail 是自然语言 + 轻量模型的概率判定，且**不校验工具参数** · Widget 必须公开且关闭鉴权（补偿手段：签名 URL + 域名白名单）。**未调用 API、未跑真实会话、未测时延/并发/中文识别**；待确认项 EL-1…EL-5 见[分析 §9](ELEVENLABS-AGENTS-ANALYSIS.md) |
+| **P0-11** | **pi durable**：执行耐久与恢复机制参照 | 原子提交线、task/phase/checkpoint、sleep/wake、有限重试、abort、crash-loop parking、嵌套任务/任务图、replay policy、只读查看与遥测 | 单进程 storage 所有权、SQLite WAL 与同步级别、JSONL 长历史、外部副作用重试和跨进程/云恢复；必须证明可替换且不改变 Loomrise 领域合同 | **只借机制，不引依赖**。核对版本 `@earendil-works/pi-durable@1.4.0`、commit `936e5f40aede9327b9142b63506ed2b68bc6b4ac`；拟由 `DurableRunAdapter` 封装，`RunEvent`、`Outcome`、权限、幂等键、结果 ID 和 `UNKNOWN` 对账仍归 Loomrise；当前未实现、未安装、未宣称生产支持 |
 
 ### 渐进式上下文加载的参考判断
 
@@ -92,7 +95,7 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 
 ### Task 与用户上下文的补充参照（2026-10-14，未选型/未联调）
 
-[Task设计](TASK-SYSTEM-DESIGN.md)、[用户上下文设计](USER-CONTEXT-DESIGN.md)和[联合计划](TASK-MEMORY-INTEGRATION-PLAN.md)归并了获授权业务经验与开源官方机制。Temporal/DBOS仅作耐久执行、队列/幂等/取消的候选对照；LangGraph/LangMem参考线程与跨会话记忆分层、结构化profile和collection；Letta参考常驻/按需读取与版本化记忆。Hindsight/TencentDB Agent Memory保留既有候选，AgentScope保持当前在线运行基线。先合同与故障集，再一个Adapter/Provider实测，不叠加多内核或换底座。
+[Task设计](TASK-SYSTEM-DESIGN.md)、[用户上下文设计](USER-CONTEXT-DESIGN.md)和[联合计划](TASK-MEMORY-INTEGRATION-PLAN.md)归并了获授权业务经验与开源官方机制。Temporal/DBOS 与 pi durable 仅作耐久执行、队列/幂等/取消的候选对照；pi durable 的 checkpoint/恢复机制优先进入 `DurableRunAdapter` 验证，不能替代业务账本或外部结果对账。LangGraph/LangMem参考线程与跨会话记忆分层、结构化profile和collection；Letta参考常驻/按需读取与版本化记忆。Hindsight/TencentDB Agent Memory保留既有候选，AgentScope保持当前在线运行基线。先合同与故障集，再一个Adapter/Provider实测，不叠加多内核或换底座。
 
 参考原文：[Temporal Activity](https://docs.temporal.io/activity-definition)、[Temporal取消](https://docs.temporal.io/activity-execution)、[DBOS Queues](https://docs.dbos.dev/python/tutorials/queue-tutorial)、[LangGraph Memory](https://docs.langchain.com/oss/python/concepts/memory)、[LangMem Concepts](https://langchain-ai.github.io/langmem/concepts/conceptual_guide/)、[Letta Memory](https://docs.letta.com/agent-sdk/memory)。最新官方能力与S1已锁构件分开；不采用框架自带计划/记忆作为Loomrise的任务、事实或授权权威。
 
@@ -138,4 +141,5 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 - OpenTelemetry GenAI: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai
 - Hindsight: https://github.com/vectorize-io/hindsight（MIT；核查 commit `3ca6a67`；机制与应用边界见[分析报告](HINDSIGHT-ITERATION-ANALYSIS.md)）
 - Tencent Hy Memory: https://github.com/Tencent-Hunyuan/Hy-Memory（Apache-2.0；2026-10-16 调研 main `fba347a`，发布 1 天、star 40、open issues 0；未安装未联调）· 模型 https://huggingface.co/tencent/Hy-Memory-30B-A3B（Apache-2.0，downloads 0）· 技术报告 arXiv:2610.22196；三层裁决见[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)
+- pi durable: https://github.com/earendil-works/pi/tree/main/packages/durable（MIT；核对 `@earendil-works/pi-durable@1.4.0`，commit `936e5f40aede9327b9142b63506ed2b68bc6b4ac`；机制参照，未安装未联调）
 - ElevenLabs ElevenAgents（**闭源托管，无可 pin 的源码**）：产品页 https://elevenlabs.io/zh/agents/ai-customer-support · 文档 https://elevenlabs.io/docs/eleven-agents/overview（2026-10-21 访问；未开户、未调用 API、未实测）· 编排引擎说明 https://elevenlabs.io/zh/blog/unpacking-elevenagents-orchestration-engine · 语音能力与"无内置跨通话记忆" https://elevenlabs.io/blog/voice-agent-capabilities；配置与边界见[ElevenLabs 配置方案与能力边界](ELEVENLABS-AGENTS-ANALYSIS.md)

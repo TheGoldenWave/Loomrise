@@ -10,10 +10,8 @@
     "skill_ids": ["course_consult_booking", "refund_request"],
     "tool_ids": ["search_knowledge", "create_booking"],
     "rule_ids": [
-      "search.readonly_allow",
       "booking.require_confirm",
-      "booking.deny_unknown_course",
-      "booking.idempotent_once"
+      "booking.deny_unknown_course"
     ],
     "context_budget_tokens": 4000
   },
@@ -71,18 +69,10 @@
   ],
   "rules": [
     {
-      "rule_id": "search.readonly_allow",
-      "scope": "global",
-      "tool": "search_knowledge",
-      "behavior": "allow",
-      "reason": "只读检索，无副作用",
-      "note": "模型外裁决，不依赖模型自评"
-    },
-    {
       "rule_id": "booking.require_confirm",
       "scope": "task",
       "tool": "create_booking",
-      "behavior": "require_confirm",
+      "verdict": "require",
       "requires_confirm": true,
       "reason": "业务写入必须取得人工确认",
       "note": "确认在模型外收集，模型不得自己确认"
@@ -91,19 +81,10 @@
       "rule_id": "booking.deny_unknown_course",
       "scope": "task",
       "tool": "create_booking",
-      "behavior": "deny",
+      "verdict": "deny",
       "when_arg_equals": { "course_id": "UNKNOWN" },
       "reason": "课程未确定时不得写入预约",
       "note": "确定性裁决，含拒绝分支"
-    },
-    {
-      "rule_id": "booking.idempotent_once",
-      "scope": "task",
-      "tool": "create_booking",
-      "behavior": "allow",
-      "idempotent": true,
-      "reason": "同一幂等键只允许产生一次业务写入",
-      "note": "重复提交由 ExecutionService 拦截，不是模型自觉"
     }
   ],
   "fragments": [

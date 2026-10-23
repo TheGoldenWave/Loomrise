@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .contracts import Behavior, ContextFragment, ContextScope, ToolOutcome, new_id
+from .contracts import ContextFragment, ContextScope, ToolOutcome, new_id
 from .rules import DecisionPolicy
 
 

@@ -73,7 +73,7 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-let requestId = null, runId = null, busy = false, recognition = null, utterance = null, fragmentId = null, playbackRun = null;
+let requestId = null, runId = null, busy = false;
 const status = text => { $('status').textContent = text; };
 function message(kind, text) {
   const item = document.createElement('div'); item.className = `message ${kind}`;
@@ -91,32 +91,114 @@ async function post(path, data) {
   if (!response.ok) throw new Error((await response.text()).slice(0, 160));
   return response.json();
 }
-function stopSpeech() {
-  if (!utterance) return;
-  speechSynthesis.cancel(); utterance = null; $('stop-audio').disabled = true;
-  if (fragmentId) post('playback', {action:'interrupted', request_id:requestId, run_id:playbackRun, fragment_id:fragmentId}).catch(() => {});
-  fragmentId = null; status('播报已打断');
+/* ---------- 语音通道：麦克风 PCM 上行，服务端合成 PCM 下行 ----------
+   业务执行仍走 POST /api/runs；这里只管声音怎么进出浏览器。
+   量到的停止时延是"停止指令 → AudioBufferSource 停止"，**不含扬声器与系统混音缓冲**，
+   与声学级实测不是同一个数，记录时必须分开写。 */
+const now = () => performance.now();
+// 浏览器可能永远不回 getUserMedia（用户既不点允许也不点拒绝）——必须有超时，
+// 否则按钮会停在"录音"且没有任何提示，用户以为坏了。
+const withTimeout = (promise, ms, message) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+let voiceReady = false, ws = null, wsOpen = null, recording = false;
+let audioCtx = null, playGain = null, micNode = null, micStream = null, playCursor = 0, micFirstFrameAt = 0;
+let asrText = '', asrTimer = null;
+const TURN_SILENCE_MS = 1200;   // 服务端已判句尾后再等这么久，区分"逗号停顿"与"说完了"
+const playing = new Set();
+let tts = null;
+const voiceSend = payload => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(payload)); };
+function metric(name, value) { voiceSend({type: 'metric', name, value}); }
+
+const MIC_WORKLET = `
+class LoomriseMic extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.ratio = sampleRate / (options.processorOptions.targetRate || 16000);
+    this.pos = 0; this.buf = [];
+  }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    while (this.pos < ch.length) {
+      const i = Math.floor(this.pos), f = this.pos - i;
+      const a = ch[i] || 0, b = ch[i + 1] === undefined ? a : ch[i + 1];
+      this.buf.push(a + (b - a) * f);
+      this.pos += this.ratio;
+    }
+    this.pos -= ch.length;
+    while (this.buf.length >= 1600) {          // 100 ms @ 16 kHz
+      const block = this.buf.splice(0, 1600), pcm = new Int16Array(1600);
+      for (let i = 0; i < 1600; i++) {
+        const s = Math.max(-1, Math.min(1, block[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    }
+    return true;
+  }
 }
+registerProcessor('loomrise-mic', LoomriseMic);
+`;
+
+function stopPlayback(interrupt) {
+  const snapshot = tts;
+  for (const src of playing) { try { src.stop(); } catch (_) {} }
+  playing.clear(); playCursor = 0; $('stop-audio').disabled = true;
+  if (!snapshot || snapshot.closed) return;
+  snapshot.closed = true;
+  if (snapshot.firstPlayAt) metric('playback.stopped', {stop_ms: Math.round(now() - (snapshot.interruptAt || now()))});
+  if (interrupt && snapshot.fragmentId) {
+    post('playback', {action: 'interrupted', request_id: requestId, run_id: snapshot.runId, fragment_id: snapshot.fragmentId}).catch(() => {});
+  }
+  tts = null;
+  status(interrupt ? '播报已打断' : '播报结束');
+}
+
+async function finishPlayback() {
+  const snapshot = tts;
+  if (!snapshot || snapshot.closed || playing.size || !snapshot.doneAt) return;
+  snapshot.closed = true;
+  try {
+    const id = snapshot.fragmentId || (snapshot.fragment ? await snapshot.fragment : null);
+    if (id) await post('playback', {action: 'finished', request_id: requestId, run_id: snapshot.runId, fragment_id: id});
+    status('播报完成（服务端合成）');
+  } catch { status('播报结束，回执未确认'); }
+  if (tts === snapshot) tts = null;
+}
+
+function playPcm(int16) {
+  if (!audioCtx || !tts || !int16.length) return;
+  const buffer = audioCtx.createBuffer(1, int16.length, 16000);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < int16.length; i++) data[i] = int16[i] / 32768;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer; src.connect(playGain);
+  if (playCursor < audioCtx.currentTime + 0.02) playCursor = audioCtx.currentTime + 0.02;
+  src.start(playCursor); playCursor += buffer.duration;
+  playing.add(src);
+  src.onended = () => { playing.delete(src); if (!playing.size) finishPlayback(); };
+  if (!tts.firstPlayAt) {
+    tts.firstPlayAt = now();
+    metric('playback.first_audio', {after_tts_request_ms: Math.round(tts.firstPlayAt - tts.speakAt)});
+    // 回执口径不变：浏览器开始播出才报 started，播出结束才报 finished。
+    tts.fragment = post('playback', {action: 'started', request_id: requestId, run_id: tts.runId, text: tts.text})
+      .then(d => (tts.fragmentId = d.fragment_id)).catch(() => null);
+  }
+}
+
 function speak(text, currentRun) {
-  if (!text || !('speechSynthesis' in window)) return;
-  stopSpeech();
-  const speech = new SpeechSynthesisUtterance(text); speech.lang = 'zh-CN'; speech.rate = 1;
-  utterance = speech; playbackRun = currentRun;
-  let started;
-  speech.onstart = () => {
-    $('stop-audio').disabled = false; status('正在播报');
-    started = post('playback', {action:'started', request_id:requestId, run_id:currentRun, text})
-      .then(data => { fragmentId = data.fragment_id; return fragmentId; });
-  };
-  speech.onend = async () => {
-    if (utterance !== speech) return;
-    utterance = null; $('stop-audio').disabled = true;
-    try { const id = await started; await post('playback', {action:'finished', request_id:requestId, run_id:currentRun, fragment_id:id}); status('播报完成'); }
-    catch { status('播报结束，回执未确认'); }
-    fragmentId = null;
-  };
-  speech.onerror = () => { if (utterance === speech) stopSpeech(); };
-  speechSynthesis.speak(speech);
+  if (!text || !voiceReady) return;
+  stopPlayback(true);
+  tts = {text, runId: currentRun, speakAt: now(), interruptAt: 0, firstPlayAt: 0, doneAt: 0,
+         fragmentId: null, fragment: null, closed: false};
+  voiceSend({type: 'tts.speak', text, run_id: currentRun});
+  status('正在合成播报（服务端）');
+}
+
+function stopSpeech() {
+  if (tts) tts.interruptAt = now();
+  if (tts && !tts.closed) voiceSend({type: 'tts.cancel', reason: 'barge_in'});
+  stopPlayback(true);
 }
 async function confirmCard(value) {
   const card = document.createElement('div'); card.className = 'confirm';
@@ -176,30 +258,140 @@ async function submit(text, channel='text') {
       }
     }
     if (!finished) status('连接结束，未收到完成回执');
-    else if (!utterance) status('执行完成');
+    else if (!tts) status('执行完成');
   } catch (err) { message('error', err.message); $('input').value = text; status('请求失败，输入已保留，可重试'); $('state').textContent = '失败'; }
-  finally { busy = false; $('send').disabled = false; $('record').disabled = !recognition; $('cancel').disabled = true; }
+  finally { busy = false; $('send').disabled = false; $('record').disabled = false; $('cancel').disabled = true; }
 }
-const Recognizer = window.SpeechRecognition || window.webkitSpeechRecognition;
-if (Recognizer) {
-  recognition = new Recognizer(); recognition.lang = 'zh-CN'; recognition.interimResults = true; recognition.continuous = false;
-  recognition.onresult = event => {
-    const parts = Array.from(event.results); $('input').value = parts.map(result => result[0].transcript).join('');
-    if (parts.some(result => result.isFinal)) { const text = $('input').value; recognition.stop(); submit(text, 'voice'); }
-  };
-  recognition.onerror = event => { status(`语音识别失败：${event.error}`); $('record').textContent = '录音'; };
-  recognition.onend = () => { $('record').textContent = '录音'; };
-} else { $('record').hidden = true; document.querySelector('.headline .muted').textContent = '数据分析入门 · 网页文字'; }
-$('record').onclick = () => {
-  if ($('record').textContent === '停止录音') { recognition.stop(); $('record').textContent = '录音'; return; }
-  stopSpeech(); try { recognition.start(); $('record').textContent = '停止录音'; status('正在听取中文语音'); }
-  catch (err) { status(`录音未启动：${err.message}`); }
-};
+function ensureVoice() {
+  if (ws && ws.readyState === 1 && voiceReady) return Promise.resolve();
+  if (wsOpen) return wsOpen;
+  wsOpen = new Promise((resolve, reject) => {
+    let settled = false;
+    const socket = new WebSocket(`ws://${location.host}/ws/voice`);
+    socket.binaryType = 'arraybuffer';
+    const timer = setTimeout(() => { if (!settled) { settled = true; reject(new Error('语音通道超时')); } }, 6000);
+    socket.onopen = () => { ws = socket; };
+    socket.onmessage = event => {
+      if (typeof event.data === 'string') {
+        const evt = JSON.parse(event.data);
+        if (evt.type === 'ready') { voiceReady = true; settled = true; clearTimeout(timer); resolve(); }
+        if (evt.type === 'error' && !settled) { settled = true; clearTimeout(timer); reject(new Error(evt.message || evt.code)); }
+        handleVoiceEvent(evt);
+      } else if (event.data instanceof ArrayBuffer) {
+        playPcm(new Int16Array(event.data));
+      }
+    };
+    socket.onerror = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('语音通道连接失败')); } };
+    socket.onclose = () => { ws = null; wsOpen = null; voiceReady = false; stopRecording(false); };
+  });
+  return wsOpen;
+}
+
+function handleVoiceEvent(evt) {
+  if (evt.type === 'asr.ready') { asrText = ''; status('正在听取（服务端识别）'); return; }
+  if (evt.type === 'asr.partial') {
+    // 用户还在说：撤掉待发的自动结束，避免把半句话提交出去。
+    clearTimeout(asrTimer); asrTimer = null;
+    $('input').value = asrText + evt.text;
+    return;
+  }
+  if (evt.type === 'asr.final') {
+    asrText += evt.text || '';
+    $('input').value = asrText;
+    metric('asr.sentence', {chars: (evt.text || '').length, end_ms: evt.end_ms, index: evt.index});
+    clearTimeout(asrTimer);
+    asrTimer = setTimeout(() => { asrTimer = null; if (recording) stopRecording(); }, TURN_SILENCE_MS);
+    return;
+  }
+  if (evt.type === 'asr.closed') {
+    // 唯一的提交点：服务端已收尾，文本才完整。
+    clearTimeout(asrTimer); asrTimer = null;
+    metric('asr.closed', {sentences: evt.sentences, dropped_bytes: evt.dropped_bytes});
+    const text = asrText.trim(); asrText = '';
+    if (text) { $('input').value = text; submit(text, 'voice'); }
+    else status(evt.dropped_bytes ? '上行积压，已丢弃部分音频' : '没有听清，请再说一次');
+    return;
+  }
+  if (evt.type === 'tts.done') {
+    if (tts) tts.doneAt = now();
+    finishPlayback();
+    return;
+  }
+  if (evt.type === 'tts.cancelled' || evt.type === 'tts.started' || evt.type === 'tts.first_audio') return;
+  if (evt.type === 'error') status(`语音通道：${evt.message || evt.code}`);
+}
+
+async function startRecording() {
+  if (recording) return;
+  $('record').disabled = true;
+  try {
+    await ensureVoice();
+    if (!audioCtx) {
+      try { audioCtx = new AudioContext({sampleRate: 16000}); }
+      catch (_) { audioCtx = new AudioContext(); }
+      playGain = audioCtx.createGain();
+      playGain.connect(audioCtx.destination);
+    }
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    stopSpeech();
+    status('等待麦克风授权…');
+    micStream = await withTimeout(
+      navigator.mediaDevices.getUserMedia({
+        audio: {channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true},
+      }),
+      15000, '麦克风授权超时（15 秒）：检查浏览器地址栏的麦克风权限');
+    const moduleUrl = URL.createObjectURL(new Blob([MIC_WORKLET], {type: 'application/javascript'}));
+    await withTimeout(audioCtx.audioWorklet.addModule(moduleUrl), 8000, '音频处理模块加载超时');
+    URL.revokeObjectURL(moduleUrl);
+    const source = audioCtx.createMediaStreamSource(micStream);
+    micNode = new AudioWorkletNode(audioCtx, 'loomrise-mic', {processorOptions: {targetRate: 16000}});
+    micNode.port.onmessage = event => {
+      if (!recording || !ws || ws.readyState !== 1) return;
+      ws.send(event.data);
+      if (!micFirstFrameAt) {
+        micFirstFrameAt = now();
+        metric('mic.first_frame', {ctx_rate: audioCtx.sampleRate});
+      }
+    };
+    const mute = audioCtx.createGain(); mute.gain.value = 0;   // 不回放自己，避免啸叫
+    source.connect(micNode); micNode.connect(mute); mute.connect(audioCtx.destination);
+    voiceSend({type: 'asr.start'});
+    recording = true; micFirstFrameAt = 0; $('record').disabled = false;
+    $('record').textContent = '停止录音'; $('record').classList.add('primary');
+    status('正在听取（服务端识别）');
+  } catch (err) {
+    $('record').disabled = false;
+    stopRecording(false);
+    status(`录音未启动：${err.message}`);
+  }
+}
+
+function stopRecording(sendStop) {
+  if (micNode) { try { micNode.disconnect(); } catch (_) {} micNode = null; }
+  if (micStream) { micStream.getTracks().forEach(track => track.stop()); micStream = null; }
+  if (recording && sendStop !== false) voiceSend({type: 'asr.stop'});
+  recording = false; $('record').disabled = false;
+  $('record').textContent = '录音'; $('record').classList.remove('primary');
+}
+$('record').onclick = () => { if (recording) stopRecording(); else startRecording(); };
 $('stop-audio').onclick = stopSpeech;
 $('send').onclick = () => submit($('input').value);
 $('cancel').onclick = async () => { if (requestId && runId) { try { await post('cancel', {request_id:requestId, run_id:runId}); status('取消请求已发送，等待执行端确认'); } catch (err) { status(err.message); } } };
 $('input').onkeydown = event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit($('input').value); } };
-fetch('/api/status').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(data => { $('version').textContent = data.version; if (!data.configured) status('未配置模型：请先在本机运行 configure-model'); else status(data.scripted ? '脚本模式 · 模拟写入' : 'Coding Plan · 模拟写入'); }).catch(() => status('服务状态暂不可用，请稍后刷新页面'));
+fetch('/api/status').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(data => {
+  $('version').textContent = data.version;
+  const voice = data.voice || {};
+  if (!voice.available) {
+    $('record').disabled = true;
+    $('record').title = voice.reason || '语音不可用';
+    document.querySelector('.headline .muted').textContent = '数据分析入门 · 网页文字';
+    status(voice.reason ? `语音不可用：${voice.reason}` : '语音不可用，仅文字');
+  } else {
+    $('record').title = `按住说话：${voice.asr_model} → ${voice.tts_model}`;
+    status(!data.configured ? '未配置模型：请先在本机运行 configure-model'
+      : data.scripted ? '脚本模式 · 模拟写入 · 语音走服务端' : 'Coding Plan · 模拟写入 · 语音走服务端');
+  }
+}).catch(() => status('服务状态暂不可用，请稍后刷新页面'));
 </script>
 </body>
 </html>

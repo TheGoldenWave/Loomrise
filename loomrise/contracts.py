@@ -103,10 +103,69 @@ class ContextScope(StrEnum):
     EVIDENCE = "evidence"
 
 
-class Behavior(StrEnum):
-    ALLOW = "allow"
+class Verdict(StrEnum):
+    """硬规则裁决的四种结果。
+
+    **没有 `allow`，这是刻意的。** 一条规则能做的事只有"拦、要确认、停、去重"；
+    "这个工具能不能用"由 `ToolPolicy` 的登记表达，不由规则声明。
+    把两者混在一个枚举里，会出现"没有规则 = 不能用"和"有 allow 规则 = 能用"
+    两种放行来源，审计时说不清到底谁批准的。
+    """
+
     DENY = "deny"
-    ASK = "require_confirm"
+    REQUIRE = "require"
+    STOP = "stop"
+    DEDUPE = "dedupe"
+
+
+class GateOutcome(StrEnum):
+    """确定性闸门之后"去哪"。
+
+    与 `Verdict` **并列，不是从属**：`Verdict` 说"这个动作能不能做"，
+    `GateOutcome` 说"这一轮往哪走"。一个 deny 可能导向 `block`，
+    也可能导向 `route_to(人工)`；两者不能互相推导。
+    """
+
+    ROUTE_TO = "route_to"
+    BLOCK = "block"
+    SUSPEND = "suspend"
+
+
+class SubjectScope(StrEnum):
+    """记忆主体的作用域。
+
+    `MAPPED` 的主体由业务侧映射后传入，可落库可跨轮；
+    `EPHEMERAL` 只活在本次会话内，**不落库**。
+    """
+
+    MAPPED = "mapped"
+    EPHEMERAL = "ephemeral"
+
+
+class StateWindow(StrEnum):
+    """状态计数窗口。本轮只落枚举与校验，**不实现计数器**。"""
+
+    CYCLE = "cycle"
+    H24 = "24h"
+    FOREVER = "forever"
+    SESSION = "session"
+
+
+@dataclass
+class AuthorizationResult:
+    """授权查询结果。**不产 `Verdict`**——它不是裁决，是"这个工具是否登记在案"。
+
+    登记即允许；未登记直接拒绝。这条查询必须发生在裁决之前，
+    否则"未登记"会被伪装成一条 deny 规则，规则表就会变成一个权限系统。
+    """
+
+    allowed: bool
+    tool_id: str = ""
+    reason: str = ""
+    side_effect_level: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 # --------------------------------------------------------------------------
@@ -123,10 +182,27 @@ class ServiceRequest:
     state: RequestState
     trigger_kind: str = "inbound_message"
     trigger_ref: str | None = None
+    # 记忆主体的查询键：由业务侧映射后传入，**不是外键**，也不做身份合并。
+    # 没有主体就只能落 ephemeral，且不落库——"空值即默认主体"会让不同访客的记忆串在一起。
+    subject_id: str | None = None
+    subject_scope: SubjectScope = SubjectScope.EPHEMERAL
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
     outcome: dict[str, Any] | None = None
     result_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.subject_scope, SubjectScope):
+            self.subject_scope = SubjectScope(self.subject_scope)
+        if self.subject_scope is SubjectScope.MAPPED and not (self.subject_id or "").strip():
+            raise ValueError(
+                "subject_scope=mapped 必须提供 subject_id；没有主体只能用 ephemeral（且不落库）",
+            )
+
+    @property
+    def persistent_subject(self) -> str | None:
+        """可落库的主体。ephemeral 一律返回 None，调用方不得自行回退。"""
+        return self.subject_id if self.subject_scope is SubjectScope.MAPPED else None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -175,7 +251,7 @@ class RunEvent:
 class HardRule:
     rule_id: str
     scope: str  # global | task | skill
-    behavior: Behavior
+    verdict: Verdict
     reason: str
     tool: str | None = None
     requires_confirm: bool = False
@@ -185,7 +261,18 @@ class HardRule:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "HardRule":
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        # 旧键必须显式失败：`from_dict` 会过滤未知字段，静默丢弃 `behavior`
+        # 会让 verdict 落到默认值，规则看上去还在、其实已不生效。
+        if "behavior" in d and "verdict" not in d:
+            raise ValueError(
+                f"HardRule {d.get('rule_id')!r}: 字段 `behavior` 已废弃，改用 `verdict`"
+                "（allow 已删除：放行由 ToolPolicy 登记表达）",
+            )
+        data = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        # 在边界处归一成枚举：下游用 `is` 比较，字符串会让匹配静默失败。
+        if "verdict" in data and not isinstance(data["verdict"], Verdict):
+            data["verdict"] = Verdict(data["verdict"])
+        return cls(**data)
 
 
 @dataclass
