@@ -21,12 +21,12 @@ from loomrise.adapters.projection import project_all  # noqa: E402
 from loomrise.adapters.voice import VoiceSession, simulate_session  # noqa: E402
 from loomrise.context import CompactionPolicy, ContextLedger  # noqa: E402
 from loomrise.contracts import (  # noqa: E402
-    Behavior,
     ContextScope,
     LoadStatus,
     PlaybackState,
     ScenarioPack,
     ToolOutcome,
+    Verdict,
 )
 from loomrise.ledger import EventLedger  # noqa: E402
 from loomrise.rules import DecisionPolicy  # noqa: E402
@@ -52,17 +52,30 @@ def test_ledger_chain() -> None:
 
 def test_hard_rules() -> None:
     pack = ScenarioPack.load(str(PACK))
-    policy = DecisionPolicy(pack.rules)
+    policy = DecisionPolicy(pack.rules, tools=pack.tools)
     d = policy.check("create_booking", {"course_id": "UNKNOWN"})
-    check("硬规则确定性拒绝", d.behavior is Behavior.DENY, str(d.rule_ids))
+    check("硬规则确定性拒绝", d.verdict is Verdict.DENY, str(d.rule_ids))
     d = policy.check("create_booking", {"course_id": "ok"})
-    check("写入需人工确认（模型外）", d.behavior is Behavior.ASK, str(d.rule_ids))
+    check("写入需人工确认（模型外）", d.verdict is Verdict.REQUIRE, str(d.rule_ids))
     d = policy.check("search_knowledge", {"query": "x"})
-    check("只读放行", d.behavior is Behavior.ALLOW)
+    # 这一条从"只读放行"改成"授权查询放行"：放行不是一种裁决，
+    # 而是"工具已登记 + 没有规则要拦"，两件事都要成立。
+    check(
+        "只读放行来自授权查询而非规则",
+        d.verdict is None and d.authorization is not None
+        and d.authorization.allowed and not d.rule_ids,
+        d.reason,
+    )
+    d = policy.check("delete_everything", {})
+    check(
+        "未登记工具直接拒绝",
+        d.verdict is Verdict.DENY and not d.authorization.allowed,
+        d.reason,
+    )
 
     policy.remember_write("k1", "res_1")
     d = policy.check("create_booking", {"course_id": "ok", "idempotency_key": "k1"})
-    check("重复写入被拦截", d.behavior is Behavior.DENY, d.reason)
+    check("重复写入判 dedupe 而非 deny", d.verdict is Verdict.DEDUPE, d.reason)
 
 
 def test_context_three_stage() -> None:

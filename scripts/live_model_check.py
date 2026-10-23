@@ -93,7 +93,7 @@ async def _run(
         "ledger_intact": svc.ledger.verify(),
         "cancel_confirmed": bool(svc.ledger.find("run.cancel_confirmed")),
         "permission": [
-            e.payload.get("behavior")
+            e.payload.get("verdict")
             for e in svc.ledger.find("permission.decision")
         ],
         "tool_calls": [
@@ -143,7 +143,7 @@ def _checks(report: dict[str, Any]) -> list[dict[str, Any]]:
          "detail": f"{consult['state']} / writes={consult['write_count']}"},
         {"name": "人工确认后写入一次且成功", "ok": confirmed["write_count"] == 1 and confirmed["state"] == "success",
          "detail": f"{confirmed['state']} / writes={confirmed['write_count']}"},
-        {"name": "确认路径有 permission.allow", "ok": "allow" in confirmed["permission"],
+        {"name": "确认路径判 pass 而非 allow", "ok": "pass" in confirmed["permission"],
          "detail": f"{confirmed['permission']} / calls={confirmed['tool_calls']}"},
         {"name": "确认路径确实调用了写入工具", "ok": "create_booking" in confirmed["tool_calls"],
          "detail": f"{confirmed['tool_calls']} / attempts={confirmed['attempts']}"},

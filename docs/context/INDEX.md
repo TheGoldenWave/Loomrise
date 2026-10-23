@@ -85,7 +85,7 @@
 | [配置后台启动方案](../S2-CONSOLE-KICKOFF.md) | 旧 K0/D3/K1 缺口；§8 为 CT-00–06 投影/蓝图/事项/证据/Diff 与联调交接 | 新工作包全待实施，沿用原生模块；CT/B/T 编号均不是新产品阶段，前端不关闭 TM/AGI Gate |
 | [前端设计启动简报](../S2-FRONTEND-DESIGN-BRIEF.md) | 当前基线、关系与 §11 Task/Harness 增量设计输入 | 旧 23 面仅职责对照；新工作面设计不等于页面或服务已交付 |
 | [编排视图前端方案](../S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 「流程」tab 三投影（图/清单/规则）的画布实现：技术选型 `@xyflow/react` v12（含四条理由与不选 X6/LogicFlow 的原因）、四视图态、端口与边界事件的画法、**九条**校验的界面落点、视图模型与组件树、无障碍；**RG-F1–RG-F12 已全部定案** | **未实施**；不新增二级页（修正 RG-1 的「17→18」）；依赖须登记 `VERSION-PINS` |
-| [硬规则表达模型](../HARD-RULE-MODEL.md) | 条件算子、裁决、冲突与字段形状；**v0.2 已裁决**：裁决/授权/路由去向/事项状态四层分开、条件深度 2 层（含边条件）、`state` 四窗口（`cycle` 默认） | 六问已闭合（§9），D3 与 K1 阻塞解除；**代码未同步**（`Behavior.ALLOW` 仍在 `contracts.py`） |
+| [硬规则表达模型](../HARD-RULE-MODEL.md) | 条件算子、裁决、冲突与字段形状；**v0.2 已裁决**：裁决/授权/路由去向/事项状态四层分开、条件深度 2 层（含边条件）、`state` 四窗口（`cycle` 默认） | 六问已闭合（§9），D3 与 K1 阻塞解除；**代码已同步**（2026-10-23，`contracts.py` 的 `Verdict` 四值、`AuthorizationResult`、`StateWindow`、`validation.py` 第九条） |
 | [S2 评测门禁提案](../S2-EVAL-GATE-PROPOSAL.md) | Gate Reserve、配对评估、预算与状态机 | §2 已确认且并入治理设计；§3–§5 仍待确认 |
 | [Task 体系设计](../TASK-SYSTEM-DESIGN.md) | 专家内版本蓝图、默认初始化、双来源事项、受限决策、迁移与工作集 | 方案已确定；§9 后台设计后继已登记，UI/服务未实现；ServiceRequest 不变，无共享策略库 |
 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 记忆/画像/上下文模块职责及治理、身份、检索/压缩、遗忘 | 模块方向已确认；接口/字段/Provider提案未实现，六层不变 |

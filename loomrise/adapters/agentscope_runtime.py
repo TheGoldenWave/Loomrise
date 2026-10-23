@@ -40,19 +40,25 @@ from agentscope.message import Msg, TextBlock, ToolCallBlock, ToolResultState
 from agentscope.tool import FunctionTool, Toolkit, ToolResponse
 
 from ..contracts import (
-    Behavior,
     Channel,
     ToolOutcome,
+    Verdict,
     estimate_tokens,
     new_id,
 )
 from ..context import CompactionPolicy
 
-# Loomrise 行为 → 上游权限行为
-_BEHAVIOR_MAP = {
-    Behavior.ALLOW: PermissionBehavior.ALLOW,
-    Behavior.DENY: PermissionBehavior.DENY,
-    Behavior.ASK: PermissionBehavior.ASK,
+# Loomrise 裁决 → 上游权限行为。
+#
+# 上游只有 allow/deny/ask 三档，所以这里必然有损：`STOP` 与 `DEDUPE` 都落 `DENY`
+# （都不能执行），区别留在 `permission.decision` 事件的 verdict 字段里，
+# **不在上游枚举里假装它们存在**。`verdict is None`（无规则裁决）映射为 ALLOW——
+# 但那条路径的授权依据是 ToolPolicy 登记，不是这条映射给的。
+_VERDICT_MAP = {
+    Verdict.DENY: PermissionBehavior.DENY,
+    Verdict.REQUIRE: PermissionBehavior.ASK,
+    Verdict.STOP: PermissionBehavior.DENY,
+    Verdict.DEDUPE: PermissionBehavior.DENY,
 }
 
 # Loomrise 结果语义 → 上游工具结果态。UNKNOWN 上游没有，落 ERROR 并保留 Loomrise 语义。
@@ -261,7 +267,10 @@ class PolicyMiddleware(MiddlewareBase):
             self.emit(
                 "permission.decision",
                 tool=name,
-                behavior="allow",
+                # 已确认不是一种裁决，是"确认这个前置条件已经满足"，所以记 pass。
+                # 记成 allow 会让审计以为规则表里放行过一次。
+                verdict="pass",
+                authorized=True,
                 rule_ids=["confirm.already_collected"],
                 reason="该工具调用已取得人工确认，不再重复询问",
             )
@@ -270,6 +279,14 @@ class PolicyMiddleware(MiddlewareBase):
                 message="已确认",
             )
         if call_id in self.confirms.denied:
+            self.emit(
+                "permission.decision",
+                tool=name,
+                verdict="deny",
+                authorized=True,
+                rule_ids=["confirm.denied_recheck"],
+                reason="该工具调用已被人工拒绝",
+            )
             return PermissionDecision(
                 behavior=PermissionBehavior.DENY,
                 message="该工具调用已被人工拒绝",
@@ -278,13 +295,21 @@ class PolicyMiddleware(MiddlewareBase):
         self.emit(
             "permission.decision",
             tool=name,
-            behavior=decision.behavior.value,
+            verdict=decision.verdict_name,
+            authorized=bool(decision.authorization and decision.authorization.allowed),
             rule_ids=decision.rule_ids,
             reason=decision.reason,
         )
+        if decision.verdict is None:
+            # 没有规则要拦，且授权查询已通过（否则 check 会返回 DENY）。
+            return PermissionDecision(
+                behavior=PermissionBehavior.ALLOW,
+                message=f"{name}: 已登记放行",
+                decision_reason=decision.reason,
+            )
         return PermissionDecision(
-            behavior=_BEHAVIOR_MAP[decision.behavior],
-            message=f"{name}: {decision.behavior.value}",
+            behavior=_VERDICT_MAP[decision.verdict],
+            message=f"{name}: {decision.verdict.value}",
             decision_reason=decision.reason,
         )
 
@@ -371,8 +396,13 @@ def project_event(evt: Any, emit: Callable[..., Any]) -> str:
         )
         return "run.reply_finished"
     if isinstance(evt, TextBlockEndEvent):
-        emit("reply.text", block_id=evt.block_id, text=evt.text)
-        return "reply.text"
+        # 真实 provider 的 TextBlockEndEvent 可能不带 text（实测为 None）。
+        # 无条件 emit 会往账本写一条"有事件、没内容"的 reply.text，
+        # 投影层因类型不符跳过它，前端就只能靠 summary 兜底——看似能用，实际没有流式文本。
+        if getattr(evt, "text", None):
+            emit("reply.text", block_id=evt.block_id, text=evt.text)
+            return "reply.text"
+        return "reply.text.empty"
     if isinstance(evt, ToolCallStartEvent):
         emit(
             "tool.call_start",
@@ -484,11 +514,13 @@ async def drive_reply(
             cid = getattr(tc, "id", "")
             if cid:
                 (confirms.confirmed if a else confirms.denied).add(cid)
-            # SDK 拒绝后不再回权限钩子，账本在这里留人工裁决证据
+            # SDK 拒绝后不再回权限钩子，账本在这里留人工裁决证据。
+            # 人工允许记 `pass`（前置条件满足，不是规则放行）；人工拒绝记 `deny`
+            # （它确实拦住了动作）。两者靠 rule_ids 区分于规则裁决。
             emit(
                 "permission.decision",
                 tool=getattr(tc, "name", ""),
-                behavior="allow" if a else "deny",
+                verdict="pass" if a else "deny",
                 rule_ids=["confirm.human_allow" if a else "confirm.human_deny"],
                 reason="人工确认允许该工具调用" if a else "人工拒绝该工具调用",
                 tool_call_id=cid,

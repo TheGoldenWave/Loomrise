@@ -14,7 +14,6 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 
 from .contracts import (
-    Behavior,
     Channel,
     RequestState,
     ScenarioPack,
@@ -212,8 +211,13 @@ class ExecutionService:
         ctx.stage_baseline()
         ctx.stage_task(skill_id)
 
-        # 3) 策略与沙盒
-        policy = DecisionPolicy(self.pack.rules, emit=emit, writes=self._writes)
+        # 3) 策略与沙盒。授权来源是 ToolPolicy 登记，不是规则表——两件事分开传。
+        policy = DecisionPolicy(
+            self.pack.rules,
+            emit=emit,
+            writes=self._writes,
+            tools=self.pack.tools,
+        )
         sandbox = Sandbox(
             self.pack.fragments,
             policy,
@@ -290,6 +294,7 @@ class ExecutionService:
 
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""
+        text_emitted = False  # 是否已产出过 reply.text（AG-UI 的文本来源）
 
         def finish_cancel() -> RunResult:
             req.state = RequestState.SUCCESS if written else RequestState.CANCELLED
@@ -311,9 +316,19 @@ class ExecutionService:
                 is_cancelled=lambda: req.state is RequestState.CANCELLING,
             ):
                 if etype == "reply.text":
-                    final_text = evt.text or final_text
+                    # 只有真拿到文本才算"已产出文本事件"：空文本事件不构成流式输出。
+                    if evt.text:
+                        final_text = evt.text
+                        text_emitted = True
                 elif etype == "reply.final":
-                    final_text = _msg_text(evt) or final_text
+                    msg_text = _msg_text(evt)
+                    final_text = msg_text or final_text
+                    if msg_text and not text_emitted:
+                        # 真实模型只给最终 Msg，不给 TextBlockEndEvent。不补这一条，
+                        # AG-UI 投影里就一条文本事件都没有，前端只剩 summary 兜底
+                        # ——"能跑通"和"有流式消费"是两件事，这里补的是后者。
+                        emit("reply.text", text=msg_text, block_id=new_id("blk"))
+                        text_emitted = True
                 elif etype == "tool.result":
                     supplier_states.append(str(getattr(evt, "state", "")))
         except asyncio.CancelledError:
@@ -417,4 +432,4 @@ def _build_system_prompt(skill, rendered_context: str) -> str:
     ])
 
 
-__all__ = ["ExecutionService", "RunResult", "Behavior"]
+__all__ = ["ExecutionService", "RunResult"]
