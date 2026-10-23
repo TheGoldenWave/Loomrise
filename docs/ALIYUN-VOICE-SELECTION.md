@@ -89,9 +89,9 @@
 | ASR 实时（paraformer-realtime-v2） | 0.00024 元/秒 | 同上 |
 | TTS 计费 | **未核**（按字符计费，Flash/Plus 不同价） | 待控制台确认 |
 | 并发上限 / QPS | **未核** | 待确认；影响 `M-S1-11` 的采样轮次安排 |
-| SDK | 本机 venv 已有 `dashscope 1.27.7`（随 wheelhouse 装） | **已实测存在**；但官方要求"最新 SDK"，`qwen-audio-3.0-*` 可能需要更高版本 → 待验 |
+| SDK | 本机 venv 已有 `dashscope 1.27.7`（随 wheelhouse 装） | **2026-10-23 已验：能直接调 `qwen-audio-3.0-tts-flash` 与三条 ASR 候选，无需升级** |
 
-**一条前置风险**：如果 `dashscope 1.27.7` 不认识 `qwen-audio-3.0-tts-flash`，要么升级 SDK（需要联网装包，会破坏"离线可复现"），要么按 WebSocket 协议直连手写客户端。**这个必须在 WP1-01 第一步验掉**，否则整条 TTS 路径要重写。
+**前置风险已关闭（2026-10-23）**：`dashscope 1.27.7` 直接调通 TTS 与三条 ASR，无需升级、无需手写 WS 客户端。实测记录见 [R0-EVIDENCE](reports/R0-EVIDENCE.md)，版本钉见 [VERSION-PINS §8](../VERSION-PINS.md)。
 
 ## 6. 凭据存哪里（已实现，勿另起一套）
 
@@ -127,10 +127,10 @@ SDK             dashscope==<实测可用版本>
 ## 8. 还差什么（清单，key 到手后按序做）
 
 - [ ] 控制台核对计费与并发上限，把"未核"两行补上
-- [ ] 验 `dashscope 1.27.7` 能否直接调 `qwen-audio-3.0-tts-flash`；不能则定"升 SDK"或"直连 WebSocket"
-- [ ] 跑一次最小 ASR：10 秒中文音频 → 出文本 + `words[]` 时间戳
-- [ ] 跑一次最小 TTS：一句话 → 出 PCM，记录首包时延（分"新建连接/复用连接"两组）
+- [x] ~~验 `dashscope 1.27.7` 能否直接调 `qwen-audio-3.0-tts-flash`~~ **2026-10-23 已通过，无需升级**
+- [x] 最小 ASR 已跑通（TTS 合成 8.6 s 音频，逐字一致）；**`words[]` 时间戳尚未取用**
+- [x] 最小 TTS 已跑通：首包 339/371/411 ms（3 次，**只测了新建连接**，复用连接那组还没测）
 - [ ] 三条 ASR 候选各跑同一段 5 分钟中文语料，出**字错率对照**（决定主选是否换 `qwen-audio-3.0-asr-flash-streaming`）
-- [ ] 把最终组合写进 [VERSION-PINS](../VERSION-PINS.md) 与阈值登记表
+- [x] 组合已写入 [VERSION-PINS §8](../VERSION-PINS.md)；**阈值登记表仍未建**（要等多轮采样）
 
 **没有第 5 项就不要定稿主选**——现在的主选依据是"能钉快照"，不是"中文更准"。这两件事必须分开证。

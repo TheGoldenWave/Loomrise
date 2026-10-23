@@ -126,3 +126,25 @@ python3 -m venv s1-voice && s1-voice/bin/pip install "pipecat-ai[tracing]==1.12.
 - 保护方式：目录 `0700`、文件 `0600`；拒绝通过符号链接写入；重复录入不覆盖（抛 `FileExistsError`，需人工先删除）；读取时校验权限位，非仅所有者可读即报错。
 - 密钥不进入任何运行事件、账本、导出包与日志；导出包从不含任何 `coding-plan.json`（自检有断言）。**Gitignored 存储不等于密钥管理器**，仅限本机开发试用。
 - 真实模型实测（2026-09-28）：`scripts/live_model_check.py` 在 `gpt-6-sol`（**验收默认**，跑 2 次）与 `gpt-6-luna`（成本对照，跑 1 次）下均 11/11；首响 `gpt-6-sol` 2.4–4.8 s、`gpt-6-luna` 10.8–14.8 s（单轮单次，含代理往返，未做多轮取样）。`gpt-6-luna` 偶发"不发起写入工具"，脚本最多重试 3 次并把 `attempts` 写进报告；`gpt-6-sol` 全部场景 `attempts=1`。默认档位由 `loomrise/local_config.py:DEFAULT_MODEL` 决定，改档位要同步改这里并重跑脚本。模型名不是版本钉：Coding Plan 侧的档位与倍率随时可变，换档位必须重跑该脚本。
+
+## 8. 阿里云语音（STT/TTS）与凭据（2026-10-23 首次实测）
+
+- 一次性录入：`python -m loomrise.cli configure-voice`，交互五项：Workspace ID、ASR 模型、TTS 模型、音色、密钥（getpass 隐藏）。
+- 存放位置：**`~/.config/loomrise/aliyun-voice.json`（仓库外，0600）**。与 §7 分离：轮换一个 key 不该重写整份模型配置。
+- 三个端点**由 Workspace 推导**（`loomrise/voice_config.py:endpoints`），不在调用点手写：对话 `https://{ws}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`、SDK HTTP 根 `https://{ws}.../api/v1`、流式语音 `wss://{ws}.../api-ws/v1/inference`。**语音只走最后一条**。
+
+| 项 | 值 | 证据 |
+|---|---|---|
+| 地域 | 华北2（北京） | 实时 ASR 族仅此地域 |
+| ASR 模型 | `fun-asr-realtime-2026-02-28`（**带日期快照，可钉**） | 2026-10-23 闭环实测 |
+| ASR 参数 | `pcm` / `16000` / `language_hints=[zh]` | 同上 |
+| TTS 模型 | `qwen-audio-3.0-tts-flash`（**别名，不可钉快照**） | 同上 |
+| TTS 音色 | `longanhuan_v3.6` | 同上 |
+| TTS 输出 | `PCM_16000HZ_MONO_16BIT`（本次探针） | 同上 |
+| SDK | `dashscope==1.27.7`（离线 wheelhouse 内） | `pip check` 无冲突 |
+| 首包时延 | **339 / 371 / 411 ms**（3 次，每次新建连接） | `runs/r0/voice/tts-firstpkt-*.log` |
+| ASR 闭环 | TTS 合成 → ASR 识别，**逐字一致** | `runs/r0/voice/asr-multi-*.log` |
+
+- **`dashscope 1.27.7` 能直接调 `qwen-audio-3.0-tts-flash` 与三条 ASR 候选**，无需升级 SDK（此前列为风险 R-2，已关闭）。
+- **别名风险未消除**：TTS 无日期快照，提供方升级别名时行为可变。验收记录必须写"版本为别名"。
+- 三条 ASR 候选（`fun-asr-realtime-2026-02-28` / `paraformer-realtime-v2` / `qwen-audio-3.0-asr-flash-streaming`）在同一段**合成**语音上均逐字一致；**这不等于真人噪声语料下的准确率**，字错率对照仍未做。
