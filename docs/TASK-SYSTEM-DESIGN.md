@@ -1,4 +1,4 @@
-# 客服与销售统一 Task 体系 v0.4
+# 客服与销售统一 Task 体系 v0.5
 
 日期：2026-10-23。状态：**统一 Task 体系、任务及主动触达策略归属单个专家配置并随 AgentVersion 演进、初始化生成默认事项、受限实例决策及渐进式披露的方案已确定；本版补充 `DurableRunAdapter` 的执行恢复边界；下述合同名称、字段、参数和状态机为待实现验证的设计，全部未实现**。本版 §9 登记后台设计后继，不建设跨智能体共享策略库，没有启动定时器、真实触达、外部写入或自动调优作业；S1 被动响应范围和既有验收不变。
 
@@ -222,7 +222,9 @@ Task 账本与调度服务始终在 Loomrise 应用边界内；队列或耐久�
 
 `pi durable` 提供了值得借鉴的原子提交、checkpoint、sleep/wake、有限 retry、abort、crash-loop parking、嵌套任务和只读检查机制，但这些机制只能进入 `DurableRunAdapter`。对象映射分成两个维度：`ServiceRequest → Run → runtime_execution_id`，以及 `TaskItem → TaskAttempt → Run` 关联。`ServiceRequest` 跨轮次聚合业务请求，`Run` 是一次冻结版本/上下文/策略快照的执行尝试，`TaskAttempt` 负责事项领取与 lease/generation，`runtime_execution_id` 只在 Adapter 内部追踪 task/phase/checkpoint。
 
-Adapter 的恢复、重放、重试和挂起不创建第二套 Task 或业务完成状态。执行前仍要重验权限、确认上下文、AgentVersion、预算和 generation；执行后的 `result_id`、`Outcome`、`UNKNOWN` 对账和 `RunEvent` 才能决定业务结果。Adapter abort 只表示停止内部运行，不能推导业务撤销；旧 worker 的迟到输出必须拒绝。R1 先验无副作用 checkpoint 与恢复，R2 再验确认等待/取消/未知对账，R3/R4 才验 Worker 接管与 parking，S3 才验云端存储、备份和迁移。详细步骤见[DurableRunAdapter 实施计划](superpowers/plans/2026-10-23-durable-run-adapter.md)。
+Adapter 的恢复、重放、重试和挂起不创建第二套 Task 或业务完成状态。执行前仍要重验权限、确认上下文、AgentVersion、预算和 generation；执行后的 `result_id`、`Outcome`、`UNKNOWN` 对账和 `RunEvent` 才能决定业务结果。Adapter abort 只表示停止内部运行，不能推导业务撤销；旧执行者的迟到输出必须拒绝。R1 先验无副作用步骤的持久提交与恢复（若选用 checkpoint，则验证其可见性），R2 再验确认等待/取消/未知对账，R3/R4 才验跨进程 Worker 接管与 parking，S3 才验云端存储、备份和迁移。详细步骤见[DurableRunAdapter 实施计划](superpowers/plans/2026-10-23-durable-run-adapter.md)。
+
+本节不覆盖 §7.1 的裁决：本地 `running` 尝试重启后仍记 `failed/restart_interrupted`，只能由获准的新尝试关联新 `Run` 并引用输入/版本兼容的安全提交结果；已持久等待态及执行端可完整查询的委派按原表恢复或重挂。未提交的纯计算允许重算，已提交业务事实按提交记录复用而不重复入账；模型调用、实时检索等外部读取另行定义复用/重调、时效和预算策略。外部副作用保持逻辑动作幂等键，未知先对账。耐久层也可用于无 Task 的入站请求，不把完整 Task 调度器变成 R1 前置。
 
 ## 8. 主动触达与外呼经验的可迁移部分
 

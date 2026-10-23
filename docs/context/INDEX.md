@@ -1,6 +1,6 @@
-# Loomrise 文档总索引 v0.13
+# Loomrise 文档总索引 v0.14
 
-日期：2026-10-23（执行耐久参照落位：新增 `DurableRunAdapter` 实施计划及 Gate 追踪行）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-10-23（执行耐久恢复裁决对齐；明确矩阵子项不新增独立 Gate）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -21,7 +21,7 @@
 | Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
-| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | `ServiceRequest → Run → runtime_execution_id` 与 `TaskItem → TaskAttempt → Run` 关联；R1/R2 先做无副作用恢复与未知对账，R3/R4 再做 Worker/parking，未引入默认依赖 |
+| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | `ServiceRequest → Run → runtime_execution_id`；TaskAttempt 是可选调度关联；旧本地 running 尝试失败，获准新尝试可复用兼容已提交结果；R3/R4 才做 Worker/parking，未引入默认依赖 |
 | 到底已经跑通哪些功能 | [S1 交付与验收](../S1-BUILD-REPORT.md)、对应原型报告 | 运行证据与局限；不能用规划或原型代替服务验收 |
 | 实际安装的是哪个构件 | [VERSION-PINS](../../VERSION-PINS.md) | 实测版本、commit、许可证与安装复现 |
 | 什么材料可以公开 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、脱敏、公开晋升、许可与提交红线 |
@@ -60,8 +60,8 @@
 | [ARCHITECTURE](../ARCHITECTURE.md) | 领域权威、数据与适配边界 | 区分 S1 最小实现与目标合同 |
 | [六层配置合同](../CONFIGURATION-LAYERS.md) | Context／Routing／Skill／Rule／Tool／Outcome | S1 部分实现，完整配置规划 |
 | [ROADMAP](../ROADMAP.md) | 阶段总表、优先顺序、Gate | 不承诺日期；实现状态要有验收依据 |
-| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.5**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；退出判据一律引用矩阵行号 |
-| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.3**） | 每条 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；含执行耐久 M-A-19…21 与 M-C-11…12 | **追溯表，不是 Gate 权威**；条文变更先改权威文件再改本表；R0 行已回填状态，08/10 带偏离、13/14 挂账 |
+| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.6**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；只引用父 Gate 行号，耐久细化行不独立阻断退出 |
+| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.4**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；条文变更先改权威文件再改本表；R0 行已回填状态，08/10 带偏离、13/14 挂账 |
 | [RELEASE-PLAN 与当前产品方向评审记录](../RELEASE-PLAN-REVIEW.md)（**v0.1**） | 产品、市场、架构、平台、交付管理与设计六个视角的综合评审；记录优势、风险优先级、知识库启发和待决事项 | 评审意见，不是产品/架构决策或实现证据；不替代 ROADMAP 与客服交付方案 Gate |
 | [评审处置台账](../RELEASE-PLAN-REVIEW-RESPONSE.md)（**v0.1**） | 15 条评审意见的采纳/部分采纳/不采纳、改动落点、被修正的事实前提、5 项未关闭 | 只记处置，不重复原文；未关闭项是下轮评审入口 |
 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、公开晋升、许可与红线 | 核心 Apache-2.0；[LICENSE](../../LICENSE)、[NOTICE](../../NOTICE)为许可工件 |
@@ -90,10 +90,10 @@
 | [S2 评测门禁提案](../S2-EVAL-GATE-PROPOSAL.md) | Gate Reserve、配对评估、预算与状态机 | §2 已确认且并入治理设计；§3–§5 仍待确认 |
 | [Task 体系设计](../TASK-SYSTEM-DESIGN.md) | 专家内版本蓝图、默认初始化、双来源事项、受限决策、迁移与工作集 | 方案已确定；§9 后台设计后继已登记，UI/服务未实现；ServiceRequest 不变，无共享策略库 |
 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 记忆/画像/上下文模块职责及治理、身份、检索/压缩、遗忘 | 模块方向已确认；接口/字段/Provider提案未实现，六层不变 |
-| [Task 与上下文联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 两条研究归并、TM-01–14、DurableRunAdapter 分期、首片/AGI依赖，§7 后台 CT 采纳入口 | 方案/顺序与 UI 设计已登记；服务/新增 UI 未实现，不改变原型和 S1 验收状态 |
+| [Task 与上下文联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 两条研究归并、TM-01–14、DurableRunAdapter 分期、首片/AGI依赖，§7 后台 CT 采纳入口 | 方案/顺序与 UI 设计已登记；旧 running Attempt 失败/新尝试规则不变；服务/新增 UI 未实现，不改变原型和 S1 验收状态 |
 | [专家任务与 Harness 首片实施计划](../superpowers/plans/2026-10-16-expert-task-harness.md) | 蓝图冻结、初始化、内部任务账本/意图、工作集与语义工具假 Adapter | 文件级待执行计划；只验内部沙盒，不承诺已支持调度/发送/生产持久化 |
 | [R0 合同对齐开工清单](../superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检、证据两层约定、语音阈值登记表模板、WP0–WP6（媒体/指标/SSE/合同落地/合入回归/签核）与 DoD | 执行清单，未开工；合同代码不合主干；不建配置器、不动原型；不替代 Gate 权威 |
-| [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | R1/R2 的 `Run`/`TaskAttempt`/checkpoint/恢复/挂起/未知对账与 R3/R4 的 Worker 接管/parking，含文件级任务、故障注入和证据路径 | 文件级规划，未实现；不引入 `pi-durable` 默认依赖，不宣称云端或外部 exactly-once |
+| [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | R1/R2 的 `Run`、可选 Task 关联、事务持久化/恢复裁决/挂起/未知对账；Worker 接管/parking 留 R3/R4 | 文件级规划，未实现；矩阵细化项不新增 Gate；不引入 `pi-durable` 默认依赖，不宣称云端或外部 exactly-once |
 | [阿里云端到端语音选型](../ALIYUN-VOICE-SELECTION.md) | 流式 ASR/TTS 候选、锁版本策略（日期快照 vs 别名）、接口形状、与现有链路的差距、待核项 | **调研与候选登记，未跑通**；key 未到位；SDK 兼容性待验；不替代 `M-S1-09` |
 | [配置后台 Task/Harness 前端增量开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) | `console-next` 的版本内蓝图、服务事项/Inbox、渐进披露、情景预览与 Diff | 仅前端执行计划，CT-00–06 全待开始；不连接正式 API/调度/渠道，不改变服务 Gate |
 | [用户记忆内核提案](../MEMORY-FOUNDATION-DESIGN.md) | TDAI的历史核查与候选Adapter；模块职责转看用户上下文设计 | 供应商选型/映射待确认，未联调；“采用”是原推荐，不等于已批准或双内核选定 |
