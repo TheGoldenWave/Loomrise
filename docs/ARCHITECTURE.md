@@ -1,6 +1,6 @@
-# 架构与对象权威 v0.13
+# 架构与对象权威 v0.14
 
-状态：2026-10-22，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。确定性回放与真实模型六路径各有 11/11 历史记录，网页音频、真实模型端到端 SSE、完整持久化与重启恢复仍待验证；本轮只更新合同与计划，没有执行内核、Adapter、依赖或前端实现变更。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
+状态：2026-10-23，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。本版补充 [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 可借鉴的执行耐久语义和恢复适配边界，但**没有引入依赖或实现 Adapter**；网页音频、真实模型端到端 SSE、完整持久化与重启恢复仍待验证。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
 
 项目采用**交付工作台 + 官方客服应用 + 统一执行内核 + 分类适配器**，区分**产品控制面**、**客服会话与一线操作**、**业务执行**、**媒体与渠道**、**知识摄入与检索**、**业务工具**、**观测与评测**、**部署交付**。首个云交付以单 Agent、单租户实例为目标；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -37,6 +37,7 @@ Telegram/邮箱 → 渠道适配 ┤                       │
 | 官方客服应用 | Web 组件、消息与表单基础设施 | Widget/联系页/Inbox、访客身份、会话记录、人工接管、消息送达与发布版本绑定 |
 | 控制面 | Web 框架、身份库、按需复用服务组件 | 租户、`AgentVersion`、密钥引用、配额、业务数据与发布权限 |
 | 业务执行 | AgentScope main 快照 `a388212`（源码版本字符串 2.0.8） | `ExecutionService`、任务生命周期、恢复、幂等、取消确认与真实结果 |
+| 执行耐久层（规划） | [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 作为机制参照；不作为默认运行依赖 | `DurableRunAdapter` 的提交线、checkpoint、挂起/唤醒、恢复、重放、重试与 crash-loop parking；业务合同、外部副作用和结果判定仍由 Loomrise 掌握 |
 | 决策策略 | 工程规则、可选分类／评分 Provider | 候选过滤、拒选、阈值、回退、审计与评测 |
 | 网页语音 | Pipecat 最小工程链路 | 媒体会话到业务请求的桥接、播放状态、用量与超限停止 |
 | 交互协议 | AG-UI 最小事件映射 | 业务事件、权限投影、脱敏与可靠状态 |
@@ -125,6 +126,52 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 
 这六层是对实际 Agent 配置中阶段、路由、规则、工具和结果结构的公开抽象，不包含任何真实业务配置、内部标识或私有提示词。S1 只实现入站消息触发；`ServiceRequest` 保留可关联触发来源的字段，暂不实现定时器、条件触达或主动发送队列。
 
+## 执行耐久层与恢复适配边界（方向已确认，规划未实现）
+
+[pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 的价值在于提供一组可验证的执行机制参照：原子提交线、task/phase/checkpoint、重启恢复、sleep/wake、有限重试、abort、crash-loop parking、嵌套任务/任务图、replay policy 以及只读查看和遥测。本次参考版本为 `@earendil-works/pi-durable@1.4.0`（提交 `936e5f40aede9327b9142b63506ed2b68bc6b4ac`）；它是 MIT、实验性项目，后续选型仍需重新核对版本、许可证和存储语义。Loomrise **只借鉴机制，不引入其领域模型、私有状态或默认依赖**。这些机制由拟建的 `DurableRunAdapter` 封装，不能在公共 API、客服会话、Task 合同或发布合同中形成第二套状态权威。
+
+目标映射如下；`runtime_execution_id` 是 Adapter 内部句柄，不能被客户端当作业务幂等键、结果 ID 或权限凭据。`TaskAttempt` 与 `Run` 是两个维度：前者负责事项派发/租约，后者负责一次业务执行；两者通过内部关联连接，不把其中一方嵌入另一方的公共状态机：
+
+```text
+ServiceRequest (request_id，跨多轮/多端的业务聚合)
+  └─ Run (run_id，一次 Loomrise 执行尝试，冻结 AgentVersion/上下文/策略快照)
+      └─ runtime_execution_id (Adapter 私有的 task/phase/checkpoint 线)
+
+TaskItem (一项业务义务)
+  └─ TaskAttempt (attempt_id，一次派发，带 lease/generation)
+      └─ 关联 Run (由 Loomrise 决定创建、恢复、对账或另起新尝试)
+```
+
+- 一个 `ServiceRequest` 可有多个 `Run`；一个 `TaskItem` 可有多个 `TaskAttempt`。`TaskAttempt` 负责调度占用、代次和恢复关联，不能写入业务完成或发送终态。
+- 一个 `TaskAttempt` 可创建或恢复一个 `Run`，也可能在未知外部结果时只关联对账作业。崩溃恢复优先沿同一 `runtime_execution_id` 继续；只要没有跨过副作用边界，Adapter 内部重试或新 worker 接管不得生成新的业务 `Run`。无法恢复而需新句柄时，必须保留原运行 lineage，并由 Loomrise 决定是否创建新的 `Run`/对账尝试。
+- `RunEvent` 仍是业务事实源；Adapter 的 checkpoint、内部 phase、重放和遥测只是执行证据或派生视图。Adapter 的“提交成功”只能表示其内部状态已持久化，不能直接表示 `ServiceRequest` 成功、外部写入完成或发布完成。
+
+### Adapter 内部机制与业务边界
+
+`DurableRunAdapter` 可以把 task/phase 状态与 checkpoint 原子提交后再对外暴露内部状态；可以挂起等待确认或外部回调、sleep/wake、在纯函数或可重放步骤上 replay、在有界预算内 retry，连续崩溃时 parking 并请求人工处理。这些状态必须通过 `RunEvent` 映射为可审计的运行事实，但不能把上游 durable task、phase、runtime task 或 task graph 直接暴露为 Loomrise 合同。
+
+所有外部副作用仍走 Loomrise 的 `ToolManifest`/`HardRule`/`Outcome`：
+
+1. **执行前**重验权限、确认版本、预算、AgentVersion、当前 `TaskAttempt` 的 lease/generation，并生成绑定具体业务操作的幂等键。
+2. **执行后**持久化外部 `result_id` 和响应证据；超时、断连或供应商状态不明一律记为 `UNKNOWN`，先对账再决定是否重试。
+3. durable retry/replay 不能提供外部副作用 exactly-once；没有幂等键、结果 ID 和对账证据时，不得因为 Adapter 恢复或重试而再次写入。
+4. Adapter 的 abort/cancel 只表示内部执行停止或已确认停止；`ServiceRequest` 的业务取消、授权撤销和已发生外部动作的撤销分别留证，`cancel_requested`、`cancel_confirmed` 与 `business_action_revoked` 不得互相推断。
+
+### 选型约束与采用顺序
+
+pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺：其 storage 由单进程拥有且不提供跨进程锁，SQLite 默认 WAL + `synchronous=NORMAL` 是取舍而非强持久性保证，JSONL 长期运行仍可能把完整历史留在内存；IndexedDB 与 Cloudflare Durable Object 具有平台绑定。若进入多 worker 或自有云，必须由 Loomrise 提供明确的单写者/lease/generation、数据库锁、备份恢复和迁移校验，不能假定 Adapter 自带跨进程一致性。JSONL 只可作导出、夹具或短时回放格式，不是长期业务账本。
+
+采用顺序和当前状态如下：
+
+| 阶段 | 采用范围 | 当前状态与硬边界 |
+|---|---|---|
+| S2-a / R1 | 先落 Loomrise 自有的 `Run`、`TaskAttempt`、请求/事件/幂等/outbox 存储合同；定义 `DurableRunAdapter` 接口，并用无副作用步骤验证 checkpoint、崩溃重启、重复提交和旧 generation | **未实现**。S1 仍是进程内请求、活动任务、幂等与状态；JSONL 只恢复事件，不能恢复完整请求或业务结果 |
+| S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **未实现**。R2 的运行可信 Gate 仍需 `result_id`、只写一次、迟到回执和 `UNKNOWN` 对账证据；不能把 durable task 成功当作业务成功 |
+| S2-b / R3 → S2-c / R4 | 在前两批验证后再接嵌套 task/phase、后台 worker、查看/重放/parking 和真实业务工具沙盒；真实写入仍由 Loomrise 幂等与结果合同保护 | **规划**。不因引入 Adapter 改变 `ServiceRequest`、`RunEvent`、`Outcome`、权限或发布权威 |
+| S3 / R5a | 首云部署时再验多进程/多 worker、备份恢复、升级迁移、存储替换和云端故障；可按需实现 SQLite/其他存储 Adapter | **未实现**。没有通过真实云恢复、迁移和升级 Gate 前，不宣称云端耐久执行或生产级恢复 |
+
+该层的最低验收顺序是：纯步骤 crash/restart → duplicate submission → pending confirmation recovery → cancellation race → stale worker/generation → `UNKNOWN` 结果对账。任何一项未有可复现证据，均不能把 Adapter 标为已支持。
+
 ## 权威对象
 
 | 对象 | 单一权威 | 必要状态/权限 | 删除/撤销 |
@@ -133,7 +180,7 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 | MaterialAsset / MaterialVersion（目标合同） | Loomrise 应用资产治理；文件权利归来源方 | 来源/授权/有效期/范围、原件与派生、已审简介和版本；可检索不等于可发送 | 撤回阻止新使用并使关联版本待重验；历史附件按保留策略处理，不承诺收回已下载文件 |
 | `AgentSpec` / `AgentVersion` / `Release` | Loomrise | `draft → tested → approved → released → rolled_back`；发布版本不可覆盖，含专家内任务/触达蓝图及依赖快照 | 用户停用；在途事项显式迁移/暂停，审计元数据依保留策略处理 |
 | `Unit`（路由与能力单元，已采纳合同） | Loomrise；随 `AgentVersion` 冻结 | 契约层：`entry_ports`（带 `requires`）、`reads`/`writes`、`exit_ports`（每个出口自带 `completion`）、`fallback`、`on_event`（作用域 `self`/`subtree`/`global`）、`max_rounds`、`load_mode`（`routed` 或 `concurrent`）；内容层：子图或原子（`tool`/`judge`/`speak`/`say`）。R1 的 `body` 为空字段 | 随版本冻结，不单独删除；被引用版本必须已冻结才可用于路由；组合环禁用、执行环须有 `max_rounds` |
-| `ServiceRequest` / `RunEvent` | Loomrise | 绑定租户、业务请求、运行尝试、渠道、版本、成本与敏感级别 | 租户可删除或脱敏；禁止跨租户可见 |
+| `ServiceRequest` / `Run` / `RunEvent` | Loomrise | 绑定租户、业务请求、运行尝试、渠道、版本、成本与敏感级别；`Run` 可引用 Adapter 的 `runtime_execution_id`，但不以其作为业务权威 | 租户可删除或脱敏；禁止跨租户可见 |
 | TaskProposal / TaskItem / TaskAttempt（合同提案） | Loomrise 应用与调度用例 | 稳定主体、来源、策略/实例revision、权限与代次，关联实际请求/作业/结果 | 停止/取消需区分未派发、执行确认和外部撤销；回滚不复活授权 |
 | 用户记忆 / 派生画像 / ContextPlan（合同提案） | Loomrise 治理与加载合同；Provider 只提供存储/提炼/检索 | 主体/用途/来源/时间/版本、候选与有效值、冲突和加载快照 | 更正/forget传播到派生视图、缓存与迟到作业；任务义务不自动删除 |
 | 客服会话 / 交接记录 / 入口绑定（规划） | Loomrise 官方客服应用；外部渠道只提供收发证据 | 会话可关联多个请求；接管所有权、消息可见范围、已发布版本与环境 | 依保留策略删除/脱敏；停用入口或渠道后立即阻止新收发，保留必要审计摘要 |
@@ -151,7 +198,8 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 - `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、专家内 `task_blueprints`、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置、依赖引用和合同版本，不携带凭据；任务蓝图不引用共享可变策略，动态事实/授权须保留每次重验的来源/版本证据。当前 S1 的可变 AgentVersion dataclass 尚未实现完整冻结和蓝图校验。
 - `Unit@v1`（**已采纳合同；R1 落最小实现，R3 落嵌套与画布**）：契约层九字段 + 内容层（子图或原子）。路由三层：G0 确定性闸门 → G1 在**闭集**内选 → G2 兜底；连接五类：同层边、端口边、边界事件可用，组合环与裸跨层边不可；条件引用只允许已声明字段，深度 ≤2 层。它是 `RequestRouting` 与 `Skill/SOP` 的组织形态，**不是第七层**。R1 只实现清单投影所需字段与九条校验函数，嵌套/端口/边界事件的能力实现见 [RELEASE-PLAN](RELEASE-PLAN.md) §3 R3。
 - `ServiceRequest@v1`：业务请求可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。AgentScope 的 `state.Task` 是运行时子任务清单，适配器内部只以 `RuntimeTask`/`PlanTask` 称呼，不进入本合同。
-- `RunEvent@v1`：租户、Agent 版本、任务、运行、媒体会话、渠道、序号、时间、事件类型、来源引用、耗时／成本和幂等键；文字与语音至少区分生成、发送、已确认播出和未知；上下文事件还需记录作用域、选择/跳过原因、来源版本和 token 估算。
+- `Run@v1`（目标合同）：一次 Loomrise 执行尝试，绑定 `ServiceRequest`、`AgentVersion`、上下文/工具/策略快照、预算和生命周期；可引用 `TaskAttempt` 与 Adapter 的 `runtime_execution_id`，但不把后者作为业务 ID、幂等键或结果 ID。纯步骤恢复可沿同一 `Run` 继续；跨副作用边界的未知结果须走对账/新尝试策略，并保留 lineage。
+- `RunEvent@v1`：租户、Agent 版本、任务、运行、媒体会话、渠道、序号、时间、事件类型、来源引用、耗时／成本和幂等键；文字与语音至少区分生成、发送、已确认播出和未知；上下文事件还需记录作用域、选择/跳过原因、来源版本和 token 估算；Adapter checkpoint/phase 可作为执行证据引用，但业务终态仍以该账本及 `Outcome` 为准。
 - `ToolManifest@v1`：稳定 ID/版本、业务语义、输入/输出 Schema、副作用级别、权限、确认、超时/预算、幂等、错误与未知结果、模拟实现、外部结果 ID 与审计字段。平台内部任务状态操作不必全部成为模型工具。
 - `SkillManifest@v1`：稳定 ID/版本/状态、适用条件、目标、退出条件、可引用知识/工具 ID、失败或转人工策略、依赖 Skill、来源证据和验收案例。`SkillManifest` 是 Loomrise 的公开规范对象，UI 可简称 Skill；AgentScope 的 Markdown 目录对象只在适配器内部以 `MarkdownSkill`/`SkillDirectory` 称呼。SkillManifest 是策略配置，不是权限或任意代码执行入口；候选版本必须先经过评测和审批才能进入已发布版本。
 - `Case/EvalSet/EvalResult@v1`：人工审定输入和预期状态/动作/副作用，冻结资料与模拟环境；按开发、验证、盲测分集，旧版/候选版配对批量回放，保存逐例判定与汇总。确定性硬规则独立于机评，缺证据、关键退步或违规时阻断候选发布。
