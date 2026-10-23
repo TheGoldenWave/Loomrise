@@ -12,6 +12,7 @@ import stat
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -115,7 +116,10 @@ def test_env_wins_and_absent_returns_none() -> None:
         os.environ[vc.ENV_KEY] = "sk-env"
         assert vc.resolve_api_key(data) == "sk-env", "环境变量应优先"
         os.environ.pop(vc.ENV_KEY)
-        assert vc.resolve_api_key(None) is None, "目录下无文件时应返回 None 而不是编造"
+        # 把默认路径指到不存在的临时文件：这条断言验的是"没有就可能返回 None"，
+        # 不能因为开发机上恰好存过真实凭据而通过或失败。
+        with patch.object(vc, "CONFIG_PATH", _tmp()):
+            assert vc.resolve_api_key(None) is None, "目录下无文件时应返回 None 而不是编造"
     finally:
         os.environ.pop(vc.ENV_KEY, None)
         if old is not None:

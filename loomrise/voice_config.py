@@ -86,7 +86,10 @@ def save_config(
     return data
 
 
-def load_config(path: Path = CONFIG_PATH) -> dict[str, str] | None:
+def load_config(path: Path | None = None) -> dict[str, str] | None:
+    # 默认值取运行时模块属性，不写成定义期绑定：否则测试无法把路径换到临时目录，
+    # 断言"没有文件就返回 None"会意外依赖开发机上是否真的存过凭据。
+    path = path or CONFIG_PATH
     if not path.exists():
         return None
     if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:

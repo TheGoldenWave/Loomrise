@@ -4,7 +4,7 @@
 
 **Goal:** 把已写下但未落代码的合同（`Verdict` 四层、`subject_scope`、`state` 窗口、条件深度校验）落到代码并过回归，同时补齐 S1 剩下的媒体与 SSE 证据；**不做新功能、不接 adapter、不合主干**。
 
-**Architecture:** 分两条并行轨道。轨道 A 是语音与 SSE 证据：SSE 与合同是黑盒；**语音不是**——现有网页只有浏览器端识别与合成，没有音频上传通道，`M-S1-08/09` 要求真实音频与可登记的服务端组合，因此 WP1 必须新增一条最小音频通道（只换掉假链路，不改业务逻辑）。轨道 B 是合同迁移（分支开发 + 单测，功能默认不启用）。两轨在 `R0-WP5` 汇合：**先证据齐，再合主干**，同批改 `rules.py` 优先级链与 `adapters/agentscope_runtime.py` 映射，然后重跑自检。
+**Architecture:** 分两条并行轨道。轨道 A 是语音与 SSE 证据：SSE 与合同是黑盒；**语音不是**——原网页只有浏览器端识别与合成，没有音频上传通道，`M-S1-08/09` 要求真实音频与可登记的服务端组合，因此 WP1 新建了一条最小双向媒体通道（**2026-10-23 已实现，服务端侧已验，浏览器侧待人工实测**；只换掉假链路，不改业务逻辑）。轨道 B 是合同迁移（分支开发 + 单测，功能默认不启用）。两轨在 `R0-WP5` 汇合：**先证据齐，再合主干**，同批改 `rules.py` 优先级链与 `adapters/agentscope_runtime.py` 映射，然后重跑自检。
 
 **边界（越界即停）:** 不加 `stop`/`dedupe` 之外的任何能力；不建配置器；不动 `prototypes/`；不改 S2 页面与 `S2-IA-NAV` 计数；不发布、不接真实业务写入、不引入新依赖。
 
@@ -59,16 +59,16 @@
 
 ### R0-WP1 · 语音媒体（`M-S1-08…11`）
 
-- [ ] **WP1-0 选型（2026-10-23 已定方向：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照与"锁不住快照"的处置见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。凭据录入用 `python -m loomrise.cli configure-voice`（已实现：`~/.config/loomrise/aliyun-voice.json`、`0600`、不覆盖、拒符号链接、`DASHSCOPE_API_KEY` 优先）。**key 到位后第一步先验 `dashscope 1.27.7` 能否调新模型**——不能则要么升 SDK（破坏离线可复现，须记录）要么直连 WebSocket 手写客户端
-- [ ] **WP1-1 音频通道（必须新建，别当成已有能力）**：现状是 `loomrise/web.html` 只有**浏览器端**识别与合成（`webkitSpeechRecognition` + `speechSynthesis`），**没有任何把音频送上服务端的路径**。要满足 `M-S1-08`（真实网页音频）与 `M-S1-09`（服务端固定组合），必须新增最小通道：浏览器 `MediaRecorder` 采集 → 上传（HTTP 或 WebSocket）→ 服务端 STT adapter → 文本进 `ExecutionService`；返回音频同理。这是 R0 里**唯一新增代码的语音部分**，属"换掉假链路"，不是加功能
-- [ ] 真实网页音频采集：走 WP1-1 通道，产出录制件（`M-S1-08`）
+- [x] **WP1-0 选型（2026-10-23 已定：云端阿里）**：主选 **ASR `fun-asr-realtime-2026-02-28`**（带日期快照，能真正钉版本）+ **TTS `qwen-audio-3.0-tts-flash` / `longanhuan_v3.6`**（别名，风险已声明）；北京地域、专属域名。候选对照见 [阿里云语音选型](../../ALIYUN-VOICE-SELECTION.md)。凭据录入 `python -m loomrise.cli configure-voice`（`~/.config/loomrise/aliyun-voice.json`、`0600`、不覆盖、拒符号链接、`DASHSCOPE_API_KEY` 优先）。**已验：`dashscope 1.27.7` 直接能调，无需升级**（原风险 R-2 关闭）
+- [x] **WP1-1 双向媒体通道（已实现，服务端侧已验；浏览器侧未验）**：`/ws/voice` 单条 WS——上行 PCM16/16k 二进制帧 + JSON 控制帧，下行同格式音频。新增 `loomrise/adapters/aliyun_voice.py`（ASR/TTS 流式封装、背压、时序）、`web.py:voice_ws`（协议权威在 docstring）、`web.html`（`getUserMedia` → `AudioWorklet` 降采样 → WS；下行 `AudioBufferSource` 队列播放）。**协议与纪律见 [D-05](../../VOICE-ARCHITECTURE-DECISIONS.md)**。验收：`tests/test_voice_ws.py` 33 项 + `scripts/voice_ws_smoke.py` 真云端往返
+- [ ] **WP1-1b 浏览器实测（阻塞 `M-S1-08`）**：自动化跑不动——本机 Chromium 的 `getUserMedia` 与 `AudioContext` 在无头/有头两种模式下都挂死（环境限制）。**必须人工**打开试用页点「录音」说一句，确认 `#input` 出文本且 `runs/r0/voice/ws-*.jsonl` 有 `mic.first_frame`
 - [ ] 中文可懂度：固定语料逐条判读，记录判读人与原文（`M-S1-10`）
 - [ ] 首响采样：≥10 轮，报 p50/p95，记录设备与网络（`M-S1-11`）
 - **签核：** 产研 · **不做：** 不调轮次策略参数、不改打断逻辑、不接 Pipecat 全链路（那是 S2-c 的语音应用验收）
 
 ### R0-WP2 · 语音交互指标（`M-S1-13`、`M-S1-14`）
 
-- [ ] 埋点：`barge-in` 事件时间戳 → 最后一帧停止时间戳，落 `RunEvent`（字段名与已有事件风格一致）
+- [x] 埋点：浏览器侧记打断触发 / 音频节点停止 / 首帧播放，服务端记 `tts.cancel` 与 `tts.done.cancel_ms`，统一进 `runs/r0/voice/ws-*.jsonl`（`--voice-trace` 开启）。**口径按 [D-05](../../VOICE-ARCHITECTURE-DECISIONS.md)：不含扬声器与系统混音缓冲，不能直接当声学级 p95**
 - [ ] 跑登记表里的噪声语料，统计声学级误停（目标 0）与漏响应率（防 VAD 过严）
 - [ ] 跑"停—判—续"处置，统计恢复时延 p95 与复读次数
 - [ ] 结果按登记表口径出表；**P1/P2 不测，写"未覆盖"**
@@ -120,7 +120,7 @@ WP0 ──┬─ WP1（选型→媒体→可懂度→首响）──┐
 
 - **可并行**：WP1 / WP3 / WP4 互不依赖，可同时开。
 - **硬串行**：WP2 依赖 WP1 的链路；WP5 依赖 WP1–WP4 全绿；WP6 依赖 WP5。
-- **唯一外部依赖**：WP1-0 的 STT/TTS 选型。选型不决，WP1 不启动，但 WP3/WP4 不受影响。
+- **唯一外部依赖已解除**：WP1-0 的 STT/TTS 选型已定、凭据已录、SDK 已验证可用。**剩余阻塞变成"人工在真浏览器里说一句话"（WP1-1b）**——自动化替代不了，本机 Chromium 的 WebAudio 在自动化环境里不可用。
 
 ## 5. 完成定义（R0 DoD）
 

@@ -71,15 +71,22 @@
 
 `dashscope.audio.tts_v2.SpeechSynthesizer(model=..., voice=...)`，`call()` 返回二进制音频；`get_first_package_delay()` 给出**首包时延**（可直接进 `M-S1-11` 的采样表）。注意首包时延含建连时间，所以要区分"首次调用"与"复用连接"两组数——否则 p95 会被建连抖动污染。
 
-## 4. 与现有链路的差距（这才是工作量）
+## 4. 与现有链路的差距（已补齐，2026-10-23）
 
-现状：`loomrise/web.html` 只有浏览器端 `webkitSpeechRecognition` + `speechSynthesis`，**没有任何音频上传路径**。
+原状：`loomrise/web.html` 只有浏览器端 `webkitSpeechRecognition` + `speechSynthesis`，**没有任何音频上传路径**。三个零件已实现：
 
-要满足 Gate，必须补三个零件（都在 R0-WP1）：
+1. **浏览器采集**（`web.html`）：`getUserMedia` → `AudioWorklet`（Blob URL，内联，无需额外文件）线性插值降采样到 16 kHz → `Int16` → 100 ms/帧推 WS。不用 `MediaRecorder` 做主链路——它输出 webm/opus 还要转码；**录制件留档（`M-S1-08` 证据）改为服务端侧保存下行 PCM + 会话 JSONL**，理由是不给浏览器再加一条编码路径。
+2. **本地服务通道**（`web.py:voice_ws`）：单条 `/ws/voice`，上行二进制音频帧、下行二进制音频帧，控制走 JSON。**音频不进 `RunEvent`**，只记时长与引用；识别文本仍走 `POST /api/runs`，业务状态不进适配器。
+3. **服务端适配器**（`adapters/aliyun_voice.py`）：`AsrStream`（open/feed/finish + 事件队列）与 `TtsStream`（一句一实例 + 音频块队列 + 取消），阻塞的 SDK 调用一律进线程。
 
-1. **浏览器采集**：`AudioWorklet` 采 PCM16 / 16k 单声道，100–200ms 一帧推给本地 WS。不用 `MediaRecorder` 做主链路——它输出 webm/opus，还得转码；`MediaRecorder` 只用来**留档录制件**（`M-S1-08` 的证据）。
-2. **本地服务通道**：`loomrise/web.py`（已有 aiohttp）加一条 WS 路由，浏览器 ↔ 服务端 ↔ DashScope 双向转发。**音频不进 `RunEvent`**，只记引用与时长。
-3. **服务端适配器**：新增 `adapters/aliyun_voice.py`，实现"打开 ASR 任务 → 转发帧 → 拿最终文本 → 交给 `ExecutionService`"与"文本 → TTS → 音频帧"两个方向。业务状态一律不进适配器（与 `agentscope_runtime.py` 同一条边界）。
+**实现后才定下来的四条**（写进 [D-05](VOICE-ARCHITECTURE-DECISIONS.md)，这里只列结论）：
+
+| 结论 | 起因 |
+|---|---|
+| `final` 只是句尾，轮次结束另有信号（`asr.closed`） | 实测一句 4.85 s 的话被判句尾两次，后半句被吞 |
+| 背压读 SDK 真实队列，不自己累加 | 累加计数器只增不减，3 秒后永久丢帧；现象伪装成"服务端截断" |
+| `max_sentence_silence=1500`（默认 800 太短） | 中文逗号停顿会被判句尾 |
+| 一句一个 TTS 实例 | 按句打断才说得清停在哪，`不播过期内容` 才可判 |
 
 ## 5. 成本与限制（已知/未知分开写）
 
@@ -124,13 +131,15 @@ SDK             dashscope==<实测可用版本>
 
 > Workspace ID 本身不是密钥，但它是账号标识：**写在本地凭据文件里，不写进公共仓库**。仓库文档一律用 `{ws}` 占位。
 
-## 8. 还差什么（清单，key 到手后按序做）
+## 8. 还差什么（按序，已完成的不再重开）
 
 - [ ] 控制台核对计费与并发上限，把"未核"两行补上
 - [x] ~~验 `dashscope 1.27.7` 能否直接调 `qwen-audio-3.0-tts-flash`~~ **2026-10-23 已通过，无需升级**
-- [x] 最小 ASR 已跑通（TTS 合成 8.6 s 音频，逐字一致）；**`words[]` 时间戳尚未取用**
-- [x] 最小 TTS 已跑通：首包 339/371/411 ms（3 次，**只测了新建连接**，复用连接那组还没测）
-- [ ] 三条 ASR 候选各跑同一段 5 分钟中文语料，出**字错率对照**（决定主选是否换 `qwen-audio-3.0-asr-flash-streaming`）
+- [x] 最小 ASR 已跑通（TTS 合成 8.6 s 音频，逐字一致）；**`words[]` 时间戳仍未取用**（当前只用 `begin_time`/`end_time`）
+- [x] 最小 TTS 已跑通：首包 6 次采样 331.9–411 ms，**仍全是新建连接**，复用连接那组还没测
+- [x] 双向媒体通道已实现并跑通真云端往返（`scripts/voice_ws_smoke.py`），识别 `end_ms=4640`、`dropped=0`
+- [ ] **浏览器实测（阻塞 `M-S1-08`）**：自动化跑不动（本机 Chromium 的 WebAudio 在无头与有头两种模式下都挂死）。需人工点一次「录音」
+- [ ] 三条 ASR 候选各跑同一段 5 分钟**真人**中文语料，出**字错率对照**（决定主选是否换 `qwen-audio-3.0-asr-flash-streaming`）
 - [x] 组合已写入 [VERSION-PINS §8](../VERSION-PINS.md)；**阈值登记表仍未建**（要等多轮采样）
 
-**没有第 5 项就不要定稿主选**——现在的主选依据是"能钉快照"，不是"中文更准"。这两件事必须分开证。
+**没有字错率对照就不要定稿主选**——现在的主选依据是"能钉快照"，不是"中文更准"。这两件事必须分开证。

@@ -375,7 +375,11 @@ def main(argv: list[str] | None = None) -> int:
     w = sub.add_parser("web", help="仅在本机提供文字/语音与 AG-UI SSE 试用页")
     w.add_argument("--port", type=int, default=8765)
     w.add_argument("--scripted", action="store_true", help="显式使用脚本模型，不调用真实模型")
-    w.set_defaults(func=lambda args: __import__("loomrise.web", fromlist=["serve"]).serve(args.port, scripted=args.scripted))
+    w.add_argument("--voice-trace", metavar="DIR", default=None,
+                   help="把语音会话时序写入目录（跑测用；默认不落盘）")
+    w.set_defaults(func=lambda args: __import__("loomrise.web", fromlist=["serve"]).serve(
+        args.port, scripted=args.scripted,
+        voice_trace_dir=Path(args.voice_trace) if args.voice_trace else None))
 
     args = p.parse_args(argv)
     fn = args.func

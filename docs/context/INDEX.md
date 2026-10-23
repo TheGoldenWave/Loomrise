@@ -17,7 +17,7 @@
 | 策略运营如何配置专家与主动服务 | [运营人员后台配置说明](../OPERATOR-CONFIGURATION-GUIDE.md) | 按当前十个模块和 Task/Harness 新增设计组织；本地原型与规划状态明确区分 |
 | 用户记忆、画像与上下文怎样治理 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 主体、字段证据、派生视图、装配/压缩、撤销及Provider对照；模块方向确认，未实现 |
 | 跨用户经验（专家记忆）怎样独立于用户记忆 | [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 三种记忆分工、五个身份合同、写入红线、版本兼容矩阵与 MEM-0–5 路线；方向与规划，未实现 |
-| 语音交互架构怎么定的、全双工指标怎么进门禁 | [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | 两项已定判断（D-01 落点、D-02 指标口径）与理由；指标操作表在验证计划 |
+| 语音交互架构怎么定的、全双工指标怎么进门禁 | [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | D-01–D-05 五项已定判断与理由；指标操作表在验证计划，媒体通道协议在 `web.py:voice_ws` |
 | Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
@@ -98,7 +98,7 @@
 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 腾讯 Hy Memory 2.0 框架/模型/应用三层的源码与论文实测、十个可抄机制、采用与排除裁决 | 与 TDAI 并列的第二个具名候选；发布 1 天、极新；不采用其权重与自动 reconcile；未安装未联调 |
 | [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 业务用户记忆/专家记忆/个人记忆分工、`Experience`最小字段、写入红线W1–W3、**C6 证据样本不得自证**、版本兼容矩阵、MEM-0–5；**§10 已决**：`subject_id` 由业务映射提供 + `ephemeral` 兜底、不做身份合并 | 方向与规划；不改六层、不改§7.4无例外；字段与接口为提案，未实现；**I1 阻塞已解除** |
 | [实时语音协同验证计划](../VOICE-COORDINATION-VALIDATION.md) | 媒体前台／业务后台的可选对照；全双工指标登记口径（2026-10-21） | 待锁版本、待实测；不新增业务内核或电话承诺 |
-| [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | D-01 全双工决策落点（harness 工程式）、D-02 指标按业务语义拆解与阈值纪律 | 两项已定；Q2–Q4 与 Q6–Q10 未决（Q5 已完成）；不复制指标表，操作细节在验证计划 |
+| [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | **D-01–D-05**：全双工落点（harness 工程式）、指标按业务语义拆解与阈值纪律、播报窗口与播出回执、委派首次验收阶段、**媒体通道与业务通道分离（`final` 只是句尾）** | 五项已定；Q1–Q10 已结清；不复制指标表，操作细节在验证计划 |
 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 技术报告 + 项目主页 + main `ca2e7e2` 源码：六组机制借鉴、不借五条、对 D-01/D-02/D1 的增量 | 研究提案；证据分四级；未安装、未联调、未核许可证兼容 |
 
 ### C. 实现证据与原型轮次

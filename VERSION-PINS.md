@@ -137,14 +137,18 @@ python3 -m venv s1-voice && s1-voice/bin/pip install "pipecat-ai[tracing]==1.12.
 |---|---|---|
 | 地域 | 华北2（北京） | 实时 ASR 族仅此地域 |
 | ASR 模型 | `fun-asr-realtime-2026-02-28`（**带日期快照，可钉**） | 2026-10-23 闭环实测 |
-| ASR 参数 | `pcm` / `16000` / `language_hints=[zh]` | 同上 |
+| ASR 参数 | `pcm` / `16000` / `language_hints=[zh]` / `max_sentence_silence=1500` | 同上；1500 是**我们显式传的**，默认 800 会把中文逗号停顿判成句尾 |
 | TTS 模型 | `qwen-audio-3.0-tts-flash`（**别名，不可钉快照**） | 同上 |
 | TTS 音色 | `longanhuan_v3.6` | 同上 |
 | TTS 输出 | `PCM_16000HZ_MONO_16BIT`（本次探针） | 同上 |
 | SDK | `dashscope==1.27.7`（离线 wheelhouse 内） | `pip check` 无冲突 |
-| 首包时延 | **339 / 371 / 411 ms**（3 次，每次新建连接） | `runs/r0/voice/tts-firstpkt-*.log` |
+| 首包时延 | **331.9 / 339 / 364.7 / 371 / 402.1 / 411 ms**（6 次，均新建连接） | `runs/r0/voice/tts-firstpkt-*.log`、`smoke-*.json` |
 | ASR 闭环 | TTS 合成 → ASR 识别，**逐字一致** | `runs/r0/voice/asr-multi-*.log` |
+| 媒体通道 | `/ws/voice`：上行 PCM16/16k 二进制帧（100 ms/3200 B）+ JSON 控制帧；下行同格式 PCM | `loomrise/web.py:voice_ws` docstring 是协议权威 |
+| 通道纪律 | 凭据缺失显式失败、背压读真实队列、一句一 TTS 实例、`final` 只是句尾 | [D-05](docs/VOICE-ARCHITECTURE-DECISIONS.md) |
 
 - **`dashscope 1.27.7` 能直接调 `qwen-audio-3.0-tts-flash` 与三条 ASR 候选**，无需升级 SDK（此前列为风险 R-2，已关闭）。
 - **别名风险未消除**：TTS 无日期快照，提供方升级别名时行为可变。验收记录必须写"版本为别名"。
 - 三条 ASR 候选（`fun-asr-realtime-2026-02-28` / `paraformer-realtime-v2` / `qwen-audio-3.0-asr-flash-streaming`）在同一段**合成**语音上均逐字一致；**这不等于真人噪声语料下的准确率**，字错率对照仍未做。
+- **媒体通道与业务通道分离**：`/ws/voice` 只搬声音，识别文本仍走 `POST /api/runs` → 同一 `ExecutionService`。语音不是第二条执行路径（[D-05](docs/VOICE-ARCHITECTURE-DECISIONS.md)）。
+- **浏览器侧尚未验证**：`web.html` 已换成 `getUserMedia` + `AudioWorklet` + WS，但本机 Chromium 的 WebAudio 在自动化环境里不可用，**没有真浏览器运行证据**。M-S1-08 仍记"未开始"。
