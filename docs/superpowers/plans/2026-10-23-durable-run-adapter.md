@@ -21,7 +21,7 @@
 
 - [ ] **Step 1: Write failing contract tests**
 
-  覆盖 `ServiceRequest → Run → TaskAttempt → runtime_execution_id` 的关联、跨渠道继续使用同一 `request_id`、Adapter 句柄不能作为业务幂等键，以及 `RunEvent` 能引用 checkpoint 但不把它当业务终态。
+  覆盖 `ServiceRequest → Run → runtime_execution_id` 与 `TaskItem → TaskAttempt → Run` 的关联、跨渠道继续使用同一 `request_id`、Adapter 句柄不能作为业务幂等键，以及 `RunEvent` 能引用 checkpoint 但不把它当业务终态。
 
 - [ ] **Step 2: Run the focused tests**
 
