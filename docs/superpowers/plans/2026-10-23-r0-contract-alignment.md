@@ -97,7 +97,7 @@
 
 ### R0-WP5 · 合入与回归（汇合点，前置 = WP1–WP4 全绿）
 
-- [ ] **合主干**——**未合**，DoD 第 1 条要求 `M-S1-01…14` 全通过，当前 08/10/13/14 未完成 · [x] **已改** `adapters/agentscope_runtime.py` 映射（`_VERDICT_MAP`；`STOP`/`DEDUPE` 有损落 `DENY`，差异留在事件 `verdict` 字段）
+- [x] **合主干（2026-10-23，`--no-ff` 合并 `r0/contract-alignment`）**——**合入不等于 R0 退出**：DoD 第 1 条仍未满足（13/14 挂账），合并只是让代码离开长分支。 · [x] **已改** `adapters/agentscope_runtime.py` 映射（`_VERDICT_MAP`；`STOP`/`DEDUPE` 有损落 `DENY`，差异留在事件 `verdict` 字段）
 - [x] 断言已改写：「只读放行」→「放行来自授权查询而非规则」，并新增「未登记工具直接拒绝」「重复写入判 dedupe 而非 deny」
 - [x] 重跑：`test_s1.py` **81 项 ok**（原 80 + 新增 1）、`test_contract_semantics.py` **47 项**、`test_voice_ws.py` 33 项、`replay` **11/11**，连续两次一致
 - [x] 行为变化清单见 §5 之后，**3 条预期内变化**，逐条写了原因
