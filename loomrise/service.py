@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from .contracts import (
     Channel,
     RequestState,
+    Run,
+    RunStatus,
     ScenarioPack,
     ServiceRequest,
     ToolOutcome,
@@ -23,6 +25,8 @@ from .contracts import (
     now_iso,
 )
 from .context import CompactionPolicy, ContextLedger
+from .durable_adapter import DurableRunAdapter
+from .durable_store import RecoveryReport, SqliteStore
 from .ledger import EventLedger
 from .rules import DecisionPolicy
 from .tools import Sandbox, ToolResult
@@ -83,6 +87,8 @@ class ExecutionService:
         ask_confirm: Callable[[list[Any]], list[bool]] | None = None,
         failure_mode: str = "none",
         compaction_mode: str = "deny",
+        store: SqliteStore | None = None,
+        owner_id: str | None = None,
     ) -> None:
         self.pack = pack
         self.ledger = ledger or EventLedger()
@@ -96,6 +102,21 @@ class ExecutionService:
         self._writes: dict[str, str] = {}
         # 对话状态按业务请求复用：同一请求换渠道/换轮次时模型仍看得到前文
         self._states: dict[str, Any] = {}
+        # 耐久层是可选下游：不传 store 时行为与 S1 完全一致，不改变任何既有验收。
+        self.durable: DurableRunAdapter | None = None
+        self.recovery: RecoveryReport | None = None
+        if store is not None:
+            self.durable = DurableRunAdapter(
+                store,
+                owner_id=owner_id or f"local-{new_id('owner')}",
+                tenant_id=tenant_id,
+            )
+            # 先恢复再挂 sink：恢复阶段要写"中断"事件，不能与业务写入抢同一路径。
+            self.recovery = self.durable.recover()
+            if self.recovery.idempotent_keys:
+                # 跨重启的幂等索引：不恢复它，重启后同一键会被再写一次。
+                self._writes.update(self.recovery.idempotent_keys)
+            self.ledger.sink = self.durable.persist
 
     # -- 对外入口 ----------------------------------------------------------
     async def handle_text(
@@ -178,7 +199,17 @@ class ExecutionService:
         av = self.pack.agent_version
         req = request or self._new_request(channel, text)
         self.requests[req.request_id] = req
-        run_id = new_id("run")
+        run: Run | None = None
+        if self.durable is not None:
+            run = self.durable.begin(
+                req,
+                agent_version=av.version_id,
+                snapshot={"skill_routing": self.pack.routing,
+                          "context_budget": av.context_budget_tokens},
+            )
+            run_id = run.run_id
+        else:
+            run_id = new_id("run")
         req.state = RequestState.RUNNING
         self._active[run_id] = asyncio.current_task()
 
@@ -251,6 +282,9 @@ class ExecutionService:
                 outcome=r.outcome.value,
                 result_id=r.result_id,
                 duration_ms=r.duration_ms,
+                # 幂等键必须进事件本身：耐久层靠它把"写入事实"与
+                # 幂等记录/outbox 放进同一事务，而不是另开一张表再对账。
+                idempotency_key=idempotency_key if r.result_id else None,
             )
             outcomes.append(r.outcome.value)
             if r.result_id:
@@ -296,6 +330,24 @@ class ExecutionService:
         final_text = ""
         text_emitted = False  # 是否已产出过 reply.text（AG-UI 的文本来源）
 
+        def close_run() -> None:
+            """收尾：运行状态与 `run.finished` 事件同一事务提交。
+
+            没有耐久层时是空操作；有的话必须调，否则恢复会把这轮误判成中断。
+            """
+            if self.durable is None or run is None:
+                return
+            self.durable.finish(
+                run,
+                request_state=req.state.value,
+                result_id=req.result_id,
+                status=(
+                    RunStatus.CANCELLED
+                    if req.state is RequestState.CANCELLED
+                    else None
+                ),
+            )
+
         def finish_cancel() -> RunResult:
             req.state = RequestState.SUCCESS if written else RequestState.CANCELLED
             req.updated_at = now_iso()
@@ -304,6 +356,7 @@ class ExecutionService:
                 req.outcome = {"result_ids": written, "bookings": sandbox.bookings}
             emit("run.cancel_confirmed", write_prevented=not written, business_action_revoked=False, result_ids=written)
             emit("run.finished", request_state=req.state.value, write_count=len(written), result_ids=written)
+            close_run()
             return RunResult(req, run_id, written_result_ids=written, context_audit=ctx.audit_answer(), outcomes=outcomes)
 
         try:
@@ -364,6 +417,7 @@ class ExecutionService:
             result_ids=written,
             unknown_outcomes=[o for o in outcomes if o == ToolOutcome.UNKNOWN.value],
         )
+        close_run()
         return RunResult(
             request=req,
             run_id=run_id,

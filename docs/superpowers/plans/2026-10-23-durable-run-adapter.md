@@ -19,7 +19,7 @@
 - Create: `loomrise/durable_adapter.py`（`DurableRunAdapter` 协议、状态/恢复结果类型和内部句柄）
 - Test: `tests/test_durable_contracts.py`
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
   覆盖 `ServiceRequest → Run → runtime_execution_id`、可选 `TaskItem/TaskAttempt` 或后台作业关联、无 Task 的入站 Run、跨渠道沿用同一 `request_id`；断言 Adapter 句柄不是业务幂等键，`RunEvent` 可引用 checkpoint 但不把它当业务终态。
 
@@ -29,7 +29,7 @@
 
   Expected: FAIL because the new contract and adapter types do not exist.
 
-- [ ] **Step 3: Implement the smallest contract**
+- [x] **Step 3: Implement the smallest contract**（`Run` / `RunStatus` 落 `contracts.py`，`durable_adapter.py` 提供协议与生命周期）
 
   只添加稳定 `run_id`、请求/AgentVersion/上下文快照引用、占用代次、lineage、内部句柄引用和生命周期字段；TaskAttempt 维持可选关联，不新增 Task 调度状态机。不把上游 durable task/phase 暴露到公共合同，不增加通用 `execute` 工具。
 
@@ -46,7 +46,7 @@
 - Test: `tests/test_durable_store.py`
 - Modify: `docs/ARCHITECTURE.md`（实现完成后回填实际选型和限制，不能预先宣称生产支持）
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
   覆盖同一结构化存储事务的可见性：请求/Run 状态、幂等记录、`RunEvent` 序号与哈希链、checkpoint 校验引用及 outbox 意图要么一起可读，要么都不可读。若 checkpoint 内容在另一存储，先持久化不可变内容，再提交哈希引用；允许留下未引用内容，不允许暴露悬空引用。模拟 outbox 重投并用稳定 ID 去重。JSONL 仅作夹具/导出，不能误当业务账本。
 
@@ -56,7 +56,7 @@
 
   Expected: FAIL because no repository implementation exists.
 
-- [ ] **Step 3: Implement a test repository and one selected durable backend**
+- [x] **Step 3: Implement a test repository and one selected durable backend**（选型：标准库 `sqlite3`，零新依赖）
 
   先完成可注入的内存/测试实现，再实现 R1 选定的结构化后端。后端必须显式声明单写者、锁、同步级别、迁移和备份语义；不得直接复制 `pi durable` 的 storage 实现或默认假定跨进程安全。TaskItem 采用/派发不在本工作包内；若未来接入，必须按 Task 设计将其与对应事件/outbox 建立事务关系。
 
@@ -75,7 +75,7 @@
 - Modify: `loomrise/ledger.py`（恢复时验证事件链并关联 durable lineage；不把事件文件当完整状态存储）
 - Test: `tests/test_durable_recovery.py`
 
-- [ ] **Step 1: Write crash-injection tests**
+- [x] **Step 1: Write crash-injection tests**
 
   在纯计算/上下文装配步骤前后注入进程退出，按 Task §7.1 逐格验证：本地 running 的旧尝试变为 `failed/restart_interrupted`，不会复活；获准重试时新建占用代次和 `Run`，可引用输入/版本兼容的已提交纯计算结果；提交前崩溃的计算允许重算。已提交业务事实不重复入账，未提交步骤不能伪造为完成；另注入旧 generation 写入，验证拒绝。
 
@@ -85,7 +85,7 @@
 
   Expected: FAIL on restart because S1 state is currently process-local.
 
-- [ ] **Step 3: Implement rehydration and projection**
+- [x] **Step 3: Implement rehydration and projection**
 
   启动时加载并裁决 `Run`/可选 TaskAttempt/幂等/outbox：持久等待态依原状态恢复，可完整查询的委派才重挂，本地 running 旧尝试关闭为失败并拒绝其 worker；只有获准的新尝试可引用兼容 checkpoint。随后验证 `RunEvent` 哈希链及 AgentVersion/上下文快照。Adapter phase/checkpoint 只投影为执行证据，业务终态仍由 `Outcome` 和外部结果决定。
 

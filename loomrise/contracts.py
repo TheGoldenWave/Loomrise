@@ -208,6 +208,9 @@ class ServiceRequest:
         return asdict(self)
 
 
+GENESIS_HASH = "0" * 64
+
+
 @dataclass
 class RunEvent:
     """业务事实。追加写入、带哈希链，不依赖采样 Trace。"""
@@ -240,6 +243,47 @@ class RunEvent:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+class RunStatus(StrEnum):
+    """运行生命周期。`interrupted` 是**旧代中断**，不是失败重试的同义词。
+
+    只有 Loomrise 能决定把中断记成 `interrupted` 还是 `failed`；Adapter 无权改写。
+    """
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class Run:
+    """一次执行尝试（`Run@v1` 的最小实现）。
+
+    与 `ServiceRequest` 分开：请求是业务聚合，可跨多轮多端；`Run` 只代表一次
+    冻结版本下的执行。`occupancy_generation` 是**无 Task 时的唯一放行依据**；
+    有 `TaskAttempt` 时改用其 `generation`，本字段只作审计（见 ARCHITECTURE §代次）。
+    """
+
+    run_id: str
+    request_id: str
+    tenant_id: str
+    agent_version: str
+    owner_id: str = "local"
+    status: RunStatus = RunStatus.RUNNING
+    occupancy_generation: int = 1
+    attempt_id: str | None = None
+    lineage_parent: str | None = None
+    started_at: str = field(default_factory=now_iso)
+    ended_at: str | None = None
+    snapshot: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["status"] = str(self.status)
+        return d
 
 
 # --------------------------------------------------------------------------

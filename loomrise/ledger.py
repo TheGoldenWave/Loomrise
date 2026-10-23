@@ -10,9 +10,9 @@ import json
 import os
 from typing import Any, Iterator
 
-from .contracts import Channel, RunEvent, new_id
+from .contracts import GENESIS_HASH, Channel, RunEvent, new_id
 
-GENESIS = "0" * 64
+GENESIS = GENESIS_HASH
 
 
 class EventLedger:
@@ -20,6 +20,9 @@ class EventLedger:
         self.path = path
         self._events: list[RunEvent] = []
         self._tail = GENESIS
+        # 结构化存储的落库钩子。账本仍是业务事实源，sink 只是持久化下游；
+        # sink 抛错必须冒泡——事件没落库却继续执行，等于承认"记不下来也算做过"。
+        self.sink: Any = None
 
     # -- 写 ---------------------------------------------------------------
     def emit(
@@ -51,6 +54,8 @@ class EventLedger:
         ).seal(self._tail)
         self._events.append(evt)
         self._tail = evt.hash
+        if self.sink is not None:
+            self.sink(evt)
         if self.path:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
