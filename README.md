@@ -37,7 +37,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | S3 | 标准发行与首个用户自有云快捷交付，验证恢复与升级 | 规划 |
 | S4 | 多云模板扩展，其他渠道、多租户或电话独立验收 | 规划 |
 
-阶段依赖和退出 Gate 见[验证路线](docs/ROADMAP.md)。完整客服、真实外部业务写入、持续改进与云快捷部署均未因本次文档更新变成已实现能力。
+阶段依赖和退出 Gate 见[验证路线](docs/ROADMAP.md)。**阶段内部的批次**见[版本切分](docs/RELEASE-PLAN.md)：S1→**R0**、S2-a→**R1+R2**、S2-b→**R3**、S2-c→**R4**、S3→**R5a**、S4→**R5b**；每条 Gate 由哪件工件证明见[追溯矩阵](docs/RELEASE-GATE-MATRIX.md)。完整客服、真实外部业务写入、持续改进与云快捷部署均未因本次文档更新变成已实现能力。
 
 **本轮前端评审入口**：[打开第二轮页面](prototypes/console-next/index.html) · [第二轮 UI 走查与优化计划](docs/CONSOLE-UI-WALKTHROUGH-PLAN.md) · [交付、验证与后端交接](docs/S2-FRONTEND-ROUND2.md)。通过本机 HTTP 预览；默认完整人工配置，Agent 面板仅保留后续接入说明和虚构候选审阅，本轮不做平台内 Worker。Task/Harness 后台前端增量尚未实现，执行入口见[前端开发计划](docs/superpowers/plans/2026-10-19-console-task-harness-frontend.md)。
 
@@ -53,8 +53,12 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
-| 编排图在后台怎么落地 | [编排视图前端方案](docs/S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 流程 tab 三投影（图/清单/规则）；`@xyflow/react` v12；坐标不持久化；八条校验的界面落点 |
-| 客服/销售的路由策略怎么配 | [路由与能力单元](docs/ROUTE-GRAPH-AND-UNITS.md)（**提案 v0.3**） | 单元＝契约层＋内容层，收起是节点、展开是图；跨层只走**端口**（跳步）与**边界事件**（异常）；LLM 在闭集里选 + margin 与可校验依据；八条保存前校验；RG-1–RG-7 已定 |
+| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.3**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 落版本 |
+| 马上要做的 R0 怎么做 | [R0 合同对齐开工清单](docs/superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检命令、证据两层约定、语音阈值登记表、WP0–WP6 复选框与 DoD；合同不合主干 |
+| 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.1**） | S1／S2-a／S2-c／S3-S4 逐行工件与正反例；登记纪律；未决缺口。**追溯表，不是 Gate 权威** |
+| 上一轮评审改了什么、还剩什么 | [评审处置台账](docs/RELEASE-PLAN-REVIEW-RESPONSE.md) | 15 条意见的采纳/部分采纳/不采纳与落点；5 项未关闭 |
+| 编排图在后台怎么落地 | [编排视图前端方案](docs/S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 流程 tab 三投影（图/清单/规则）；`@xyflow/react` v12；坐标不持久化；九条校验的界面落点 |
+| 客服/销售的路由策略怎么配 | [路由与能力单元](docs/ROUTE-GRAPH-AND-UNITS.md)（**已采纳合同 v1.0**） | 单元＝契约层＋内容层，收起是节点、展开是图；跨层只走**端口**（跳步）与**边界事件**（异常）；LLM 在闭集里选 + margin 与可校验依据；九条保存前校验；R1 最小实现、R3 嵌套与画布 |
 | 评测、候选改进、审批与回滚 | [S2 治理设计](docs/S2-DESIGN.md) | 范围决策与评测提案的已定／待定部分 |
 | 已实现什么、怎样复现 | [S1 交付与验收](docs/S1-BUILD-REPORT.md)、[版本钉](VERSION-PINS.md) | 代码、测试、安装与运行证据；各轮原型看对应报告 |
 | 选型、竞品、记忆与语音研究 | [参考项目与采用边界](docs/REFERENCE-PROJECTS.md) | 配置对比、记忆／迭代分析、语音验证与[语音架构决策记录](docs/VOICE-ARCHITECTURE-DECISIONS.md)；Qwen Audio 的机制借鉴见[源码研读](docs/QWEN-AUDIO-AGENT-HARNESS-STUDY.md)；ElevenLabs 托管平台的配置对象与能力边界见[分析](docs/ELEVENLABS-AGENTS-ANALYSIS.md)与[9 卷专题](docs/competitive/elevenlabs/00-INDEX.md)（368 篇官方文档原文支撑 + 88 项能力对照矩阵） |

@@ -1,6 +1,6 @@
-# Loomrise 文档总索引 v0.11
+# Loomrise 文档总索引 v0.12
 
-日期：2026-10-21（补 ElevenLabs 研究参照）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-10-22（版本计划评审处置：新增 Gate 追溯矩阵与处置台账；`Unit` 采纳为正式合同）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -9,7 +9,7 @@
 | 产品做什么、为谁服务 | [PRODUCT](../PRODUCT.md) | 定位、角色、黄金路径与排除范围 |
 | 产品如何组成、外部怎样接入 | [产品形态与开放接入](../PRODUCT-FORM-AND-INTEGRATION.md) | 工作台／客服应用、接入分类、前后端职责 |
 | 哪个对象持有事实或权限 | [ARCHITECTURE](../ARCHITECTURE.md)、[六层配置合同](../CONFIGURATION-LAYERS.md) | 领域权威、Adapter、版本与模型外边界；包含目标规范 |
-| 先做什么、何时算过关 | [ROADMAP](../ROADMAP.md) | S1 至 S4 的阶段依赖、当前进度、退出 Gate |
+| 先做什么、何时算过关 | [ROADMAP](../ROADMAP.md) → [版本切分](../RELEASE-PLAN.md) → [Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md) | ROADMAP 给阶段依赖与退出 Gate；版本切分给**阶段内先做什么、每版 WP 与退出判据**；矩阵给**每条 Gate 由哪件工件证明、证据在哪** |
 | 网页客服与云交付覆盖哪些能力 | [客服交付建设方案](../CUSTOMER-SERVICE-DELIVERY-PLAN.md) | 能力矩阵、S2-a/b/c 和云部署生命周期；新增能力规划未实现 |
 | 图片/视频/文档如何录入、检索与发送 | [物料库与文件发送](../MATERIAL-LIBRARY-AND-DELIVERY.md) | 独立资产、后处理、简介审阅、人工/Agent 发送策略与分阶段 Gate；后端未实现 |
 | 运营策略、会话 TODO 与主动服务怎样统一 | [Task 设计](../TASK-SYSTEM-DESIGN.md)、[联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内蓝图/版本、周期初始化、受限决策/工作集、迁移与取消；方案已确定，合同/服务未实现 |
@@ -37,6 +37,8 @@
 | 扩展客服物料与文件发送 | [物料专题](../MATERIAL-LIBRARY-AND-DELIVERY.md) → [原型物料合同](../../prototypes/console-next/MATERIALS-CONTRACT.md) → [第二轮报告](../S2-FRONTEND-ROUND2.md) → ARCHITECTURE/ROADMAP | 知识事实与文件资产分开；简介可检索不等于可发送；本地缓存/仿真与真实处理/渠道 Gate 分开 |
 | 设计 Task、记忆与主动服务联动 | 联合计划 → Task 设计 → 用户上下文设计 → PRODUCT/ARCHITECTURE/ROADMAP | 蓝图随专家版本且不共享；TaskItem 不覆盖 ServiceRequest，记忆不授予触达权；首片不依赖完整记忆 |
 | 实施专家内任务首片 | [首片实施计划](../superpowers/plans/2026-10-16-expert-task-harness.md) → Task 设计 → 联合计划 → S1 报告/版本钉 | 内部任务本地沙盒、幂等/恢复/越界与工作集验收；无定时执行、真实触达或已完成服务声明 |
+| **实施 R0 合同对齐** | [R0 开工清单](../superpowers/plans/2026-10-23-r0-contract-alignment.md) → [版本切分](../RELEASE-PLAN.md) §3 R0 → [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §1 → [硬规则](../HARD-RULE-MODEL.md) | 合同代码**可写不合主干**；先证据后合入；阈值先登记再采样；P1/P2 标"未覆盖" |
+| **选 STT/TTS 与写语音通道** | [阿里云语音选型](../ALIYUN-VOICE-SELECTION.md) → R0 开工清单 WP1 | 云端阿里、北京地域；ASR 选带日期快照的，TTS 只能钉别名（风险须声明）；**音频上传通道目前不存在，要新建** |
 | 实施配置后台 Task/Harness 前端增量 | [前端开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) → Kickoff §8 → UX §12 → IA §8 | 仅 `console-next` 本地投影；CT-00–06、分工边界和前端验收；不替代 Task 服务、正式权限、调度、渠道或发布 Gate |
 | 实现 MCP／CLI／Skills | Agent 接入开发计划 → [初始化与摄入](../INTAKE-AND-INITIALIZATION.md) → ARCHITECTURE → [参考项目](../REFERENCE-PROJECTS.md) | 同一应用服务、来源授权、revision／幂等、host 支持矩阵、无直接发布权 |
 | 设计评测、候选改进与治理 | [S2 范围决策](../S2-SCOPE-DECISIONS.md) → [S2 治理设计](../S2-DESIGN.md) → [评测提案](../S2-EVAL-GATE-PROPOSAL.md) → AGI-07–10 | blind 与作者隔离；已定 Gate Reserve 和待定预算／状态机分别核对 |
@@ -57,6 +59,10 @@
 | [ARCHITECTURE](../ARCHITECTURE.md) | 领域权威、数据与适配边界 | 区分 S1 最小实现与目标合同 |
 | [六层配置合同](../CONFIGURATION-LAYERS.md) | Context／Routing／Skill／Rule／Tool／Outcome | S1 部分实现，完整配置规划 |
 | [ROADMAP](../ROADMAP.md) | 阶段总表、优先顺序、Gate | 不承诺日期；实现状态要有验收依据 |
+| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.3**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项与 **AGI-01–11（MCP/CLI/Skills/Worker）**落版本 | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；退出判据一律引用矩阵行号；未实施 |
+| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.1**） | 每条 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置；S1 17 行、S2-a 18 行、S2-c 10 行、S3/S4 6 行；登记纪律与未决缺口 | **追溯表，不是 Gate 权威**；条文变更先改权威文件再改本表；多数证据位置待登记 |
+| [RELEASE-PLAN 与当前产品方向评审记录](../RELEASE-PLAN-REVIEW.md)（**v0.1**） | 产品、市场、架构、平台、交付管理与设计六个视角的综合评审；记录优势、风险优先级、知识库启发和待决事项 | 评审意见，不是产品/架构决策或实现证据；不替代 ROADMAP 与客服交付方案 Gate |
+| [评审处置台账](../RELEASE-PLAN-REVIEW-RESPONSE.md)（**v0.1**） | 15 条评审意见的采纳/部分采纳/不采纳、改动落点、被修正的事实前提、5 项未关闭 | 只记处置，不重复原文；未关闭项是下轮评审入口 |
 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、公开晋升、许可与红线 | 核心 Apache-2.0；[LICENSE](../../LICENSE)、[NOTICE](../../NOTICE)为许可工件 |
 | [命名决策](../NAMING.md) | 项目名和与上游同名对象的裁决 | 已确认；合同名称不要按页面旧称改写 |
 | [参考项目与采用边界](../REFERENCE-PROJECTS.md) | 各类上游的候选角色及采用条件 | 技术选择入口；参照不代表已支持 |
@@ -85,6 +91,8 @@
 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 记忆/画像/上下文模块职责及治理、身份、检索/压缩、遗忘 | 模块方向已确认；接口/字段/Provider提案未实现，六层不变 |
 | [Task 与上下文联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 两条研究归并、TM-01–13、首片/AGI依赖，§7 后台 CT 采纳入口 | 方案/顺序与 UI 设计已登记；服务/新增 UI 未实现，不改变原型和 S1 验收状态 |
 | [专家任务与 Harness 首片实施计划](../superpowers/plans/2026-10-16-expert-task-harness.md) | 蓝图冻结、初始化、内部任务账本/意图、工作集与语义工具假 Adapter | 文件级待执行计划；只验内部沙盒，不承诺已支持调度/发送/生产持久化 |
+| [R0 合同对齐开工清单](../superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检、证据两层约定、语音阈值登记表模板、WP0–WP6（媒体/指标/SSE/合同落地/合入回归/签核）与 DoD | 执行清单，未开工；合同代码不合主干；不建配置器、不动原型；不替代 Gate 权威 |
+| [阿里云端到端语音选型](../ALIYUN-VOICE-SELECTION.md) | 流式 ASR/TTS 候选、锁版本策略（日期快照 vs 别名）、接口形状、与现有链路的差距、待核项 | **调研与候选登记，未跑通**；key 未到位；SDK 兼容性待验；不替代 `M-S1-09` |
 | [配置后台 Task/Harness 前端增量开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) | `console-next` 的版本内蓝图、服务事项/Inbox、渐进披露、情景预览与 Diff | 仅前端执行计划，CT-00–06 全待开始；不连接正式 API/调度/渠道，不改变服务 Gate |
 | [用户记忆内核提案](../MEMORY-FOUNDATION-DESIGN.md) | TDAI的历史核查与候选Adapter；模块职责转看用户上下文设计 | 供应商选型/映射待确认，未联调；“采用”是原推荐，不等于已批准或双内核选定 |
 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 腾讯 Hy Memory 2.0 框架/模型/应用三层的源码与论文实测、十个可抄机制、采用与排除裁决 | 与 TDAI 并列的第二个具名候选；发布 1 天、极新；不采用其权重与自动 reconcile；未安装未联调 |
@@ -118,7 +126,7 @@
 |---|---|---|
 | [Agent 配置后台对比](../AGENT-CONFIGURATION-COMPARISON.md) | 指定上游快照的配置对象与产品体验参照 | 不保证最新商业版能力或已在本项目接入 |
 | [ElevenLabs 配置方案与能力边界](../ELEVENLABS-AGENTS-ANALYSIS.md) | 托管式平台（ElevenAgents）的配置分层、工具执行时序、版本/分支/评测机制与能力边界；可借 30 项、不借 16 项、EL-1…EL-18 待确认；v0.3 含**后台逐页核验状态表**（§12.8），v0.4 §13 深挖 Workflow，**v0.5 扒齐 368 篇官方文档并回改三处过强表述（§0.4）** | 闭源托管，**无源码、未调用 API、无真实会话**；界面级（B+）与 API schema（A-）为主；不构成采用承诺或时延/并发/中文效果结论 |
-| [路由与能力单元](../ROUTE-GRAPH-AND-UNITS.md)（**提案 v0.3**） | 融合形态：**单元＝契约层＋内容层，收起是节点、展开是图**（可分形嵌套）；**五类连接**——跨层只走端口（跳步）或边界事件（异常/挂断/超时），裸跨层边禁；模型在闭集内选（margin + 可校验依据）；**八条**保存前校验（接口诚实 + 连接合法）；L0 逐层路由表摘要 + 虾宝五类知识档位映射；三类测试粒度不对称 | **未采纳**；RG-1–RG-7 已于 2026-10-22 定案（§11）；不改 `HARD-RULE-MODEL`／`CONFIGURATION-LAYERS`／`PRODUCT.md` 任何结论 |
+| [路由与能力单元](../ROUTE-GRAPH-AND-UNITS.md)（**已采纳合同 v1.0**） | 融合形态：**单元＝契约层＋内容层，收起是节点、展开是图**（可分形嵌套）；**五类连接**——跨层只走端口（跳步）或边界事件（异常/挂断/超时），裸跨层边禁；模型在闭集内选（margin + 可校验依据）；**九条**保存前校验（接口诚实 + 连接合法 + 条件深度 ≤2）；L0 逐层路由表摘要 + 虾宝五类知识档位映射；三类测试粒度不对称 | **已采纳**（2026-10-22）：R1 落最小实现（清单投影九字段 + `body` 空字段），嵌套/端口/边界事件/画布在 R3；不新增第七层 |
 | [ElevenLabs 专题卷](../competitive/elevenlabs/00-INDEX.md)（9 卷） | 上面那份总纲的**事实层**：配置对象、编排、运行时与语音、知识与记忆、质量体系、渠道与电话、治理与合规、**88 项能力对照矩阵**、**CLI 与 MCP 的定位与落点** | 只承载事实与原文位置，**不产生结论**；判断一律回总纲 §8 / §9 |
 | [Hindsight 迭代机制分析](../HINDSIGHT-ITERATION-ANALYSIS.md) | 来源记忆、经验沉淀与改进假设的机制研究 | 已核源码不等于已联调、已选替代内核或效果提升 |
 | [历史归档索引](../archive/README.md) | 被替代设计的原文、时点与后继关系 | 归档内容不得作为新实现默认规格 |
@@ -130,7 +138,8 @@
 - **第三方 Agent 到改进**：Agent 接入计划的 AGI-01–06 先建立共用服务与受限创建 → AGI-07–08 诊断／Worker → AGI-09–10 候选与授权治理 → S2 设计／评测规则决定能否采用与发布。
 - **任务到用户上下文**：Task 设计确定专家蓝图/版本、初始化、受限决策及义务/执行分权 → 首片先验内部账本/工作集 → 用户上下文设计提供有效事实/画像 → 联合计划对齐 TM/AGI 与阶段 Gate；Provider 不持业务权威，渐进披露不授予权限。
 - **任务到配置后台**：Task/AGI 合同 → 体验 §12 的版本内规则/用户实例/证据分面 → IA §8 的归属/命名 → 简报 §11 与启动方案 CT-00–06 → 后续原型/正式服务分别验收；不把新增设计倒写为第二轮已实现。
-- **证据到结论**：S1 交付报告与各轮 UI 报告记录实际测试 → ROADMAP 更新可公开进度。上游研究与本地原型不能替代真实服务证据。
+- **证据到结论**：S1 交付报告与各轮 UI 报告记录实际测试 → ROADMAP 更新可公开进度 → Gate 追溯矩阵登记逐条工件与证据位置。上游研究与本地原型不能替代真实服务证据。
+- **计划到验收**：RELEASE-PLAN 的每版 WP → 矩阵行号 → 工件与证据位置 → 处置台账的未关闭项。三者任一漂移，先改权威 Gate 再改下游。
 - **部署到迁移**：客服交付计划的部署生命周期 → ARCHITECTURE 的发行物与场景包边界 → ROADMAP S3 首云、S4 扩云；AGI-11 仅增加可选 Worker 交付。
 
 ## 5. 已替代与容易混淆的内容
@@ -139,6 +148,8 @@
 |---|---|---|
 | S2-UI-DESIGN 原 §2 的旅程分区导航 | S2-IA-NAV 的对象域导航 | 原文移入 [历史快照](../archive/design/s2-ui-navigation-v0.2.md)；原文件 §3–§7 的界面约束保留 |
 | 旧工作台设计的 S2-a／S2-b 批次名 | ROADMAP、客服交付计划 | 旧表只用于还原设计批次，不覆盖现行 S2-a/b/c 产品阶段 |
+| RELEASE-PLAN v0.1 的"五组工件齐全即 S2-a 退出" | [Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md) §2 | 该表述无法逐条核验，已由 18 行逐行签核替代；旧表述只作历史对照 |
+| ROUTE-GRAPH 的"提案，未采纳"状态 | 同文件 v1.0 | 2026-10-22 已采纳为正式合同（R1 最小实现 / R3 嵌套与画布），旧状态不再适用 |
 | 工作台 IA 的 6 域／23 面 = 完整产品全部 UI | 客服交付计划 + 对应原型合同／新增规格 | 第二轮原型有客服应用／知识等展示；该轮本地菜单不自动成为整体 IA 的已确认定稿 |
 | 旧先版本列表/三 tab/独立频控仍是本轮命令，或全池可召回等于全量注入 | IA §8、体验 §12、简报 §5/11、启动方案 §8 | 当前选专家先概览、三深度同配置；频控在蓝图单点定义；候选可检索不等于本轮可见，能力按任务披露，旧计数只作对照 |
 | 新 Task 设计 = 配置/原型已支持调度或一次发布迁移所有用户 | UX-17–24、CT-00–06、TM/AGI Gate | 设计已落、代码未改；保存不初始化，发布不默迁，模拟/真实与本地/服务验收分开 |

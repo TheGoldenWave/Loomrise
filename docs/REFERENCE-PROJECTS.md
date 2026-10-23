@@ -86,6 +86,7 @@ DecisionPolicy 在执行内核中实施硬规则；DecisionProvider 可选且仅
 | **钉钉官方 Connector / Stream SDK** | 渠道事件、授权和消息去重 | 作为 S4 其他渠道候选，具体宿主、接口类型与连接所有权待验证；S2-b 先做 Telegram/Email 授权沙盒 |
 | **长期上下文系统（可选外部系统）** | 经治理的 Context Pack 来源 | 不承担 Loomrise 的运行、Agent 配置、渠道或发布权威。具名候选为**两个并列**（2026-10-16 起，均未选定底座）：**TencentDB Agent Memory**（MIT，L0–L3 分层 + ACL 可见性）与 **Tencent Hy Memory 2.0**（Apache-2.0，工作/代码记忆与冲突消解更强）。均「适配器 + 只读取用」，均不用 Proxy/hook 注入，均不 fork。裁决与红线见[既有内核提案](MEMORY-FOUNDATION-DESIGN.md)与[Hy Memory 三层裁决](HY-MEMORY-LAYERED-ANALYSIS.md)（均为提案，待确认） |
 | **Tencent MemHub** | 本地个人记忆管理应用；跨工具记忆汇聚与实时同步；读/写双开关与 Broker 二次鉴权 | **属搭建者个人层工具，不是 Loomrise 产品依赖**。无鉴权多租户、本地明文 SQLite、抽取默认走托管端点。与产品侧「业务用户记忆 + 专家记忆」主体不同，见[专家-用户记忆体系 §1/§7](EXPERT-USER-MEMORY-SYSTEM.md)。若评估接入，**只允许工具按需拉取**，禁用 hook 主动注入 |
+| **HKUDS/CLI-Anything**（2026-10-23 评估，仅借方法） | **CLI 作为 Agent 一等接口**的完整论证与工程经验：`--json` 结构化输出为一等公民、REPL 与 subcommand 双模式、**"验证产物而非退出码"**（魔数/ZIP 结构/像素/RMS）、由命令合同生成 `SKILL.md` | **不采用其生成式流水线**（7 阶段自动生成 CLI）。理由三条：① Loomrise CLI 是自家应用服务的**薄客户端**（AGI-05），不是把别人软件包成 CLI，生成工具比手写贵；② 其自述依赖前沿模型且常需多次 `/refine`；③ **生成的 CLI 是模型产出的可执行脚本面**，当工具接入运行时违反"平台不得执行上传材料或模型生成的任意脚本"。可用于开发期临时验证，不进运行时 |
 
 排除项：研究性自我修改系统不直接用于生产配置；模型训练、音色克隆、数字人、批量营销外呼不进入首版。
 

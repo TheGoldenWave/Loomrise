@@ -1,6 +1,6 @@
-# 架构与对象权威 v0.12
+# 架构与对象权威 v0.13
 
-状态：2026-10-16，**官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划**。S1 最小合同、执行内核及渐进式上下文加载已有代码；六层职责见[配置合同](CONFIGURATION-LAYERS.md)。确定性回放与真实模型六路径各有 11/11 历史记录，网页音频、真实模型端到端 SSE、完整持久化与重启恢复仍待验证；本轮更新设计与实施计划，没有执行内核、Adapter、依赖或前端实现变更。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
+状态：2026-10-22，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。确定性回放与真实模型六路径各有 11/11 历史记录，网页音频、真实模型端到端 SSE、完整持久化与重启恢复仍待验证；本轮只更新合同与计划，没有执行内核、Adapter、依赖或前端实现变更。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
 
 项目采用**交付工作台 + 官方客服应用 + 统一执行内核 + 分类适配器**，区分**产品控制面**、**客服会话与一线操作**、**业务执行**、**媒体与渠道**、**知识摄入与检索**、**业务工具**、**观测与评测**、**部署交付**。首个云交付以单 Agent、单租户实例为目标；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -132,6 +132,7 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 | `ScenarioPack` / 原始素材 | 上传者或材料权利人；本项目只托管获授权副本 | 来源、使用许可或模拟标记、有效期 | 用户删除，停止后续检索；已发版本标记失效并重验 |
 | MaterialAsset / MaterialVersion（目标合同） | Loomrise 应用资产治理；文件权利归来源方 | 来源/授权/有效期/范围、原件与派生、已审简介和版本；可检索不等于可发送 | 撤回阻止新使用并使关联版本待重验；历史附件按保留策略处理，不承诺收回已下载文件 |
 | `AgentSpec` / `AgentVersion` / `Release` | Loomrise | `draft → tested → approved → released → rolled_back`；发布版本不可覆盖，含专家内任务/触达蓝图及依赖快照 | 用户停用；在途事项显式迁移/暂停，审计元数据依保留策略处理 |
+| `Unit`（路由与能力单元，已采纳合同） | Loomrise；随 `AgentVersion` 冻结 | 契约层：`entry_ports`（带 `requires`）、`reads`/`writes`、`exit_ports`（每个出口自带 `completion`）、`fallback`、`on_event`（作用域 `self`/`subtree`/`global`）、`max_rounds`、`load_mode`（`routed` 或 `concurrent`）；内容层：子图或原子（`tool`/`judge`/`speak`/`say`）。R1 的 `body` 为空字段 | 随版本冻结，不单独删除；被引用版本必须已冻结才可用于路由；组合环禁用、执行环须有 `max_rounds` |
 | `ServiceRequest` / `RunEvent` | Loomrise | 绑定租户、业务请求、运行尝试、渠道、版本、成本与敏感级别 | 租户可删除或脱敏；禁止跨租户可见 |
 | TaskProposal / TaskItem / TaskAttempt（合同提案） | Loomrise 应用与调度用例 | 稳定主体、来源、策略/实例revision、权限与代次，关联实际请求/作业/结果 | 停止/取消需区分未派发、执行确认和外部撤销；回滚不复活授权 |
 | 用户记忆 / 派生画像 / ContextPlan（合同提案） | Loomrise 治理与加载合同；Provider 只提供存储/提炼/检索 | 主体/用途/来源/时间/版本、候选与有效值、冲突和加载快照 | 更正/forget传播到派生视图、缓存与迟到作业；任务义务不自动删除 |
@@ -148,6 +149,7 @@ S1 的最小加载合同包含 `context_scope`（global/task/skill/evidence）�
 `loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和 `ChangeProposal` 合同尚未实现。S1 请求与幂等账本在进程内，CLI 回放可持久化事件 JSONL；执行中取消及确认已有代码级验证，完整业务持久化、重启恢复及真实写入撤销仍待补齐。
 
 - `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、专家内 `task_blueprints`、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置、依赖引用和合同版本，不携带凭据；任务蓝图不引用共享可变策略，动态事实/授权须保留每次重验的来源/版本证据。当前 S1 的可变 AgentVersion dataclass 尚未实现完整冻结和蓝图校验。
+- `Unit@v1`（**已采纳合同；R1 落最小实现，R3 落嵌套与画布**）：契约层九字段 + 内容层（子图或原子）。路由三层：G0 确定性闸门 → G1 在**闭集**内选 → G2 兜底；连接五类：同层边、端口边、边界事件可用，组合环与裸跨层边不可；条件引用只允许已声明字段，深度 ≤2 层。它是 `RequestRouting` 与 `Skill/SOP` 的组织形态，**不是第七层**。R1 只实现清单投影所需字段与九条校验函数，嵌套/端口/边界事件的能力实现见 [RELEASE-PLAN](RELEASE-PLAN.md) §3 R3。
 - `ServiceRequest@v1`：业务请求可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。AgentScope 的 `state.Task` 是运行时子任务清单，适配器内部只以 `RuntimeTask`/`PlanTask` 称呼，不进入本合同。
 - `RunEvent@v1`：租户、Agent 版本、任务、运行、媒体会话、渠道、序号、时间、事件类型、来源引用、耗时／成本和幂等键；文字与语音至少区分生成、发送、已确认播出和未知；上下文事件还需记录作用域、选择/跳过原因、来源版本和 token 估算。
 - `ToolManifest@v1`：稳定 ID/版本、业务语义、输入/输出 Schema、副作用级别、权限、确认、超时/预算、幂等、错误与未知结果、模拟实现、外部结果 ID 与审计字段。平台内部任务状态操作不必全部成为模型工具。

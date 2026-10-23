@@ -25,6 +25,8 @@ Loomrise 把一个业务 Agent 拆成六层可版本化配置：`ContextSnapshot
 
 受授权资料约束的 FAQ 属于可验收客服任务：核验事实、资料引用和服务范围，无依据时澄清或升级；无需每次答疑创建工单。后续应分别保存答复生成、消息送达/播放、解决确认或未知和人工承接事实。客服会话可包含多个业务请求，会话占用与 `ServiceRequest` 终态分别管理；Widget、Inbox 或云部署均不新增第七个业务配置层。
 
+**路由与能力的组织形态：`Unit`（2026-10-22 采纳，不是第七层）。** 六层仍是职责划分；`Unit` 只是把 `RequestRouting` 与 `Skill/SOP` 两层的配置**打包成可嵌套、可复用的对象**——契约层写"什么条件进来、能读写什么、从哪个出口出去、异常怎么处理"，内容层写"这一步到底做什么"（子图或原子）。收起时它就是一个节点，展开时它是一张图。它不新增权限、不改裁决顺序，也不改变 `HardRule` 在模型外执行。合同见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)；R1 只落清单投影所需字段，嵌套与画布在 R3。
+
 ### 语音交互行为的归属（2026-10-21 定，目标规范）
 
 语音行为**不新增第七层**。按"能不能改、谁改、怎么生效"分四档，`AgentSpec` 只承载 ②b 与 ③：
@@ -178,6 +180,7 @@ S1 不实现自动 Skill 生成、长期记忆优化、复杂 Meta Skill 编排�
 | 目的 | Loomrise 对象 |
 |---|---|
 | 运行配置 | `AgentSpec` / `AgentVersion` / `SkillManifest` / `ToolManifest` |
+| 路由与能力组织 | `Unit`（契约层 + 内容层，已采纳合同） |
 | 执行事实 | `ServiceRequest` / `RunEvent` / `Outcome` |
 | 失败与真值 | `Case` / `EvalSet` / `EvalResult` |
 | 候选变更 | `ChangeProposal` |
