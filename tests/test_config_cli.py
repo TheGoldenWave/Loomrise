@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import contextlib
+import asyncio
 import io
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from loomrise.config_cli import main
 from loomrise.configuration import (
@@ -223,6 +228,64 @@ class ConfigurationCliCase(unittest.TestCase):
         self.assertEqual(principal.tenant_id, "tenant-a")
         self.assertEqual(principal.agent_ids, ("expert-a",))
         self.assertIsInstance(application, ConfigurationApplication)
+
+    def test_stdio_mcp_process_exposes_candidate_checklist(self):
+        store = SqliteStore(str(self.db))
+        service = ConfigurationService(store)
+        service.create_draft_from_stable(
+            tenant_id="tenant-a", agent_id="expert-a", base_version_id="v1",
+        )
+        candidate = service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="stdio-checklist",
+        )
+        store.close()
+        environment = os.environ.copy()
+        environment.update({
+            "LOOMRISE_PRINCIPAL_FILE": str(self.principal_file),
+            "LOOMRISE_CONFIGURATION_DB": str(self.db),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        })
+        server = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "loomrise.cli", "config", "mcp"],
+            env=environment,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        async def inspect_stdio_server():
+            async with stdio_client(server) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as client:
+                    await client.initialize()
+                    listed = await client.list_tools()
+                    self.assertIn(
+                        "loomrise_candidate_checklist",
+                        {tool.name for tool in listed.tools},
+                    )
+                    response = await client.call_tool(
+                        "loomrise_candidate_checklist", {
+                            "agent_id": "expert-a",
+                            "candidate_id": candidate["candidate_id"],
+                        },
+                    )
+                    envelope = response.structuredContent
+                    self.assertEqual(
+                        set(envelope), {"schema_version", "ok", "result", "error"},
+                    )
+                    self.assertEqual(envelope["schema_version"], CONFIG_SCHEMA_VERSION)
+                    self.assertTrue(envelope["ok"])
+                    self.assertIsNone(envelope["error"])
+                    result = envelope["result"]
+                    self.assertEqual(set(result), {
+                        "candidate_id", "readiness", "interpretation", "checks",
+                    })
+                    self.assertEqual(result["readiness"], "blocked")
+                    self.assertEqual(
+                        result["interpretation"],
+                        "readiness_diagnostic_only_not_publish_authorization",
+                    )
+
+        asyncio.run(inspect_stdio_server())
 
 
 if __name__ == "__main__":

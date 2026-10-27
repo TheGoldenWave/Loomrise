@@ -85,6 +85,7 @@ class ConfigurationMcpCase(unittest.IsolatedAsyncioTestCase):
             tools = {tool.name: tool for tool in listed.tools}
             self.assertIn("loomrise_draft_patch", tools)
             self.assertIn("loomrise_candidate_freeze", tools)
+            self.assertIn("loomrise_candidate_checklist", tools)
             self.assertIn("loomrise_stable_read", tools)
             for tool in tools.values():
                 properties = tool.inputSchema["properties"]
@@ -141,6 +142,19 @@ class ConfigurationMcpCase(unittest.IsolatedAsyncioTestCase):
             })
             self.assertEqual(repeat.structuredContent["result"]["candidate_id"], candidate["candidate_id"])
 
+            checklist = await client.call_tool("loomrise_candidate_checklist", {
+                "agent_id": "expert-a", "candidate_id": candidate["candidate_id"],
+            })
+            self.assertTrue(checklist.structuredContent["ok"])
+            self.assertEqual(checklist.structuredContent["result"]["readiness"], "blocked")
+            self.assertTrue(all(
+                check["status"] == "not_assessable" and check["blocking"]
+                for check in checklist.structuredContent["result"]["checks"]
+                if check["id"] in {
+                    "source_authorization", "candidate_business_permissions", "fixed_samples",
+                }
+            ))
+
     async def test_tool_scope_and_field_restrictions_are_server_enforced(self):
         async with create_connected_server_and_client_session(self.server) as client:
             other_expert = await client.call_tool(
@@ -148,6 +162,14 @@ class ConfigurationMcpCase(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(other_expert.structuredContent["ok"])
             self.assertEqual(other_expert.structuredContent["error"]["code"], "forbidden")
+
+            out_of_scope_checklist = await client.call_tool("loomrise_candidate_checklist", {
+                "agent_id": "expert-b", "candidate_id": "not-visible",
+            })
+            self.assertFalse(out_of_scope_checklist.structuredContent["ok"])
+            self.assertEqual(
+                out_of_scope_checklist.structuredContent["error"]["code"], "forbidden",
+            )
 
             protected_field = await client.call_tool("loomrise_draft_patch", {
                 "agent_id": "expert-a",

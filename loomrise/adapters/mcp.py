@@ -129,6 +129,22 @@ def create_configuration_mcp_server(
         })
 
     @server.tool(
+        name="loomrise_candidate_checklist",
+        description=(
+            "Run a read-only candidate readiness diagnostic. Missing R1 evidence blocks readiness; "
+            "the result is not approval or publish authorization."
+        ),
+        structured_output=True,
+    )
+    async def candidate_checklist(
+        agent_id: str, candidate_id: str,
+    ) -> ConfigurationToolResponse:
+        return execute("candidate.checklist", {
+            "agent_id": agent_id,
+            "candidate_id": candidate_id,
+        })
+
+    @server.tool(
         name="loomrise_candidate_list",
         description="List frozen candidates for an authorized expert.",
         structured_output=True,

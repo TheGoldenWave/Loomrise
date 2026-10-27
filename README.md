@@ -53,7 +53,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
-| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.11**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R0 执行状态（代码完成、Gate 未全绿） |
+| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.12**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R0 执行状态（代码完成、Gate 未全绿） |
 | 马上要做的 R0 怎么做 | [R0 合同对齐开工清单](docs/superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检命令、证据两层约定、语音阈值登记表、WP0–WP6 复选框与 DoD；合同不合主干 |
 | 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.4**） | S1／S2-a／S2-c／S3-S4 父 Gate 与工件映射；耐久子项用于细化故障证据，不新增独立退出条件；**追溯表，不是 Gate 权威** |
 | 上一轮评审改了什么、还剩什么 | [评审处置台账](docs/RELEASE-PLAN-REVIEW-RESPONSE.md) | 15 条意见的采纳/部分采纳/不采纳与落点；5 项未关闭 |

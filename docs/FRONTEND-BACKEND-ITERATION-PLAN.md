@@ -1,6 +1,6 @@
-# 配置化后台前后端迭代计划 v0.8
+# 配置化后台前后端迭代计划 v0.11
 
-本轮更新：补记 R1 SQLite 写事务硬退出覆盖，并按已实现的两平面导航基线校正 WP9 后续排期；Gate、领域合同和候选侧栏范围不变。
+本轮更新：补记 R1 SQLite 写事务硬退出覆盖、M-A-12 前半的只读候选检查及非冻结状态负例、112/112 后端回归、M-A-16 备份边界与 WP4 校验范围待协调项；Gate、领域合同和候选侧栏范围不变。
 
 日期：2026-10-27。状态：**进度对账 + 后续迭代提案**。本文按当前 `console-next` 本地原型与 [终态侧边栏候选稿](S2-SIDEBAR-SPEC.md) 重排实施顺序，并回填本轮 R1 后端实现进度；不改 [ROADMAP](ROADMAP.md) Gate、领域合同或后端版本计划，也不表示待确认的侧栏方案已获批准。
 
@@ -14,7 +14,7 @@
 
 1. 本地原型已落地并验证两平面导航：工作区是专家列表及物料库、模型连接、部署维护三个资源直达入口；专家内是 7 个工作面 + 专家设置，并有返回工作区、折叠侧栏、窄屏抽屉和历史导航。最新导航批次记录 `212/212` 单测通过，桌面与手机交互验证见报告；这不是候选稿中的平台设置聚合，也不是服务端功能。
 2. 专家设置中的 R1 服务端版本工作面已通过 loopback HTTP 读取、校验、冲突处理、候选冻结和只读历史调用共用配置服务；`localStorage` 仍保存原型其他页面与 UI 偏好，不是 R1 配置权威。知识摄入、物料、测试与上线等状态仍是各自原型状态机。
-3. R1 的 WP3/WP4/WP6/WP8 后端实现和 WP9 HTTP API 已有单测；HTTP/CLI/MCP 同库集成、WP9 本机浏览器序列及 SQLite 已识别写事务的硬退出/重放已验证。WP2/WP5 仍部分，M-A-03/06/17/18 有证据但仍待复核/签核；M-A-04 与 R1 父 Gate 未通过。最新回归数见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。
+3. R1 的 WP3/WP4/WP6/WP8 后端实现和 WP9 HTTP API 已有单测；另有只读 `candidate.checklist` 在 HTTP/CLI/MCP 共用服务上的一致性、阻断与不变性测试。HTTP/CLI/MCP 同库集成、WP9 本机浏览器序列及 SQLite 已识别写事务的硬退出/重放已验证。WP2/WP5 仍部分，M-A-03/06/12/17/18 有证据但仍待复核/签核；M-A-04 与 R1 父 Gate 未通过。R1 不提供本地备份/还原命令；只记录 SQLite 单写者、WAL + `synchronous=FULL` 的语义，备份恢复/升级留 R5a。最新回归数见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。
 4. [S2-SIDEBAR-SPEC](S2-SIDEBAR-SPEC.md) 是候选稿。本文将其 S2-a/b/c、S3/S4 映射到 RELEASE-PLAN 的 R1/R2/R3/R4/R5a/R5b 作为排期讨论，不把两套编号视为天然等价；冲突处列在 §6。
 
 ---
@@ -31,16 +31,16 @@
 | 流程 | `routeGraph` 草稿、图/列表等本地投影与前端校验 | R1 只有无画布的单元清单/规则；图合同执行与画布 Gate 属 R3 |
 | 测试与上线 | 测试题、快照、变差决策、沙盒发布/批准/回退等本地交互 | 不是服务端评测、审批、发布或回滚；R2 只开放最小沙盒发布，受控改进与审批链属 R4 |
 
-本地回归证据：`npm test` **218/218** 通过；`npm run test:sidebar` 的桌面两平面折叠状态、刷新偏好与 390px 抽屉浏览器检查通过。后端 `unittest discover` **108/108**（`ResourceWarning` 视为错误及分配追踪），固定案例回放 **11/11**、`compileall` 通过。SQLite schema v4 仅持久化 mapped 主体，并清理旧版中无法证明 mapped 的主体 ID；`test_durable_transaction_crashes.py` 的 15 个测试方法覆盖已识别 SQLite 写事务、配置快照与 schema 首建/迁移硬退出。HTTP Origin 默认精确允许本机预览 `8765`；自定义端口需显式配置 allowlist。WP9 本机服务联调步骤和截图见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)；生产身份、多用户与外部业务写入仍未覆盖。
+本地回归证据：`npm test` **218/218** 通过；`npm run test:sidebar` 的桌面两平面折叠状态、刷新偏好与 390px 抽屉浏览器检查通过。最新后端 `unittest discover` **112/112**（`ResourceWarning` 视为错误及 tracemalloc），契约/语音配置/语音通道自检、固定案例回放 **11/11**、`compileall` 通过。S1 自检在本 worktree 缺少本地忽略目录 `.build/offline/wheels` 时停于离线 wheelhouse 齐备性检查，离线工件未在本轮重验。SQLite schema v4 仅持久化 mapped 主体，并清理旧版中无法证明 mapped 的主体 ID；`test_durable_transaction_crashes.py` 的 15 个测试方法覆盖已识别 SQLite 写事务、配置快照与 schema 首建/迁移硬退出。HTTP Origin 默认精确允许本机预览 `8765`；自定义端口需显式配置 allowlist。WP9 本机服务联调步骤和截图见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)；生产身份、多用户与外部业务写入仍未覆盖。
 
 ### 后端与集成
 
 | 范围 | 当前证据状态 | 仍缺 |
 |---|---|---|
-| 持久化、恢复、幂等 | 新增 R1 配置草稿、稳定快照、候选、revision CAS、字段级 diff 与配置清单校验；SQLite schema v4 | 知识、物料、评测持久化属后续版本；完整恢复 Gate 仍部分 |
-| 配置与校验 | 配置应用服务和字段路径校验已实现；stable 只读、draft CAS、freeze 幂等；ContextFragment 按可选主体 ID/作用域 fail-closed；请求只持久化 mapped 主体；页面与 CLI 的字段路径错误已在本机 fixture 对齐 | Task blueprint 用途合同与 TaskItem 撤销恢复仍不完整 |
+| 持久化、恢复、幂等 | 新增 R1 配置草稿、稳定快照、候选、revision CAS、字段级 diff 与配置清单校验；SQLite schema v4 | R1 无应用级备份/还原路径；知识、物料、评测持久化与完整恢复 Gate 属后续版本，备份恢复/升级留 R5a |
+| 配置与校验 | 配置应用服务和字段路径校验已实现；stable 只读、draft CAS、freeze 幂等；新增只读 `candidate.checklist` 复验冻结哈希与配置 Schema；ContextFragment 按可选主体 ID/作用域 fail-closed；请求只持久化 mapped 主体；页面与 CLI 的字段路径错误已在本机 fixture 对齐 | 来源授权、候选业务权限、固定样例目前 `not_assessable` 且阻断；Task blueprint 用途合同与 TaskItem 撤销恢复仍不完整 |
 | 多入口 | `ConfigurationApplication` 由 loopback HTTP、CLI、stdio MCP 共用；principal 固定作用域；同 SQLite 集成测试覆盖读写、CAS、校验错误与 HTTP app 重建；浏览器已验 HTTP 读写、409 本地输入保留/显式重载、候选历史与同目录服务重启刷新 | 限本机合成 fixture；生产身份、多用户和外部业务写入未覆盖；其他知识、物料、测试与上线页面不是此服务的客户端 |
-| R1 其余工作包 | WP3/WP4/WP6/WP8 后端实现与测试已落；WP5 有蓝图字段/唯一 key、严格时间/撤销/主体作用域与 mapped-only 持久化；WP2/WP7 有恢复、已识别 SQLite 写事务硬退出矩阵（15/15 方法）和跨渠道幂等回归；WP9 浏览器验收已做 | TaskItem 撤销恢复及 subject/purpose 隔离合同仍未定；M-A-03/06/17/18 与父 Gate 仍待签核；见 R1-EVIDENCE |
+| R1 其余工作包 | WP3/WP4 的 R1 配置形状校验、WP6/WP8 后端实现与测试已落；M-A-12 R1 前半有只读候选清单及非冻结状态负例，但来源/权限/样例证据缺失时阻断；WP5 有蓝图字段/唯一 key、严格时间/撤销/主体作用域与 mapped-only 持久化；WP2/WP7 有恢复、已识别 SQLite 写事务硬退出矩阵（15/15 方法）和跨渠道幂等回归；WP9 浏览器验收已做 | TaskItem 撤销恢复及 subject/purpose 隔离合同仍未定；WP4「九条校验」与 R1 空 body/R3 图语义边界待协调；M-A-03/06/12/17/18 与父 Gate 仍待签核；见 R1-EVIDENCE |
 
 按 [R1-EVIDENCE](reports/R1-EVIDENCE.md) 保留原有证据边界：16 项事件级接纳测试已通过，不等于恢复 Gate、业务写入幂等 Gate 或 R1 整体通过；不传 `store` 时旧行为回归证明 S1 路径未受影响，配置服务是否接通由 WP9 本机 fixture 浏览器证据单独证明。
 
@@ -83,11 +83,11 @@
 
 | 顺序/责任面 | 迭代内容 |
 |---|---|
-| 服务端与合同 | WP3 版本与字段级 diff、WP4 单元清单/判定规则及字段路径校验已实现；WP5 Task 蓝图仅完成已定范围。字段与 Schema 服从 D3、六层合同和权威设计，未知字段保留只读 |
-| 共享入口 | WP6 MCP 受限草稿/候选写入、WP8 CLI 与 loopback HTTP 共用 `ConfigurationApplication`；同库跨入口行为由集成测试覆盖 |
+| 服务端与合同 | WP3 版本与字段级 diff、WP4 单元清单/判定规则及字段路径校验已实现；新增只读 `candidate.checklist` 复验候选冻结哈希与提交校验。来源授权、候选业务权限与固定样例无服务合同/执行器时不得置绿；WP5 Task 蓝图仅完成已定范围。未知 Schema 字段保留只读 |
+| 共享入口 | WP6 MCP 受限草稿/候选/清单读取、WP8 CLI 与 loopback HTTP 共用 `ConfigurationApplication`；同库跨入口行为由集成测试覆盖。清单结果不是批准或发布授权 |
 | 配置前端 | WP9 服务端版本工作面已接真实 HTTP：草稿读取与保存、字段路径校验、revision 冲突保留/显式重载、字段 diff、候选冻结、稳定历史只读及服务错误状态均有页面或测试证据 |
 | 导航边界 | 保持现有两平面原型作为候选实现基线；未确认前不把三个工作区资源直达入口强行合并为平台设置。R1 页面不出现可执行审批/生产发布/回滚 |
-| 出口 | 本机 fixture 已验网页、CLI、MCP 共用服务端草稿/revision；旧 revision 被拒且 UI 保留本地输入并展示服务端值；同目录服务重启后数据不变；页面与 CLI 显示相同非法字段路径；冻结候选不改 stable。R1 父 Gate 仍须逐行签核 |
+| 出口 | 本机 fixture 已验网页、CLI、MCP 共用服务端草稿/revision；旧 revision 被拒且 UI 保留本地输入并展示服务端值；同目录服务重启后数据不变；页面与 CLI 显示相同非法字段路径；冻结候选不改 stable。候选检查在三入口稳定返回，同步阻断来源/权限/样例未评估项；R1 父 Gate 仍须逐行签核 |
 
 **依赖顺序：** 按 RELEASE-PLAN，WP1 → WP2；WP1 → WP3 → WP4；WP1 → WP5；WP3 → WP6 → WP8；WP1/WP6 → WP7；WP9 等 WP3/WP4/WP6/WP8 与共享服务就绪。WP5 按 RELEASE-PLAN 纳入 R1，不因侧栏“任务与主动服务”排在 S2-c 而误删或提前开放菜单。R1 退出仍逐行看 `M-A-01…04 / 06 / 16…18` 及 Gate 矩阵，不以 WP9 联调代替整个 R1。
 
@@ -162,6 +162,7 @@ R2 完成并满足 [RELEASE-PLAN §R3 画布开工合格标准](RELEASE-PLAN.md)
 | 摄入的版本归属 | 侧栏候选将“完整摄入”列入 S2-b；RELEASE-PLAN 已把 FAQ/URL/File 摄入与撤回列入 R2（S2-a 后批） | 服务/Gate 先按 RELEASE-PLAN R2；侧栏只决定入口与呈现。要移动产品分期须先更新权威计划和矩阵 |
 | 当前资源入口与平台设置 | 原型从工作区分别直达物料库、模型连接、部署维护；侧栏候选提出平台设置聚合，其中部分 S2-a、完整能力 S3 | 未确认前保持现有入口，不宣称平台设置页已实现，也不以聚合入口证明身份/权限能力 |
 | 路由与候选行为 | 当前窄屏抽屉断点为 1024px；当前无 `agent` 参数时可恢复记忆中的专家；候选稿提出 900px 断点与无专家 ID 回专家列表。旧路由高亮使用 owner 映射；候选稿倾向前缀归属 | 这些是候选规范与当前实现差异，只有采纳后才成为改动/验收项；交互变更需覆盖刷新、历史导航与专家草稿隔离 |
+| WP4 校验范围 | RELEASE-PLAN 的 R1 退出判据要求九条校验各有正反例；[Unit 合同](ROUTE-GRAPH-AND-UNITS.md)同时规定 R1 只验数据形状、`body` 为空，图语义与嵌套能力排至 R3。当前测试覆盖 R1 数据形状和局部规则，不证明完整九条图级校验 | 作为 WP4 签核前的验收口径待协调项登记；不在 R1 放开非空 body 或实现图语义，不改 Gate 条文 |
 | 队列与角标 | `pendingItems()` 已有共享口径；角标定位单条事项、`9+` 上限、线上状态 chip 等候选验收未由现有报告证明 | 后续补专门测试；不从共享待办计数推断候选验收已满足 |
 | 分期编号 | UI 候选 S2-a/b/c 与 RELEASE-PLAN R1/R2/R3/R4 有粒度差异，尤其 R2 摄入与 S2-b“完整摄入” | 界面发布和后端 Gate 双列追踪，不再用 V1-a…V2 或 F 批次代替正式 R 编号 |
 

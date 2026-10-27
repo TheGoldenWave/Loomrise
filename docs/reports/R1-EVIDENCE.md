@@ -1,10 +1,10 @@
-# R1 证据摘要 v0.8（进行中）
+# R1 证据摘要 v0.11（进行中）
 
-> 2026-10-27 更新 R1 配置后端、耐久故障、主体持久化边界与 WP9 浏览器联调证据。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
+> 2026-10-27 更新 R1 配置后端、耐久故障、主体持久化边界、WP9 浏览器联调与 M-A-12 的 R1 候选检查清单证据。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
 >
 > **本文件在 R1 未完成时就已经存在，这是故意的**——先把已验证部分与未验证部分分开写清，比事后一次性补写更不容易把"想做的"写成"做过的"。
 >
-> R1 进度：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调。** M-A-03 当前已识别 SQLite 写点均有硬退出证据，M-A-03/17/18 均待 Gate 签核；M-A-04 与 R1 父 Gate 未通过。
+> R1 进度：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调；M-A-12 的 R1 前半已有只读候选检查用例。** M-A-03 当前已识别 SQLite 写点均有硬退出证据，M-A-03/12/17/18 均待 Gate 签核；M-A-04 与 R1 父 Gate 未通过。
 
 ## 环境
 
@@ -21,12 +21,14 @@
 
 | 承诺 | 怎么验的 | 结论 |
 |---|---|---|
-| 不是"仅事件文件落盘"（`M-A-16`） | `test_migration_from_empty` 断言五张表都在、路径是 `.db` | 通过 |
+| 不是"仅事件文件落盘"（`M-A-16`） | `test_migration_from_empty` 与 `test_store_is_not_jsonl` 断言 schema 建立且使用 SQLite `.db` 结构化存储 | 部分；不证明备份恢复 |
 | 提交点原子：请求/运行/事件要么一起可见要么都不可见（`M-A-19`） | `test_partial_commit_is_rolled_back` 在 COMMIT 前注入异常，断言三张表都为空 | 通过 |
 | 事件哈希链可验证（`M-A-19`） | `test_event_hash_chain_verifies`、`test_tampered_event_fails_verification`（改 `event_json` 后校验必须失败） | 通过 |
 | 落库链按**运行**封链 | `test_store_owns_the_persisted_chain`：故意传错 `prev_hash`，存储层重封 | 通过 |
 
 **一个实现决定（不是文档承诺）**：内存账本的哈希链是"进程内一条链"，落库链是"每个 run 一条链"。进程重启后账本从 GENESIS 重开，若照抄账本的 `prev_hash`，库里的链必然断。**链尾归存储层持有**，`_append` 用同一 run 的上一条事件重封。
+
+**备份语义（R1 边界）**：R1 使用单个 SQLite 数据库文件并以 WAL + `synchronous=FULL` 持久化；当前没有应用级备份/还原命令，也没有声明可从文件复制中恢复。R1 的 M-A-16 证据只覆盖结构化存储与进程重启后的恢复行为；备份、干净实例恢复、升级与迁移归 R5a，不据本轮声明云端或生产恢复能力。
 
 **局限**：`test_durable_transaction_crashes.py` 以子进程 `os._exit` 覆盖当前已识别的 SQLite 写事务点，包括运行/事件/outbox、配置快照/草稿/revision/候选、事件冲突诊断、schema 首建和 v2/v3 迁移；`test_durable_outbox.py` 另覆盖 `commit_write` 提交前/后退出。系统信号/断电、介质故障、多进程 worker 所有权和真实外部副作用 exactly-once 仍未测；M-A-03 等待矩阵签核。
 
@@ -97,13 +99,33 @@
 - HTTP API 只绑定 `127.0.0.1` 并校验 loopback Host；浏览器 Origin 使用精确 allowlist，默认只允许 `http://127.0.0.1:8765` 与 `http://localhost:8765`，其他本地预览源须通过 `LOOMRISE_CONFIG_ALLOWED_ORIGINS` 或 fixture 的 `--allowed-origin` 显式配置。CLI 与 stdio MCP 使用同一 schema envelope。身份来自权限为 `0600` 的本机 principal 文件；HTTP/MCP 工具参数不能覆盖租户、角色或专家授权范围。
 - 外部 Agent 只可读、建受限草稿/候选和 patch 允许的人设字段；没有稳定版本写、审批、发布或生产业务写权限。MCP 可由 `loomrise config mcp` 启动；CLI 也支持配置 API 和仅本机 HTTP 服务。
 - R1 配置校验覆盖 Unit 清单字段与接口、G0、HardRule v0.2、确定性条件/字段路径、G1 隔离、严格时区时间及 `task_blueprints` 的专家内唯一 `blueprint_key`；`Unit.body` 仍为空，不解析或执行 route graph。
+- `candidate.checklist` 是 HTTP/CLI/stdio MCP 共用的只读诊断：重查冻结状态、内容哈希与提交校验；当前没有来源登记、候选业务权限或固定样例执行合同，三项明确返回 `not_assessable` 且阻断。检查不写候选/稳定版本，也不批准或发布。
 - `AgentVersion.task_blueprints` 字段已加入。Task blueprint 的主体/用途对象形状尚未定版；`ContextFragment` 现支持可选 `subject_id/subject_scope`，主体或作用域不匹配会 fail-closed 并记录跳过原因。`ServiceRequest.persistent_subject` 确保只有 mapped 主体落库，ephemeral/未知 scope 不写主体 ID；v4 迁移同步清理旧版非 mapped/未知 scope 值。用途隔离与 TaskItem 撤销恢复仍没有已定持久合同，WP5 仍部分。
 
 新增 `tests/test_config_cross_entry.py`：以同一 SQLite 文件分别打开 HTTP app、CLI 入口和 MCP tool adapter，验证跨入口读写相同 revision/config；包括数组索引与带点字段名的 JSON path patch、字段 diff 往返、相同字段路径校验错误、非法草稿冻结被拒、过期 revision CAS 冲突，以及关闭并重建 HTTP app 后草稿/稳定快照保持不变。该测试使用 MCP 内存 client session，不是 stdio 进程验收。
 
 HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：`invalid_request=400`、`forbidden=403`、`not_found=404`、`revision_conflict=409`、`validation_failed=422`。
 
-2026-10-27 最新验证：`unittest discover` **108/108**，全量测试在 `ResourceWarning` 视为错误及分配追踪下通过；前端 `npm test` **218/218**，`npm run test:sidebar` 桌面/手机浏览器回归通过；`tests/test_s1.py`、`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py`、固定案例回放 **11/11** 与 `compileall` 均通过。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量结果包含字段路径与 JSON 边界回归、Origin allowlist、mapped-only 主体持久化/迁移，以及配置写事务、schema DDL 与事件冲突诊断硬退出回滚测试。本轮仍未关闭 M-A-04、M-A-03 签核、M-A-17/18 签核及 R1 父 Gate。
+<a id="ma-12-candidate-checklist"></a>
+
+## M-A-12 候选检查清单 R1 前半 — 可运行，完整 Gate 未通过
+
+新增 `candidate.checklist` 只读用例，由 HTTP、CLI 与 stdio MCP 共用 `ConfigurationApplication`。对冻结候选重算内容哈希并复跑提交校验，输出带证据引用和字段路径的逐项状态。
+
+| 检查项 | R1 结果 | 处理 |
+|---|---|---|
+| 冻结状态、内容哈希、配置 Schema | 可评估 | 异常为 `fail` 并阻断；校验问题带 JSON 路径 |
+| 来源授权 | 不可评估 | R1 没有服务端来源登记/授权证据，`not_assessable` 且阻断 |
+| 候选业务权限 | 不可评估 | R1 没有候选绑定的业务权限证据，`not_assessable` 且阻断 |
+| 固定样例 | 不可评估 | R1 没有版本化固定样例与候选运行器，`not_assessable` 且阻断 |
+
+`test_candidate_checklist_is_shared_deterministic_and_read_only` 验证 HTTP、CLI 与内存 MCP adapter 的 envelope 完全相同、重复调用结果稳定、缺失证据阻断且草稿/候选/stable 不变；并断言 HTTP 与 CLI 对越权专家返回相同 `forbidden` envelope。`test_candidate_checklist_reports_hash_and_validation_paths` 验证哈希异常与字段路径错误；`test_candidate_checklist_blocks_non_frozen_status_without_mutation` 验证非冻结状态阻断且检查无副作用；MCP 越权测试验证专家范围仍由服务端身份检查。独立 stdio MCP 子进程测试验证工具可发现和调用、完整 envelope 键及清单结果语义，但未与 HTTP/CLI 输出做同进程的精确等值比较。该用例不批准、不发布、不绑定入口，**只证明 R1 前半检查可以运行**。来源/权限/样例检查的合同和证据、人工批准、沙盒版本绑定与草稿不生效仍待 R2，M-A-12 未通过。
+
+### WP4 R1 校验范围 — 签核前待协调
+
+当前 `config_validation.py` 与 `test_config_validation.py` 覆盖 R1 可表达的数据形状、字段路径、G0/HardRule、条件、接口字段及蓝图稳定 key 等检查；`Unit.body` 被明确限制为空对象，R1 不解析或执行 route graph。另一方面，RELEASE-PLAN 的 R1-WP4/退出判据写有“九条校验各有正反例”，而已采纳的 [Unit 合同](../ROUTE-GRAPH-AND-UNITS.md)将完整图级语义与嵌套能力排到 R3。现有 R1 测试不证明九条图级校验全部实现，需在 WP4 签核前协调这两处验收口径；本轮不扩张 R1 schema 或图语义。
+
+2026-10-27 最新验证：`unittest discover` **112/112**，全量测试在 `ResourceWarning` 视为错误及 tracemalloc 开启下通过；`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py` 与 `compileall` 通过，固定案例回放 **11/11**。`tests/test_s1.py` 的功能自检项通过，但该命令因隔离 worktree 未携带本地忽略目录 `.build/offline/wheels`，在离线 wheel 锁齐备性检查处失败；本轮未重新验证离线安装工件。前端 `npm test` **218/218** 与 `npm run test:sidebar` 桌面/手机浏览器回归为此前已记录结果，本轮后端-only 复验未重跑。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量回归包含字段路径与 JSON 边界、Origin allowlist、mapped-only 主体持久化/迁移、写事务/schema 崩溃矩阵及候选检查清单。M-A-04、M-A-03/12/17/18 签核与 R1 父 Gate 仍未关闭。
 
 <a id="ma-03-crash-matrix"></a>
 

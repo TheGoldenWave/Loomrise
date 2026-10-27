@@ -78,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_read.add_argument("--candidate-id", required=True)
     _add_json_flag(candidate_read)
 
+    checklist = candidate_actions.add_parser(
+        "checklist", help="运行只读候选就绪度诊断（不是发布授权）",
+    )
+    checklist.add_argument("--agent-id", required=True)
+    checklist.add_argument("--candidate-id", required=True)
+    _add_json_flag(checklist)
+
     freeze = candidate_actions.add_parser("freeze", help="冻结当前草稿 revision 为候选")
     freeze.add_argument("--agent-id", required=True)
     freeze.add_argument("--revision", required=True, type=int)
@@ -159,6 +166,10 @@ def _request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             return "candidate.list", {"agent_id": agent_id}
         if action == "read":
             return "candidate.get", {
+                "agent_id": agent_id, "candidate_id": args.candidate_id,
+            }
+        if action == "checklist":
+            return "candidate.checklist", {
                 "agent_id": agent_id, "candidate_id": args.candidate_id,
             }
         if action == "freeze":

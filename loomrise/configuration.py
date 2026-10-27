@@ -284,6 +284,70 @@ class ConfigurationService:
             raise KeyError("未知冻结候选")
         return row
 
+    def check_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+    ) -> dict[str, Any]:
+        """Return a deterministic readiness diagnostic without changing state."""
+        candidate = self.get_candidate(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+        )
+        config = candidate["config"]
+        issues = _issues(config, submitting=True)
+        frozen = candidate["status"] == "frozen"
+        hash_matches = candidate["content_hash"] == _hash(config)
+
+        frozen_reasons: list[str] = []
+        frozen_paths = ["$.status", "$.content_hash", "$.config"]
+        if not frozen:
+            frozen_reasons.append("候选状态不是 frozen")
+        if not hash_matches:
+            frozen_reasons.append("候选内容哈希与冻结配置不一致")
+        if issues:
+            frozen_reasons.append("冻结配置未通过提交校验")
+        configuration_valid = not frozen_reasons
+        validation_paths = sorted({issue["path"] for issue in issues})
+        frozen_evidence = [{
+            "reference": f"candidate:{candidate_id}",
+            "json_paths": frozen_paths,
+        }, {
+            "reference": "configuration_validation",
+            "json_paths": validation_paths,
+        }]
+        checks = [{
+            "id": "frozen_configuration",
+            "status": "pass" if configuration_valid else "fail",
+            "blocking": not configuration_valid,
+            "reason": (
+                "冻结状态、内容哈希与提交校验均通过"
+                if configuration_valid else "；".join(frozen_reasons)
+            ),
+            "evidence": frozen_evidence,
+        }, {
+            "id": "source_authorization",
+            "status": "not_assessable",
+            "blocking": True,
+            "reason": "R1 没有服务端来源登记表或授权证据",
+            "evidence": [],
+        }, {
+            "id": "candidate_business_permissions",
+            "status": "not_assessable",
+            "blocking": True,
+            "reason": "R1 没有候选绑定的业务权限证据",
+            "evidence": [],
+        }, {
+            "id": "fixed_samples",
+            "status": "not_assessable",
+            "blocking": True,
+            "reason": "R1 没有固定样例集及候选绑定的运行器",
+            "evidence": [],
+        }]
+        return {
+            "candidate_id": candidate_id,
+            "readiness": "ready" if all(not check["blocking"] for check in checks) else "blocked",
+            "interpretation": "readiness_diagnostic_only_not_publish_authorization",
+            "checks": checks,
+        }
+
     def list_candidates(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
         self._scope(tenant_id, agent_id)
         return self.store.list_config_candidates(tenant_id=tenant_id, agent_id=agent_id)
@@ -425,8 +489,8 @@ class ConfigurationApplication:
                 raise PermissionError("角色无草稿写入权限")
         if principal.role == "external_agent" and action not in {
             "draft.get", "draft.create", "draft.patch", "candidate.freeze",
-            "candidate.get", "candidate.list", "draft.validate", "stable.list",
-            "stable.get",
+            "candidate.get", "candidate.list", "candidate.checklist",
+            "draft.validate", "stable.list", "stable.get",
         }:
             raise PermissionError("外部 Agent 只能读取或创建受限草稿/候选")
 
@@ -486,6 +550,11 @@ class ConfigurationApplication:
         if action == "candidate.get":
             _keys(payload, {"agent_id", "candidate_id"})
             return self.service.get_candidate(
+                tenant_id=tenant_id, agent_id=agent_id, candidate_id=payload["candidate_id"],
+            )
+        if action == "candidate.checklist":
+            _keys(payload, {"agent_id", "candidate_id"})
+            return self.service.check_candidate(
                 tenant_id=tenant_id, agent_id=agent_id, candidate_id=payload["candidate_id"],
             )
         raise ValueError("未知配置用例")
