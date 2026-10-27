@@ -454,10 +454,13 @@ class SqliteStore:
             row = cur.execute("SELECT request_id FROM runs WHERE run_id=?", (run_id,)).fetchone()
             if row is None:
                 raise KeyError(f"未知 run {run_id}")
-            cur.execute(
-                "UPDATE runs SET status=?, ended_at=?, finish_reason=? WHERE run_id=?",
+            updated = cur.execute(
+                "UPDATE runs SET status=?, ended_at=?, finish_reason=?"
+                " WHERE run_id=? AND status='running'",
                 (status, now_iso(), reason, run_id),
-            )
+            ).rowcount
+            if updated != 1:
+                raise RuntimeError(f"run {run_id} 已结束，旧代不得再次完成")
             cur.execute(
                 "UPDATE requests SET state=?, updated_at=?, result_id=COALESCE(?, result_id)"
                 " WHERE request_id=?",
@@ -484,47 +487,50 @@ class SqliteStore:
         """
         me = owner_id or self.owner_id
         report = RecoveryReport()
-        with self._lock:
+        with self._tx() as cur:
             orphans = [
-                dict(r) for r in self._conn.execute(
+                dict(r) for r in cur.execute(
                     "SELECT * FROM runs WHERE status='running' AND owner_id<>?",
                     (me,),
                 ).fetchall()
             ]
-            adopted = [
-                r["run_id"] for r in self._conn.execute(
+            report.adopted = [
+                r["run_id"] for r in cur.execute(
                     "SELECT run_id FROM runs WHERE status='running' AND owner_id=?",
                     (me,),
                 ).fetchall()
             ]
-        report.adopted = adopted
-        for row in orphans:
-            tail = self.last_event(row["run_id"])
-            evt = RunEvent(
-                seq=self.next_seq(row["run_id"]),
-                event_type="run.interrupted",
-                request_id=row["request_id"],
-                run_id=row["run_id"],
-                tenant_id=row["tenant_id"],
-                agent_version=row["agent_version"],
-                channel="",
-                payload={"reason": reason, "previous_owner": row["owner_id"],
-                         "occupancy_generation": row["occupancy_generation"]},
-                idempotency_key=None,
-            ).seal(tail.hash if tail else GENESIS_HASH)
-            with self._tx() as cur:
-                cur.execute(
+            for row in orphans:
+                updated = cur.execute(
                     "UPDATE runs SET status='failed', ended_at=?, finish_reason=?"
                     " WHERE run_id=? AND status='running'",
                     (now_iso(), reason, row["run_id"]),
-                )
+                ).rowcount
+                if updated != 1:
+                    continue
                 cur.execute(
                     "UPDATE requests SET state='failed',updated_at=?"
                     " WHERE request_id=? AND state='running'",
                     (now_iso(), row["request_id"]),
                 )
+                tail = cur.execute(
+                    "SELECT seq, hash FROM events WHERE run_id=? ORDER BY seq DESC LIMIT 1",
+                    (row["run_id"],),
+                ).fetchone()
+                evt = RunEvent(
+                    seq=(int(tail["seq"]) + 1) if tail else 0,
+                    event_type="run.interrupted",
+                    request_id=row["request_id"],
+                    run_id=row["run_id"],
+                    tenant_id=row["tenant_id"],
+                    agent_version=row["agent_version"],
+                    channel="",
+                    payload={"reason": reason, "previous_owner": row["owner_id"],
+                             "occupancy_generation": row["occupancy_generation"]},
+                    idempotency_key=None,
+                ).seal(tail["hash"] if tail else GENESIS_HASH)
                 self._append(cur, [evt])
-            report.interrupted.append(row["run_id"])
+                report.interrupted.append(row["run_id"])
         with self._lock:
             rows = self._conn.execute(
                 "SELECT bare_key, result_id FROM idempotency ORDER BY created_at",

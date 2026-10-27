@@ -1,5 +1,5 @@
 async (page) => {
-  const root = 'http://127.0.0.1:8765/';
+  const root = `${new URL(page.url()).origin}/`;
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));

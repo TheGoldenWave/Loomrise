@@ -7,7 +7,9 @@ import asyncio
 import os
 import sys
 import tempfile
+import threading
 import unittest
+from contextlib import contextmanager
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -247,6 +249,91 @@ class TestRecovery(Base):
                     result_id="res_late", event=late,
                 )
         finally:
+            store2.close()
+
+    async def test_old_run_rejects_late_finish_after_recovery(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter = DurableRunAdapter(store1, owner_id="p1")
+        request = queued_request(self.pack.agent_version.version_id)
+        request.state = RequestState.RUNNING
+        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
+        adapter.persist(
+            RunEvent(
+                seq=store1.next_seq(run.run_id), event_type="run.started",
+                request_id=request.request_id, run_id=run.run_id,
+                tenant_id=request.tenant_id,
+                agent_version=run.agent_version, channel="text",
+            ).seal(""),
+        )
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        try:
+            store2.recover(owner_id="p2")
+            events_before = store2.load_events(run.run_id)
+            with self.assertRaises(RuntimeError):
+                adapter.finish(run, request_state=RequestState.SUCCESS.value)
+
+            self.assertEqual(store2.run_row(run.run_id)["status"], "failed")
+            self.assertEqual(store2.run_row(run.run_id)["finish_reason"], "restart_interrupted")
+            self.assertEqual(
+                store2.request_row(request.request_id)["state"], RequestState.FAILED.value,
+            )
+            self.assertEqual(store2.load_events(run.run_id), events_before)
+            self.assertTrue(store2.verify_chain(run.run_id))
+        finally:
+            store1.close()
+            store2.close()
+
+    async def test_recovery_does_not_append_interruption_after_finish_wins(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter = DurableRunAdapter(store1, owner_id="p1")
+        request = queued_request(self.pack.agent_version.version_id)
+        request.state = RequestState.RUNNING
+        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
+        adapter.persist(
+            RunEvent(
+                seq=store1.next_seq(run.run_id), event_type="run.started",
+                request_id=request.request_id, run_id=run.run_id,
+                tenant_id=request.tenant_id,
+                agent_version=run.agent_version, channel="text",
+            ).seal(""),
+        )
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        transaction_entered = threading.Event()
+        continue_recovery = threading.Event()
+        original_tx = store2._tx
+
+        @contextmanager
+        def gated_tx():
+            transaction_entered.set()
+            if not continue_recovery.wait(5):
+                raise TimeoutError("recovery transaction was not released")
+            with original_tx() as cur:
+                yield cur
+
+        store2._tx = gated_tx
+        recovery_task = asyncio.create_task(asyncio.to_thread(store2.recover, owner_id="p2"))
+        try:
+            self.assertTrue(await asyncio.to_thread(transaction_entered.wait, 5))
+            adapter.finish(run, request_state=RequestState.SUCCESS.value)
+        finally:
+            continue_recovery.set()
+
+        try:
+            report = await recovery_task
+            self.assertEqual(report.interrupted, [])
+            self.assertEqual(store2.run_row(run.run_id)["status"], "succeeded")
+            self.assertEqual(
+                store2.request_row(request.request_id)["state"], RequestState.SUCCESS.value,
+            )
+            self.assertEqual(
+                [event.event_type for event in store2.load_events(run.run_id)],
+                ["run.started", "run.finished"],
+            )
+            self.assertTrue(store2.verify_chain(run.run_id))
+        finally:
+            store1.close()
             store2.close()
 
     async def test_idempotent_key_survives_restart_across_channels(self) -> None:

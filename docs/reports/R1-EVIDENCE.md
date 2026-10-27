@@ -1,6 +1,6 @@
-# R1 证据摘要 v0.13（进行中）
+# R1 证据摘要 v0.15（进行中）
 
-> 2026-10-28 更新 R1 配置后端、耐久故障、主体持久化边界、WP9 浏览器联调、M-A-12 候选检查清单，以及 M-A-06 幂等键映射和真实 stdio MCP envelope 等值证据；澄清 WP4 九条语义校验验收待协调。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
+> 2026-10-28 更新 R1 配置后端、耐久故障、主体持久化边界、WP9 浏览器联调、M-A-12 候选检查清单，以及 M-A-06 幂等键映射和真实 stdio MCP envelope 等值证据；新增 WP2 旧 Run 收尾 CAS、recover/finish 互斥回归与 WP9 专家切换迟到响应验证。前端复验覆盖冻结重试畸形响应与页面侧 JSON 解析完成信号。澄清 WP4 九条语义校验验收待协调。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
 >
 > **本文件在 R1 未完成时就已经存在，这是故意的**——先把已验证部分与未验证部分分开写清，比事后一次性补写更不容易把"想做的"写成"做过的"。
 >
@@ -37,6 +37,7 @@
 | 承诺 | 怎么验的 | 结论 |
 |---|---|---|
 | 本地 `running` 旧尝试记失败、保留中断事实（`M-A-02` 的裁决部分，Task §7.1） | `test_local_running_is_interrupted_not_resumed`：owner 从 p1 换 p2 打开同一库 → `status=failed`、`finish_reason=restart_interrupted`、末尾事件 `run.interrupted`、链仍可验 | 通过 |
+| 旧 Run 的恢复与收尾竞态只允许一个终态 | `test_old_run_rejects_late_finish_after_recovery` 与 `test_recovery_does_not_append_interruption_after_finish_wins`：恢复先完成时旧 adapter 的迟到 finish 被拒；旧 finish 在恢复事务前完成时，恢复重查后不追加矛盾中断事件 | 代码与本地回归通过；不覆盖 TaskItem 撤销恢复合同 |
 | 恢复可重复执行，不重复判中断 | `test_recover_is_idempotent` | 通过 |
 | 旧代迟到写入被拒（`M-A-21` 的 R1 部分） | `test_old_run_rejects_late_write`：恢复后 `commit_write` 抛 `RuntimeError` | 通过 |
 | 新尝试是新 Run，有自己的链并指向旧运行（lineage） | `test_new_attempt_keeps_lineage_and_own_chain`：`run_id` 不同、`lineage_parent` 指向旧 run、`occupancy_generation=2`、新链从 seq 0 开始 | 通过 |
@@ -131,7 +132,7 @@ HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：
 
 当前 `config_validation.py` 与 `test_config_validation.py` 覆盖 R1 可表达的数据形状、字段路径、G0/HardRule、条件、接口字段及蓝图稳定 key 等检查；`Unit.body` 被明确限制为空对象，R1 不解析或执行 route graph。另一方面，RELEASE-PLAN 的 R1-WP4/退出判据写有“九条校验各有正反例”，而已采纳的 [Unit 合同](../ROUTE-GRAPH-AND-UNITS.md)将完整图级语义与嵌套能力排到 R3。现有 R1 测试不证明九条图级校验全部实现，需在 WP4 签核前协调这两处验收口径；本轮不扩张 R1 schema 或图语义。
 
-2026-10-28 复验：`unittest discover` **112/112**，全量测试在 `ResourceWarning` 视为错误及 tracemalloc 开启下通过；`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py` 与 `compileall` 通过，固定案例回放 **11/11**（输出位于 `/tmp/loomrise-r1-replay-20261028.json`，未纳入仓库）。`tests/test_s1.py` 的功能自检项于 2026-10-27 通过，但当时因隔离 worktree 未携带本地忽略目录 `.build/offline/wheels`，在离线 wheel 锁齐备性检查处失败；本轮未重新验证离线安装工件。前端 `npm test` **218/218** 与 `npm run test:sidebar` 桌面/手机浏览器回归为此前已记录结果，本轮后端-only 复验未重跑。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量回归包含字段路径与 JSON 边界、Origin allowlist、mapped-only 主体持久化/迁移、写事务/schema 崩溃矩阵及候选检查清单。M-A-01/02/03/06/12/16/17/18 签核、WP4 验收口径协调与 R1 父 Gate 仍未关闭；M-A-04 未通过。
+2026-10-28 复验：`unittest discover` **114/114**，全量测试在 `ResourceWarning` 视为错误及 tracemalloc 开启下通过；本轮没有重跑 `tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py`、`compileall` 与固定案例回放，保留既有证据；`tests/test_s1.py` 的功能自检项于 2026-10-27 通过，但当时因隔离 worktree 未携带本地忽略目录 `.build/offline/wheels`，在离线 wheel 锁齐备性检查处失败；本轮未重新验证离线安装工件。前端 `npm test` **230/230**；冻结拒绝回归覆盖不匹配专家、未变化 revision、缺失或畸形详情时保留幂等键；隔离 worktree 的 `test:r1-switch` 与 `test:sidebar` 浏览器检查通过，使用 127.0.0.1:8769 临时预览和独立 Playwright sessions，检查完成后关闭预览服务。专家切换检查等待页面完成 draft JSON 解析并在后续两帧后断言 B 草稿不受 A 迟到响应覆盖；侧栏检查覆盖桌面两平面、刷新偏好与 390px 抽屉。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量回归包含字段路径与 JSON 边界、Origin allowlist、mapped-only 主体持久化/迁移、写事务/schema 崩溃矩阵及候选检查清单。M-A-01/02/03/06/12/16/17/18 签核、WP4 验收口径协调与 R1 父 Gate 仍未关闭；M-A-04 未通过。
 
 <a id="ma-03-crash-matrix"></a>
 

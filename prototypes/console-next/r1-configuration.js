@@ -8,6 +8,8 @@ export class ConfigurationApiError extends Error {
     this.code = error.code || 'configuration_error';
     this.details = error;
     this.status = response?.status || 0;
+    this.schemaVersion = response?.schema_version;
+    this.envelopeOk = response?.ok;
   }
 }
 
@@ -43,7 +45,7 @@ export function createConfigurationClient({
     try { envelope = await response.json(); }
     catch { throw new ConfigurationApiError({ status: response.status, error: { code: 'invalid_response', message: '配置服务返回了无效响应' } }); }
     if (envelope?.schema_version !== 'config-api-v1') {
-      throw new ConfigurationApiError({ status: response.status, error: { code: 'schema_mismatch', message: '配置服务 Schema 版本不匹配' } });
+      throw new ConfigurationApiError({ schema_version: envelope?.schema_version, ok: envelope?.ok, status: response.status, error: { code: 'schema_mismatch', message: '配置服务 Schema 版本不匹配' } });
     }
     if (!response.ok || envelope?.ok !== true) {
       throw new ConfigurationApiError({ ...envelope, status: response.status });
@@ -87,7 +89,65 @@ export function createR1ConfigurationWorkspace({
     busy: false,
   };
   let generation = 0;
+  const pendingFreezeKeys = new Map();
   const changed = () => onChange(state);
+  const isCurrent = (agentId, operationGeneration) => state.agentId === agentId && generation === operationGeneration;
+
+  function freezeKeyScope(agentId, revision) {
+    return JSON.stringify([agentId, revision]);
+  }
+
+  function newIdempotencyKey() {
+    return globalThis.crypto?.randomUUID?.() || `console-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function isAuthoritativeFreezeRejection(error, { agentId, revision } = {}) {
+    const expectedStatus = {
+      invalid_request: 400,
+      forbidden: 403,
+      not_found: 404,
+      revision_conflict: 409,
+      validation_failed: 422,
+    }[error?.code];
+    const validDetails = {
+      invalid_request: details => typeof details.message === 'string' && details.message.length > 0,
+      forbidden: details => typeof details.message === 'string' && details.message.length > 0,
+      not_found: details => typeof details.message === 'string' && details.message.length > 0,
+      revision_conflict: details => {
+        const current = details.current;
+        return current !== null && typeof current === 'object' && !Array.isArray(current)
+          && typeof agentId === 'string' && current.agent_id === agentId
+          && Number.isInteger(revision) && Number.isInteger(current.revision) && current.revision !== revision
+          && current.config !== null && typeof current.config === 'object' && !Array.isArray(current.config);
+      },
+      validation_failed: details => Array.isArray(details.issues) && details.issues.length > 0
+        && details.issues.every(issue => issue !== null && typeof issue === 'object' && !Array.isArray(issue)
+          && typeof issue.path === 'string' && typeof issue.code === 'string' && typeof issue.message === 'string'),
+    }[error?.code];
+    return error instanceof ConfigurationApiError
+      && error.schemaVersion === 'config-api-v1'
+      && error.envelopeOk === false
+      && expectedStatus === error.status
+      && error.details !== null
+      && typeof error.details === 'object'
+      && !Array.isArray(error.details)
+      && error.details.code === error.code
+      && validDetails(error.details);
+  }
+
+  function isValidFrozenCandidate(candidate, revision) {
+    return candidate !== null
+      && typeof candidate === 'object'
+      && !Array.isArray(candidate)
+      && typeof candidate.candidate_id === 'string'
+      && candidate.candidate_id.trim() !== ''
+      && candidate.source_revision === revision
+      && candidate.status === 'frozen'
+      && candidate.config !== null
+      && typeof candidate.config === 'object'
+      && !Array.isArray(candidate.config)
+      && Array.isArray(candidate.diff);
+  }
 
   async function collect(agentId) {
     const [draftResult, stableResult, candidateResult] = await Promise.allSettled([
@@ -102,6 +162,7 @@ export function createR1ConfigurationWorkspace({
     if (!agentId) return;
     const currentGeneration = ++generation;
     state.agentId = agentId;
+    state.busy = false;
     state.status = 'loading';
     state.error = null;
     state.draft = null;
@@ -155,13 +216,17 @@ export function createR1ConfigurationWorkspace({
 
   async function createDraft(baseVersionId) {
     if (!state.agentId || !baseVersionId) return;
+    const agentId = state.agentId;
+    const operationGeneration = generation;
     state.busy = true;
     state.error = null;
     changed();
     try {
-      state.draft = await client.request('draft.create', {
-        agent_id: state.agentId, base_version_id: baseVersionId,
+      const draft = await client.request('draft.create', {
+        agent_id: agentId, base_version_id: baseVersionId,
       });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      state.draft = draft;
       state.editorConfig = structuredClone(state.draft.config);
       state.jsonInputs = {};
       state.jsonErrors = {};
@@ -170,11 +235,14 @@ export function createR1ConfigurationWorkspace({
       state.validation = null;
       state.lastDiff = [];
     } catch (error) {
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
       state.status = error.code === 'revision_conflict' ? 'conflict' : 'no-draft';
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 
@@ -185,17 +253,22 @@ export function createR1ConfigurationWorkspace({
       changed();
       return;
     }
+    const agentId = state.agentId;
+    const expectedRevision = state.draft.revision;
+    const operationGeneration = generation;
     const attemptedConfig = structuredClone(config);
     state.busy = true;
     state.error = null;
     state.validation = null;
     changed();
     try {
-      state.draft = await client.request('draft.save', {
-        agent_id: state.agentId,
-        expected_revision: state.draft.revision,
+      const draft = await client.request('draft.save', {
+        agent_id: agentId,
+        expected_revision: expectedRevision,
         config: attemptedConfig,
       });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      state.draft = draft;
       state.editorConfig = structuredClone(state.draft.config);
       state.jsonInputs = {};
       state.jsonErrors = {};
@@ -203,67 +276,105 @@ export function createR1ConfigurationWorkspace({
       state.status = 'ready';
       state.conflict = null;
     } catch (error) {
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
       if (error.code === 'revision_conflict') {
         state.conflict = { current: error.details.current, attemptedConfig };
         state.status = 'conflict';
       } else state.status = 'ready';
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 
   async function validate() {
     if (!state.draft || !state.agentId) return;
+    const agentId = state.agentId;
+    const expectedRevision = state.draft.revision;
+    const operationGeneration = generation;
     state.busy = true;
     state.error = null;
     changed();
     try {
-      state.validation = await client.request('draft.validate', {
-        agent_id: state.agentId, expected_revision: state.draft.revision,
+      const validation = await client.request('draft.validate', {
+        agent_id: agentId, expected_revision: expectedRevision,
       });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      state.validation = validation;
       state.status = 'ready';
     } catch (error) {
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
       if (error.code === 'revision_conflict') {
         state.conflict = { current: error.details.current, attemptedConfig: null };
         state.status = 'conflict';
       }
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 
   async function freezeCandidate() {
     if (!state.draft || !state.agentId) return;
+    const agentId = state.agentId;
+    const revision = state.draft.revision;
+    const operationGeneration = generation;
+    const scope = freezeKeyScope(agentId, revision);
+    let freezeAcknowledged = false;
+    let key = pendingFreezeKeys.get(scope);
+    if (!key) {
+      key = newIdempotencyKey();
+      pendingFreezeKeys.set(scope, key);
+    }
     state.busy = true;
     state.error = null;
     changed();
-    const key = globalThis.crypto?.randomUUID?.() || `console-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       const candidate = await client.request('candidate.freeze', {
-        agent_id: state.agentId,
-        expected_revision: state.draft.revision,
+        agent_id: agentId,
+        expected_revision: revision,
         idempotency_key: key,
       });
+      if (!isValidFrozenCandidate(candidate, revision)) {
+        throw new ConfigurationApiError({ status: 200, error: { code: 'invalid_response', message: '配置服务返回了无效的冻结候选' } });
+      }
+      freezeAcknowledged = true;
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.selectedCandidate = candidate;
-      state.validation = { revision: state.draft.revision, valid: true, issues: [] };
-      const listed = await client.request('candidate.list', { agent_id: state.agentId });
+      state.conflict = null;
+      state.validation = { revision, valid: true, issues: [] };
+      const listed = await client.request('candidate.list', { agent_id: agentId });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      pendingFreezeKeys.delete(scope);
       state.candidates = listed.items || [];
       state.activeTab = 'history';
       state.status = 'ready';
     } catch (error) {
+      const authoritativeRejection = !freezeAcknowledged
+        && isAuthoritativeFreezeRejection(error, { agentId, revision });
+      if (authoritativeRejection) {
+        pendingFreezeKeys.delete(scope);
+      }
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
-      if (error.code === 'validation_failed') state.validation = { revision: state.draft.revision, valid: false, issues: error.details.issues || [] };
-      if (error.code === 'revision_conflict') {
+      if (authoritativeRejection && error.code === 'validation_failed') {
+        state.validation = { revision, valid: false, issues: error.details.issues };
+      }
+      if (authoritativeRejection && error.code === 'revision_conflict') {
         state.conflict = { current: error.details.current, attemptedConfig: null };
         state.status = 'conflict';
       }
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 
@@ -292,43 +403,57 @@ export function createR1ConfigurationWorkspace({
 
   async function openStable(versionId) {
     if (!state.agentId || !versionId) return;
+    const agentId = state.agentId;
+    const operationGeneration = generation;
     state.busy = true;
     state.error = null;
     changed();
     try {
-      state.readOnlySnapshot = await client.request('stable.get', {
-        agent_id: state.agentId, version_id: versionId,
+      const snapshot = await client.request('stable.get', {
+        agent_id: agentId, version_id: versionId,
       });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      state.readOnlySnapshot = snapshot;
       state.selectedCandidate = null;
       state.editorConfig = structuredClone(state.readOnlySnapshot.config);
       state.activeTab = 'history';
       state.status = state.draft ? 'ready' : 'no-draft';
     } catch (error) {
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 
   async function openCandidate(candidateId) {
     if (!state.agentId || !candidateId) return;
+    const agentId = state.agentId;
+    const operationGeneration = generation;
     state.busy = true;
     state.error = null;
     changed();
     try {
-      state.selectedCandidate = await client.request('candidate.get', {
-        agent_id: state.agentId, candidate_id: candidateId,
+      const candidate = await client.request('candidate.get', {
+        agent_id: agentId, candidate_id: candidateId,
       });
+      if (!isCurrent(agentId, operationGeneration)) return;
+      state.selectedCandidate = candidate;
       state.readOnlySnapshot = null;
       state.editorConfig = structuredClone(state.selectedCandidate.config);
       state.activeTab = 'history';
       state.status = state.draft ? 'ready' : 'no-draft';
     } catch (error) {
+      if (!isCurrent(agentId, operationGeneration)) return;
       state.error = error;
     } finally {
-      state.busy = false;
-      changed();
+      if (isCurrent(agentId, operationGeneration)) {
+        state.busy = false;
+        changed();
+      }
     }
   }
 

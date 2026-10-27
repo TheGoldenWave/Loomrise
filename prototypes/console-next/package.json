@@ -7,6 +7,7 @@
     "test:browser": "node tests/run-browser-check.js config-ui-browser-check.js",
     "test:navigation": "node tests/run-browser-check.js navigation-browser-check.js",
     "test:sidebar": "node tests/run-browser-check.js sidebar-collapse-browser-check.js",
+    "test:r1-switch": "node tests/run-browser-check.js r1-expert-switch-browser-check.js",
     "check:terms": "node tests/run-browser-check.js terminology-browser-check.js"
   },
   "dependencies": {

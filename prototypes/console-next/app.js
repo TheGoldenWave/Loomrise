@@ -21,7 +21,6 @@ let browserStorage;
 try { browserStorage = window.localStorage; } catch { browserStorage = { getItem() { throw new Error('存储不可用'); }, setItem() { throw new Error('存储不可用'); } }; }
 const store = createStore(browserStorage);
 const app = document.querySelector('#app');
-let renderingR1Configuration = false;
 const r1Configuration = createR1ConfigurationWorkspace({
   onChange() {
     if (store.state.ui.page === 'configuration' && store.state.ui.section === 'r1-server') render();
@@ -176,11 +175,10 @@ function render() {
   renderedLibrary = nextLibrary;
   const r1Context = ctx.state.ui.page === 'configuration' && ctx.state.ui.section === 'r1-server' && ctx.agent
     ? `${ctx.agent.id}:r1-server` : null;
-  if (r1Context !== previousR1Context && r1Context && !renderingR1Configuration) {
-    renderingR1Configuration = true;
-    void r1Configuration.load(ctx.agent?.id).finally(() => { renderingR1Configuration = false; });
+  if (r1Context !== previousR1Context) {
+    previousR1Context = r1Context;
+    if (r1Context) void r1Configuration.load(ctx.agent.id);
   }
-  previousR1Context = r1Context;
   if (nextLibrary && nextLibrary.key !== previousLibrary?.key) {
     if (nextLibrary.mode === 'list' && nextLibrary.scope === previousLibrary?.scope) {
       window.scrollTo({ top: libraryListPositions.get(nextLibrary.scope) || 0, behavior: 'instant' });
