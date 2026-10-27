@@ -240,6 +240,11 @@ class ConfigurationCliCase(unittest.TestCase):
             idempotency_key="stdio-checklist",
         )
         store.close()
+        code, expected_envelope = self.invoke(
+            "candidate", "checklist", "--agent-id", "expert-a",
+            "--candidate-id", candidate["candidate_id"], "--json",
+        )
+        self.assertEqual(code, 0)
         environment = os.environ.copy()
         environment.update({
             "LOOMRISE_PRINCIPAL_FILE": str(self.principal_file),
@@ -269,6 +274,7 @@ class ConfigurationCliCase(unittest.TestCase):
                         },
                     )
                     envelope = response.structuredContent
+                    self.assertEqual(envelope, expected_envelope)
                     self.assertEqual(
                         set(envelope), {"schema_version", "ok", "result", "error"},
                     )

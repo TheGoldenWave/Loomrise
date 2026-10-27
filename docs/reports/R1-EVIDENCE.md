@@ -1,6 +1,6 @@
-# R1 证据摘要 v0.11（进行中）
+# R1 证据摘要 v0.12（进行中）
 
-> 2026-10-27 更新 R1 配置后端、耐久故障、主体持久化边界、WP9 浏览器联调与 M-A-12 的 R1 候选检查清单证据。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
+> 2026-10-28 更新 R1 配置后端、耐久故障、主体持久化边界、WP9 浏览器联调、M-A-12 候选检查清单，以及 M-A-06 幂等键映射和真实 stdio MCP envelope 等值证据。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
 >
 > **本文件在 R1 未完成时就已经存在，这是故意的**——先把已验证部分与未验证部分分开写清，比事后一次性补写更不容易把"想做的"写成"做过的"。
 >
@@ -49,7 +49,13 @@
 
 ## WP7 幂等键语义 — 部分
 
-`action_key(action, key) = f"{action}::{key}"`，**键绑定具体业务操作**而不是绑请求（`M-A-06`）。
+`action_key(action, key) = f"{action}::{key}"`，**键绑定具体业务操作**而不是绑请求（`M-A-06`）。当前 R1 可持久业务写操作与键组成如下：
+
+| 业务操作 | 事件来源 | 持久幂等 identity | 不作为 identity 维度 |
+|---|---|---|---|
+| `create_booking` | 带 `result_id` 的 `tool.outcome.payload.tool` | `create_booking::<idempotency_key>`；outbox 使用同一 composite key 派生稳定 ID | `request_id`、`run_id`、文字/语音 `channel`，因此同动作跨轮次/渠道/重启仍命中原结果 |
+
+`search_knowledge` 是只读操作，不产生业务 `result_id`，不登记到业务写入幂等表。测试中的 `refund` 只用于证明不同 action 不共享裸键，不表示该工具已实现。此映射覆盖当前单租户 R1 fixture，不据此声明多租户幂等作用域。
 
 | 承诺 | 怎么验的 | 结论 |
 |---|---|---|
@@ -119,13 +125,13 @@ HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：
 | 候选业务权限 | 不可评估 | R1 没有候选绑定的业务权限证据，`not_assessable` 且阻断 |
 | 固定样例 | 不可评估 | R1 没有版本化固定样例与候选运行器，`not_assessable` 且阻断 |
 
-`test_candidate_checklist_is_shared_deterministic_and_read_only` 验证 HTTP、CLI 与内存 MCP adapter 的 envelope 完全相同、重复调用结果稳定、缺失证据阻断且草稿/候选/stable 不变；并断言 HTTP 与 CLI 对越权专家返回相同 `forbidden` envelope。`test_candidate_checklist_reports_hash_and_validation_paths` 验证哈希异常与字段路径错误；`test_candidate_checklist_blocks_non_frozen_status_without_mutation` 验证非冻结状态阻断且检查无副作用；MCP 越权测试验证专家范围仍由服务端身份检查。独立 stdio MCP 子进程测试验证工具可发现和调用、完整 envelope 键及清单结果语义，但未与 HTTP/CLI 输出做同进程的精确等值比较。该用例不批准、不发布、不绑定入口，**只证明 R1 前半检查可以运行**。来源/权限/样例检查的合同和证据、人工批准、沙盒版本绑定与草稿不生效仍待 R2，M-A-12 未通过。
+`test_candidate_checklist_is_shared_deterministic_and_read_only` 验证 HTTP、CLI 与内存 MCP adapter 的 envelope 完全相同、重复调用结果稳定、缺失证据阻断且草稿/候选/stable 不变；并断言 HTTP 与 CLI 对越权专家返回相同 `forbidden` envelope。`test_candidate_checklist_reports_hash_and_validation_paths` 验证哈希异常与字段路径错误；`test_candidate_checklist_blocks_non_frozen_status_without_mutation` 验证非冻结状态阻断且检查无副作用；MCP 越权测试验证专家范围仍由服务端身份检查。stdio MCP 子进程测试在同一 SQLite fixture 上先取得 CLI `--json` envelope，再调用 stdio 工具并逐值比较 `structuredContent`，同时验证工具发现、完整 envelope 键和清单结果语义。该用例不批准、不发布、不绑定入口，**只证明 R1 前半检查可以运行**。来源/权限/样例检查的合同和证据、人工批准、沙盒版本绑定与草稿不生效仍待 R2，M-A-12 未通过。
 
 ### WP4 R1 校验范围 — 签核前待协调
 
 当前 `config_validation.py` 与 `test_config_validation.py` 覆盖 R1 可表达的数据形状、字段路径、G0/HardRule、条件、接口字段及蓝图稳定 key 等检查；`Unit.body` 被明确限制为空对象，R1 不解析或执行 route graph。另一方面，RELEASE-PLAN 的 R1-WP4/退出判据写有“九条校验各有正反例”，而已采纳的 [Unit 合同](../ROUTE-GRAPH-AND-UNITS.md)将完整图级语义与嵌套能力排到 R3。现有 R1 测试不证明九条图级校验全部实现，需在 WP4 签核前协调这两处验收口径；本轮不扩张 R1 schema 或图语义。
 
-2026-10-27 最新验证：`unittest discover` **112/112**，全量测试在 `ResourceWarning` 视为错误及 tracemalloc 开启下通过；`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py` 与 `compileall` 通过，固定案例回放 **11/11**。`tests/test_s1.py` 的功能自检项通过，但该命令因隔离 worktree 未携带本地忽略目录 `.build/offline/wheels`，在离线 wheel 锁齐备性检查处失败；本轮未重新验证离线安装工件。前端 `npm test` **218/218** 与 `npm run test:sidebar` 桌面/手机浏览器回归为此前已记录结果，本轮后端-only 复验未重跑。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量回归包含字段路径与 JSON 边界、Origin allowlist、mapped-only 主体持久化/迁移、写事务/schema 崩溃矩阵及候选检查清单。M-A-04、M-A-03/12/17/18 签核与 R1 父 Gate 仍未关闭。
+2026-10-28 复验：`unittest discover` **112/112**，全量测试在 `ResourceWarning` 视为错误及 tracemalloc 开启下通过；`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py` 与 `compileall` 通过，固定案例回放 **11/11**（输出位于 `/tmp/loomrise-r1-replay-20261028.json`，未纳入仓库）。`tests/test_s1.py` 的功能自检项于 2026-10-27 通过，但当时因隔离 worktree 未携带本地忽略目录 `.build/offline/wheels`，在离线 wheel 锁齐备性检查处失败；本轮未重新验证离线安装工件。前端 `npm test` **218/218** 与 `npm run test:sidebar` 桌面/手机浏览器回归为此前已记录结果，本轮后端-only 复验未重跑。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量回归包含字段路径与 JSON 边界、Origin allowlist、mapped-only 主体持久化/迁移、写事务/schema 崩溃矩阵及候选检查清单。M-A-04、M-A-03/12/17/18 签核与 R1 父 Gate 仍未关闭。
 
 <a id="ma-03-crash-matrix"></a>
 

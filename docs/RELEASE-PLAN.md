@@ -1,4 +1,4 @@
-# 版本切分与核心交付 v0.12
+# 版本切分与核心交付 v0.13
 
 > 2026-10-22。**这是一份"切分视图 + 执行计划"，不是新的 Gate 权威。** 阶段范围与退出 Gate 仍以 [验证路线](ROADMAP.md) 与 [客服应用交付建设方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md) §3 为准；本文只回答四件它们不回答的事：**同一阶段内先做什么、每一版的核心实现与工作包、今天新定的设计落在哪一版、每条退出判据由哪件工件证明**。
 >
@@ -17,6 +17,8 @@
 > **v0.11 变更（2026-10-27）**：补齐 R1 SQLite 写事务硬退出矩阵，新增配置稳定版本/草稿/revision/候选、事件冲突诊断、schema 首次创建及 v2/v3 迁移覆盖；后端全量回归更新为 108/108；将 WP9 描述校正为已实现并评审过的工作区/专家两平面导航，不改变 Gate、领域合同或侧栏候选范围。
 >
 > **v0.12 变更（2026-10-27）**：增加 R1 `candidate.checklist` 只读诊断，来源授权、候选业务权限与固定样例证据缺失时显式阻断；澄清 R1 SQLite 备份语义不包含应用级备份/还原，备份恢复留 R5a。不改变 Gate 条文或领域合同。
+>
+> **v0.13 变更（2026-10-28）**：登记 R1 唯一业务写动作 `create_booking` 的 `action::key` 映射及 stdio MCP/CLI 完整 envelope 等值测试；全量后端回归仍为 112/112。M-A-06、M-A-17/18 与 R1 父 Gate 继续待签核，不改变 Gate 条文或领域合同。
 >
 > **v0.4 变更（2026-10-23）**：补执行耐久层的版本落点，但不改变阶段范围或 Gate：R1 先做 `Run`/`TaskAttempt`/checkpoint 与无副作用恢复，R2 接 suspend/wake、取消确认、未知对账和沙盒副作用，R3/R4 才接 worker 接管、parking 与真实工具；新增文件级[实施计划](superpowers/plans/2026-10-23-durable-run-adapter.md)。`pi durable` 仍是机制参照，不进入默认依赖。
 >
@@ -198,7 +200,7 @@ WP 的四个字段固定：**做什么 / 依赖 / 证据位 / 签核角色**。�
 
 **退出判据**：父 Gate `M-A-01…04`、`M-A-06`、`M-A-16…18` 通过 + `M-A-12` 的前半（检查清单可跑）；一条 `ChangeProposal` 从草稿到冻结可回放；九条校验各有正反例；被拒提交给出字段路径；同一 revision 经 MCP 与后台写入结果相同。M-A-19 是 `M-A-01…03` 的证据细化，不独立增加退出条件；如果所选机制使用 checkpoint，验证其提交可见性，但不宣称外部副作用 exactly-once。
 
-#### 执行状态（2026-10-27，R1 进行中）
+#### 执行状态（2026-10-28，R1 进行中）
 
 | WP | 状态 | 说明 |
 |---|---|---|
@@ -209,7 +211,7 @@ WP 的四个字段固定：**做什么 / 依赖 / 证据位 / 签核角色**。�
 | WP4 清单与规则 | **后端已实现，页面字段路径已联调** | R1 Unit 清单/G0/HardRule v0.2 与字段路径校验已实现；`Unit.body` 保持空对象，不解析或执行图。九字段/规则正反例覆盖；本机 fixture 中页面和 CLI 同显 `$.units` 校验错误 |
 | WP5 Task 基础 | **部分** | `AgentVersion.task_blueprints` 与专家内唯一 `blueprint_key` 校验、严格时间、ContextFragment 过期/撤销 fail-closed 和可选 `subject_id/subject_scope` 精确匹配已实现；请求仅持久化 mapped subject，schema v4 会清理旧版非 mapped/未知 scope ID；Task blueprint 用途隔离、TaskItem 持久合同与撤销事项恢复仍未定/未实现 |
 | WP6 MCP 受限创建 | **后端已实现** | 共享应用服务上的 stdio MCP tools/resources；principal 固定租户/角色/专家范围，外部 Agent 仅可读及受限草稿/候选操作，包括只读候选检查；入口 adapter 测试通过 |
-| WP8 CLI 同合同 | **后端已实现** | `loomrise config` JSON envelope 与共用 `ConfigurationApplication`；`loomrise config mcp` 与 `config serve` 启动入口已接入；CLI 行为测试通过，候选检查输出与 HTTP/MCP schema 一致 |
+| WP8 CLI 同合同 | **后端已实现** | `loomrise config` JSON envelope 与共用 `ConfigurationApplication`；`loomrise config mcp` 与 `config serve` 启动入口已接入；候选检查在真实 stdio MCP 子进程中与同一 SQLite fixture 的 CLI `--json` envelope 逐值相同，adapter 测试通过 |
 | WP9 配置后台同步升级与联调 | **本机 fixture 浏览器序列已验；整体 Gate 待签核** | Loopback HTTP、CLI、MCP 共用 schema/app service；同库集成测试与本机浏览器已验证真实服务读写、字段路径、409 保留本地输入/显式重载、候选 diff/只读状态及同目录服务重启后刷新。范围按当前两平面导航和已交付配置工作面记录；平台设置聚合等侧栏候选不在本次范围。多用户与生产身份不在本次证据范围 |
 
 证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。后端回归以 R1-EVIDENCE 的最新记录为准，固定案例回放见同报告。**不传 `store` 时耐久层空转**；不能据此宣称 M-A-04、M-A-03/12/17/18、WP9 整体或 R1 退出已通过。

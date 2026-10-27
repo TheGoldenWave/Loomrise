@@ -1,8 +1,8 @@
-# 配置化后台前后端迭代计划 v0.11
+# 配置化后台前后端迭代计划 v0.12
 
-本轮更新：补记 R1 SQLite 写事务硬退出覆盖、M-A-12 前半的只读候选检查及非冻结状态负例、112/112 后端回归、M-A-16 备份边界与 WP4 校验范围待协调项；Gate、领域合同和候选侧栏范围不变。
+本轮更新：补记 R1 SQLite 写事务硬退出覆盖、M-A-12 前半的只读候选检查、M-A-06 动作键映射、stdio MCP/CLI 完整 envelope 等值测试、112/112 后端回归、M-A-16 备份边界与 WP4 校验范围待协调项；Gate、领域合同和候选侧栏范围不变。
 
-日期：2026-10-27。状态：**进度对账 + 后续迭代提案**。本文按当前 `console-next` 本地原型与 [终态侧边栏候选稿](S2-SIDEBAR-SPEC.md) 重排实施顺序，并回填本轮 R1 后端实现进度；不改 [ROADMAP](ROADMAP.md) Gate、领域合同或后端版本计划，也不表示待确认的侧栏方案已获批准。
+日期：2026-10-28。状态：**进度对账 + 后续迭代提案**。本文按当前 `console-next` 本地原型与 [终态侧边栏候选稿](S2-SIDEBAR-SPEC.md) 重排实施顺序，并回填本轮 R1 后端实现进度；不改 [ROADMAP](ROADMAP.md) Gate、领域合同或后端版本计划，也不表示待确认的侧栏方案已获批准。
 
 事实口径：当前工作区代码、[配置化前端轮次 1 报告](CONFIG-UI-ROUND1-REPORT.md) 第 6 节、[R1 证据摘要](reports/R1-EVIDENCE.md) 与 [版本切分](RELEASE-PLAN.md)。原型测试和浏览器走查只证明本地界面行为，不证明配置服务、R1 或 S2 Gate 已通过。
 
@@ -14,7 +14,7 @@
 
 1. 本地原型已落地并验证两平面导航：工作区是专家列表及物料库、模型连接、部署维护三个资源直达入口；专家内是 7 个工作面 + 专家设置，并有返回工作区、折叠侧栏、窄屏抽屉和历史导航。最新导航批次记录 `212/212` 单测通过，桌面与手机交互验证见报告；这不是候选稿中的平台设置聚合，也不是服务端功能。
 2. 专家设置中的 R1 服务端版本工作面已通过 loopback HTTP 读取、校验、冲突处理、候选冻结和只读历史调用共用配置服务；`localStorage` 仍保存原型其他页面与 UI 偏好，不是 R1 配置权威。知识摄入、物料、测试与上线等状态仍是各自原型状态机。
-3. R1 的 WP3/WP4/WP6/WP8 后端实现和 WP9 HTTP API 已有单测；另有只读 `candidate.checklist` 在 HTTP/CLI/MCP 共用服务上的一致性、阻断与不变性测试。HTTP/CLI/MCP 同库集成、WP9 本机浏览器序列及 SQLite 已识别写事务的硬退出/重放已验证。WP2/WP5 仍部分，M-A-03/06/12/17/18 有证据但仍待复核/签核；M-A-04 与 R1 父 Gate 未通过。R1 不提供本地备份/还原命令；只记录 SQLite 单写者、WAL + `synchronous=FULL` 的语义，备份恢复/升级留 R5a。最新回归数见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。
+3. R1 的 WP3/WP4/WP6/WP8 后端实现和 WP9 HTTP API 已有单测；只读 `candidate.checklist` 在 HTTP/CLI/MCP 共用服务上有一致性、阻断和不变性测试，stdio 子进程与 CLI `--json` 同 fixture 的完整 envelope 逐值相等。M-A-06 的 `create_booking` 操作键映射也已登记。HTTP/CLI/MCP 同库集成、WP9 本机浏览器序列及 SQLite 已识别写事务的硬退出/重放已验证。WP2/WP5 仍部分，M-A-03/06/12/17/18 有证据但仍待复核/签核；M-A-04 与 R1 父 Gate 未通过。R1 不提供本地备份/还原命令；只记录 SQLite 单写者、WAL + `synchronous=FULL` 的语义，备份恢复/升级留 R5a。最新回归数见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。
 4. [S2-SIDEBAR-SPEC](S2-SIDEBAR-SPEC.md) 是候选稿。本文将其 S2-a/b/c、S3/S4 映射到 RELEASE-PLAN 的 R1/R2/R3/R4/R5a/R5b 作为排期讨论，不把两套编号视为天然等价；冲突处列在 §6。
 
 ---
