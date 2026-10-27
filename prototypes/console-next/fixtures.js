@@ -8,11 +8,12 @@ export function emptyConfig(name = '新客服') {
     tone: '清晰克制', greeting: `你好，我是${name}。有什么可以帮你？`,
     fallback: '目前的资料还不能回答这个问题，我可以帮你转交人工。',
     handoff: { phrases: ['转人工', '人工客服', 'human'], recipient: '客服收件箱', condition: '用户要求人工，或问题超出资料范围时交接。', resumeMinutes: 30 },
-    sources: [], fields: [],
+    sources: [], qaItems: [], keyFacts: [], businessRules: [], fields: [],
     flow: [
       { id: 'step-understand', title: '了解问题', instruction: '识别用户当前的问题，必要时澄清。' },
       { id: 'step-answer', title: '依据资料回答', instruction: '引用有效资料；没有依据时说明未知或请求人工。' },
     ],
+    routeGraph: null,
     skills: [{ id: 'skill-faq', title: '资料答疑', description: '使用当前授权且已审阅的资料回答问题，说明来源。', exit: '问题已答复，或资料不足需人工承接。' }],
     rules: [
       { id: 'rule-rights', title: '仅使用有效授权资料', description: '缺授权、已过期或已撤回的资料不能用于答复。', scope: 'global', locked: true },
@@ -55,12 +56,12 @@ export function initialState() {
   return {
     schema: 1, agents: [agent], selectedAgentId: agent.id,
     connections: [{ id: 'simulation', name: '脚本演示连接', provider: '本地脚本', model: '固定答复', baseUrl: '', status: 'simulation', streaming: 'simulation', tools: 'mock', cancel: 'simulation', error: '' }],
-    runs: [], cases: [], proposals: [],
+    runs: [], cases: [], proposals: [], feedback: [],
     ui: {
-      page: 'agents', depth: 'overview', section: 'service', assistantOpen: false, sidePanel: 'preview', createMode: 'manual', sourceTab: 'FAQ', sourceForm: false, sourceDetail: null, search: '', filter: 'all',
+      page: 'agents', depth: 'overview', section: 'service', assistantOpen: false, sidePanel: 'trial', sideOpen: false, pendingOpen: false, knowledgeTab: 'qa', flowView: 'graph', createMode: 'manual', sourceTab: 'FAQ', sourceForm: false, sourceDetail: null, search: '', filter: 'all',
       trialInput: '', trialMessages: [], trialMode: 'simulation', trialState: 'idle',
       assistant: { prompt: '', scope: 'all', status: 'idle', suggestions: [], baseRevision: null, message: '' },
-      readonly: false, navOpen: false, toast: null, activeConversation: 'conv-demo', contactPreview: false, deploymentStep: 0,
+      readonly: false, navOpen: false, sidebarCollapsed: false, toast: null, activeConversation: 'conv-demo', contactPreview: false, deploymentStep: 0,
       deployment: { status: 'idle', error: '', history: [], backup: null, restore: null, upgrade: null }, widgetChecks: [],
       previewVersionId: null, saveStatus: 'saved', savedAt: DEMO_DATE,
     },

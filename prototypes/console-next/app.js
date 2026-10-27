@@ -9,6 +9,12 @@ import { routes, renderShell } from './views/shell.js';
 import { renderAgents, renderCreate, renderOverview, renderConfiguration, renderAssistant } from './views/editor.js';
 import { renderKnowledge, renderTrial, renderInbox, renderWidget, widgetPreview, renderContact, renderConnections, renderRuns, renderCases, renderIterations, renderVersions, renderDeployment } from './views/surfaces.js';
 import { renderMaterials, renderMaterialPreview } from './views/materials.js';
+import { renderRedlines } from './views/knowledge.js';
+import { renderBusiness, renderSettings, renderTest, renderRelease } from './views/config-pages.js';
+import { renderFlow } from './views/flow.js';
+import { renderQuickTrial, renderEvidencePanel } from './views/config-panels.js';
+import { parseBatchText, parseWorkbook } from './knowledge-model.js';
+import { createNavigationHistory, routeScope } from './navigation.js';
 
 let browserStorage;
 try { browserStorage = window.localStorage; } catch { browserStorage = { getItem() { throw new Error('存储不可用'); }, setItem() { throw new Error('存储不可用'); } }; }
@@ -23,9 +29,9 @@ function fileContext() {
 }
 const fileReader = createLocalFileReader(fileContext);
 let lastFileContext = fileContext();
-const pages = { agents: renderAgents, create: renderCreate, overview: renderOverview, configuration: renderConfiguration, materials: renderMaterials, knowledge: renderKnowledge, trial: renderTrial, inbox: renderInbox, widget: renderWidget, contact: renderContact, connections: renderConnections, runs: renderRuns, cases: renderCases, iterations: renderIterations, versions: renderVersions, deployment: renderDeployment };
+const pages = { agents: renderAgents, create: renderCreate, overview: renderOverview, configuration: renderConfiguration, materials: renderMaterials, knowledge: renderKnowledge, redlines: renderRedlines, business: renderBusiness, flow: renderFlow, test: renderTest, settings: renderSettings, trial: renderTrial, inbox: renderInbox, widget: renderWidget, contact: renderContact, connections: renderConnections, runs: renderRuns, cases: renderCases, iterations: renderIterations, versions: renderRelease, deployment: renderDeployment };
 let toastTimer = null;
-let suppressRoute = false;
+let undoTimer = null;
 let preserveOnExit = true;
 let composing = false;
 const disclosureKey = () => `${store.state.selectedAgentId}:${store.state.ui.page}:${store.state.ui.section}:${store.state.ui.previewVersionId || 'draft'}`;
@@ -76,7 +82,9 @@ function preserveForm(form) {
   const values = {};
   for (const control of form.elements) {
     if (!control.name || control.type === 'file' || control.type === 'hidden' || control.dataset.bind || control.dataset.uiBind) continue;
-    if (control.type === 'checkbox' && [...form.elements].filter(item => item.type === 'checkbox' && item.name === control.name).length > 1) {
+    if (control.type === 'radio') {
+      if (control.checked) values[control.name] = control.value;
+    } else if (control.type === 'checkbox' && [...form.elements].filter(item => item.type === 'checkbox' && item.name === control.name).length > 1) {
       values[control.name] = [...form.elements].filter(item => item.name === control.name && item.checked).map(item => item.value);
     } else values[control.name] = control.type === 'checkbox' ? control.checked : control.value;
   }
@@ -89,19 +97,13 @@ function restoreForms() {
     const values = store.state.ui.formDrafts?.[formKey(form)]; if (!values) continue;
     for (const control of form.elements) {
       if (!(control.name in values) || control.type === 'file' || control.type === 'hidden' || control.dataset.bind || control.dataset.uiBind) continue;
-      if (control.type === 'checkbox') control.checked = Array.isArray(values[control.name]) ? values[control.name].includes(control.value) : values[control.name]; else control.value = values[control.name];
+      if (control.type === 'radio') control.checked = control.value === values[control.name];
+      else if (control.type === 'checkbox') control.checked = Array.isArray(values[control.name]) ? values[control.name].includes(control.value) : values[control.name]; else control.value = values[control.name];
     }
   }
 }
 
-function routeFromHash() {
-  const [page, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
-  if (!page) return;
-  const values = new URLSearchParams(query);
-  const id = values.get('agent');
-  if (id && store.state.agents.some(agent => agent.id === id) && id !== store.state.selectedAgentId) store.dispatch('select-agent', { id });
-  if (pages[page]) store.dispatch('navigate', { page, section: values.get('section') || undefined });
-}
+const navigation = createNavigationHistory({ store, location: window.location, history: window.history, pages: Object.keys(pages) });
 function context() {
   const state = store.state;
   let agent = store.currentAgent();
@@ -127,7 +129,7 @@ function render() {
   const formFocus = !identifier && focusedForm && focused.name ? { key: formKey(focusedForm), name: focused.name } : null;
   const key = disclosureKey();
   const disclosures = { ...store.state.ui.disclosures?.[key] };
-  if (renderedDisclosureKey === key) for (const detail of app.querySelectorAll('details')) disclosures[detailKey(detail)] = detail.open;
+  if (renderedDisclosureKey === key) for (const detail of app.querySelectorAll('details:not([data-flow-branch-disclosure])')) disclosures[detailKey(detail)] = detail.open;
   store.state.ui.disclosures ||= {}; store.state.ui.disclosures[key] = disclosures;
   renderedDisclosureKey = key;
   const ctx = context();
@@ -140,16 +142,16 @@ function render() {
   let body;
   try { body = renderer(ctx); }
   catch (error) { console.error(error); body = emptyState('这个页面未能载入', '草稿仍在本地保留。返回专家列表后重试。', button('navigate', '返回列表', { page: 'agents' })); }
-  const scoped = ['overview', 'configuration', 'knowledge', 'trial', 'widget', 'contact', 'inbox', 'runs', 'cases', 'iterations', 'versions', 'deployment'].includes(ctx.state.ui.page);
+  const scoped = routeScope(ctx.state.ui.page) === 'agent';
   if (scoped && !ctx.agent) body = emptyState('先选择一个专家', '创建或选择专家后，查看它的资料、配置和运行记录。', button('new-agent', '手动创建', { mode: 'manual', variant: 'primary' }));
-  const withSide = ctx.agent && ['overview', 'configuration'].includes(ctx.state.ui.page);
-  const side = withSide ? ctx.state.ui.sidePanel === 'assistant' && ctx.state.ui.assistantOpen ? renderAssistant(ctx) : preview(ctx) : '';
+  const withSide = scoped && ctx.agent && ctx.state.ui.sideOpen;
+  const side = withSide ? ctx.state.ui.sidePanel === 'evidence' ? renderEvidencePanel(ctx) : renderQuickTrial(ctx) : '';
   app.innerHTML = renderShell(ctx, body, side) + renderMaterialPreview(ctx);
   materialsController?.hydrate();
   visitorController?.afterRender();
   restoreForms();
   syncMaterialScope();
-  for (const detail of app.querySelectorAll('details')) if (detailKey(detail) in disclosures) detail.open = disclosures[detailKey(detail)];
+  for (const detail of app.querySelectorAll('details:not([data-flow-branch-disclosure])')) if (detailKey(detail) in disclosures) detail.open = disclosures[detailKey(detail)];
   document.title = `${routes.find(route => route.id === ctx.state.ui.page)?.label || '配置工作台'} · Loomrise`;
   if (identifier) {
     const [key, value] = identifier;
@@ -193,12 +195,46 @@ function render() {
     if (target && !target.hasAttribute('role')) { target.setAttribute('role', 'status'); target.setAttribute('aria-live', 'polite'); }
     clearTimeout(toastTimer); toastTimer = setTimeout(() => store.dispatch('dismiss-toast'), toast.tone === 'danger' ? 9000 : 5500);
   }
-  const hash = `#/${ctx.state.ui.page}?agent=${encodeURIComponent(ctx.state.selectedAgentId || '')}`;
-  if (!suppressRoute && location.hash !== hash) history.replaceState(null, '', hash);
+  clearTimeout(undoTimer);
+  const undo = ctx.state.ui.undoBatch;
+  if (undo && undo.expiresAt > Date.now()) undoTimer = setTimeout(render, undo.expiresAt - Date.now() + 20);
+  if (ctx.state.ui.focusTarget) {
+    const target = ctx.state.ui.focusTarget;
+    delete ctx.state.ui.focusTarget;
+    requestAnimationFrame(() => {
+      const toolIndex = ctx.agent?.config.tools.findIndex(item => item.id === target);
+      const bound = app.querySelector(`[data-bind="${CSS.escape(target)}"]`) || (toolIndex >= 0 && app.querySelector(`[data-bind="tools.${toolIndex}.successField"]`));
+      const node = bound || (ctx.state.ui.page === 'flow' && app.querySelector('.flow-inspector')) || app.querySelector(`[data-rule-id="${CSS.escape(target)}"], [data-fact-id="${CSS.escape(target)}"]`) || app.querySelector('.test-detail, .test-feedback, .knowledge-review-item, .library-focus, main h1');
+      if (!node) return;
+      for (let parent = node.parentElement; parent; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+      if (!node.matches('input, select, textarea, button, a')) node.tabIndex = -1;
+      node.classList.add('focus-target'); node.focus(); node.scrollIntoView({ block: 'center' });
+      node.addEventListener('blur', () => node.classList.remove('focus-target'), { once: true });
+    });
+  }
 }
 materialsController = createMaterialController({ store, app, render, formKey, preserveForm });
 visitorController = createVisitorController({ store, app, materialController: materialsController });
-store.subscribe(() => {
+function syncSidebarState() {
+  const { sidebarCollapsed: collapsed, navOpen } = store.state.ui;
+  app.querySelector('.app-shell').dataset.sidebarCollapsed = String(collapsed);
+  const sidebar = app.querySelector('.sidebar');
+  sidebar.classList.toggle('is-open', navOpen);
+  sidebar.inert = collapsed && !navOpen;
+  sidebar.setAttribute('aria-label', navOpen ? '主导航（按 Escape 关闭）' : routeScope(store.state.ui.page) === 'agent' ? '专家导航' : '工作区导航');
+  const backdrop = app.querySelector('.nav-backdrop');
+  backdrop.classList.toggle('is-open', navOpen);
+  backdrop.tabIndex = navOpen ? 0 : -1;
+  const desktopToggle = app.querySelector('[data-action="toggle-sidebar"]');
+  const label = collapsed ? '展开侧边栏' : '收起侧边栏';
+  desktopToggle.setAttribute('aria-expanded', String(!collapsed));
+  desktopToggle.setAttribute('aria-label', label);
+  desktopToggle.title = label;
+  app.querySelector('.mobile-menu [data-action="toggle-nav"]').setAttribute('aria-expanded', String(navOpen));
+}
+store.subscribe((_state, action) => {
+  navigation.sync();
+  if (['toggle-sidebar', 'toggle-nav'].includes(action) && store.state.ui.saveStatus !== 'error') { syncSidebarState(); return; }
   const current = fileContext();
   if (current !== lastFileContext) { fileReader.invalidate(); lastFileContext = current; }
   materialsController.contextChanged();
@@ -212,6 +248,38 @@ function downloadConfig() {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `loomrise-${agent.id}-r${agent.revision}.json`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+async function intakeFiles(files, details = {}) {
+  const agentId = store.state.selectedAgentId;
+  const revision = store.currentAgent()?.revision;
+  if (store.readonly()) { store.state.ui.toast = { text: '当前为只读预览，返回草稿后放资料。', tone: 'warning' }; render(); return; }
+  if (!files.length || files.length > 20) { store.state.ui.toast = { text: '一次请选择 1–20 份资料。', tone: 'warning' }; render(); return; }
+  let created = 0;
+  const unsupported = [];
+  for (const file of files) {
+    if (file.size > 2 * 1024 * 1024) { unsupported.push(`${file.name} 超出本地 2 MB 上限`); continue; }
+    const type = file.name.split('.').pop()?.toLowerCase();
+    if (!['csv', 'tsv', 'txt', 'md', 'markdown', 'xlsx'].includes(type)) { unsupported.push(`${file.name} 尚未接入解析`); continue; }
+    let candidates;
+    try { candidates = type === 'xlsx' ? await parseWorkbook({ name: file.name, buffer: await file.arrayBuffer() }) : parseBatchText({ name: file.name, text: await file.text() }); }
+    catch (error) { unsupported.push(`${file.name}：${error.message || '无法读取，请重新选择'}`); continue; }
+    if (store.state.selectedAgentId !== agentId || store.currentAgent()?.revision !== revision + created) return;
+    if (!candidates.length) { unsupported.push(`${file.name} 没有可拆分的内容`); continue; }
+    const intake = app.querySelector('.knowledge-batch-intake');
+    if (intake) {
+      intake.open = false;
+      store.state.ui.disclosures ||= {};
+      store.state.ui.disclosures[disclosureKey()] ||= {};
+      store.state.ui.disclosures[disclosureKey()][detailKey(intake)] = false;
+    }
+    const result = store.dispatch('batch-intake', { title: file.name, candidates, sourceRef: details.sourceRef || '', expires: details.expires || '', rights: details.rights || false });
+    if (result.ok) {
+      created += 1;
+      const disclosure = app.querySelector('.knowledge-batch-intake');
+      if (disclosure) disclosure.open = false;
+    }
+  }
+  if (unsupported.length) { store.state.ui.toast = { text: `${created ? `已接收 ${created} 份；` : ''}${unsupported.join('；')}。PDF、DOCX 的解析待后端接入。`, tone: 'warning' }; render(); }
+}
 app.addEventListener('click', async event => {
   const target = event.target.closest('[data-action]'); if (!target || target.disabled || target.tagName === 'SELECT' || target.tagName === 'INPUT') return;
   const { action, ...data } = target.dataset;
@@ -219,6 +287,12 @@ app.addEventListener('click', async event => {
   if (await visitorController.click(action, data)) return;
   if (await materialsController.click(action, data)) return;
   if (action === 'export-config') { downloadConfig(); return; }
+  if (action === 'export-migration-backup') {
+    const backup = browserStorage.getItem(store.state.ui.migrationBackupKey);
+    if (!backup) { store.state.ui.toast = { tone: 'warning', text: '迁移前副本已不存在；当前草稿仍保留，可先导出草稿。' }; render(); return; }
+    const url = URL.createObjectURL(new Blob([backup], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'loomrise-before-config-ui-v2.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); return;
+  }
   if (action === 'assistant-copy') {
     const task = prepareAgentTask(context().agent);
     try { await navigator.clipboard.writeText(JSON.stringify(task, null, 2)); store.state.ui.toast = { text: '受限任务摘要已复制；没有调用外部创作助手，也未复制资料全文或会话。', tone: 'neutral' }; }
@@ -231,10 +305,11 @@ app.addEventListener('click', async event => {
     catch { store.state.ui.toast = { text: '浏览器未允许复制，请选中示例代码手动复制。', tone: 'warning' }; render(); }
     return;
   }
-  if (action === 'preview-question') { store.dispatch('navigate', { page: 'trial' }); visitorController.start('trial', data.question); return; }
+  if (action === 'preview-question') { store.dispatch('open-trial', { question: data.question }); return; }
   store.dispatch(action, data);
   if (action === 'navigate' || action === 'select-agent' || action === 'new-agent') window.scrollTo({ top: 0 });
-  if (action === 'toggle-nav' && store.state.ui.navOpen) requestAnimationFrame(() => app.querySelector('.sidebar button')?.focus());
+  if (action === 'toggle-sidebar') requestAnimationFrame(() => app.querySelector('[data-action="toggle-sidebar"]')?.focus({ preventScroll: true }));
+  if (action === 'toggle-nav') requestAnimationFrame(() => app.querySelector(store.state.ui.navOpen ? '.mobile-close [data-action="toggle-nav"]' : '.mobile-menu [data-action="toggle-nav"]')?.focus({ preventScroll: true }));
 });
 function updateBound(target) {
   if (target.dataset.action === 'material-filter') { store.dispatch('material-filter', { path: target.dataset.path, value: target.value }); return; }
@@ -256,6 +331,7 @@ app.addEventListener('compositionstart', () => { composing = true; });
 app.addEventListener('compositionend', event => { composing = false; updateBound(event.target); });
 app.addEventListener('toggle', event => {
   if (event.target.tagName !== 'DETAILS') return;
+  if (event.target.matches('[data-flow-branch-disclosure]')) { if (store.state.ui.flowBranchOpen !== event.target.open) store.dispatch('flow-branch-disclosure', { open: event.target.open }); return; }
   store.state.ui.disclosures ||= {};
   store.state.ui.disclosures[disclosureKey()] ||= {};
   store.state.ui.disclosures[disclosureKey()][detailKey(event.target)] = event.target.open;
@@ -264,6 +340,8 @@ app.addEventListener('toggle', event => {
 app.addEventListener('change', async event => {
   const target = event.target;
   if (await materialsController.change(target)) return;
+  if (target.matches('[data-batch-files]')) { await intakeFiles([...target.files]); return; }
+  if (target.matches('[data-action="flow-select"]')) { store.dispatch('flow-select', { id: target.dataset.id }); return; }
   if (target.matches('[data-action="select-agent"]')) { if (target.value) store.dispatch('select-agent', { id: target.value }); return; }
   if (target.matches('[data-action="readonly-toggle"]')) { store.dispatch('readonly-toggle'); return; }
   if (target.matches('[data-source-file]')) {
@@ -289,6 +367,9 @@ app.addEventListener('submit', async event => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form).entries());
   const action = form.dataset.form;
+  if (action === 'source-batch') { await intakeFiles([...form.elements.namedItem('files').files], values); return; }
+  if (action === 'quick-trial') { store.dispatch('quick-trial', values); return; }
+  if (action === 'fact-save') values.excluded = [...form.querySelectorAll('input[name^="include:"]:not(:checked)')].map(input => input.name.slice('include:'.length));
   if (await visitorController.submit(form, values)) return;
   if (await materialsController.submit(form, values)) return;
   if (action === 'source' && values.type === 'File') {
@@ -298,8 +379,15 @@ app.addEventListener('submit', async event => {
   if (action === 'create') values.mode ||= store.state.ui.createMode;
   const key = formKey(form);
   const result = store.dispatch(action, values);
+  if (result.ok && action === 'flow-branch') {
+    const disclosure = form.closest('details');
+    if (disclosure) disclosure.open = false;
+    requestAnimationFrame(() => app.querySelector(`.flow-node[data-id="${CSS.escape(store.state.ui.selectedFlowNode || '')}"]`)?.focus({ preventScroll: true }));
+  }
   if (result.ok && store.state.ui.formDrafts) { delete store.state.ui.formDrafts[key]; store.save(); render(); }
 });
+app.addEventListener('dragover', event => { if (event.target.closest('[data-batch-drop]')) event.preventDefault(); });
+app.addEventListener('drop', async event => { if (!event.target.closest('[data-batch-drop]')) return; event.preventDefault(); await intakeFiles([...event.dataTransfer.files]); });
 document.addEventListener('keydown', event => {
   const previewDialog = app.querySelector('.material-preview-dialog');
   if (previewDialog && event.key === 'Tab') {
@@ -319,22 +407,53 @@ document.addEventListener('keydown', event => {
     if (tab) { store.dispatch('source-tab', { tab }); app.querySelector(`.source-tabs [data-tab="${tab}"]`)?.focus({ preventScroll: true }); }
     return;
   }
+  if (store.state.ui.page === 'knowledge' && store.state.ui.knowledgeTab === 'review' && !store.readonly() && !event.target.closest('input, textarea, select, [contenteditable]')) {
+    const items = [...app.querySelectorAll('.knowledge-review-item')];
+    const selected = event.target.closest('.knowledge-review-item');
+    const index = Math.max(0, items.indexOf(selected));
+    if (['ArrowLeft', 'ArrowRight'].includes(event.key) && items.length) {
+      event.preventDefault();
+      items[(index + (event.key === 'ArrowRight' ? 1 : -1) + items.length) % items.length].focus(); return;
+    }
+    if (['1', '2', '3'].includes(event.key) && selected) {
+      if (selected.querySelector('.knowledge-review-choice') && event.key === '1') return;
+      event.preventDefault();
+      const kind = selected.dataset.reviewKind === 'fact' ? 'fact' : 'qa';
+      const action = event.key === '2' ? `${kind}-edit` : `${kind}-decision`;
+      const result = store.dispatch(action, { id: selected.dataset.qaId, review: true, decision: event.key === '1' ? 'approve' : 'no-answer' });
+      if (result.ok) app.querySelector(`.knowledge-review-item[data-qa-id="${CSS.escape(selected.dataset.qaId)}"]`)?.focus();
+      return;
+    }
+  }
+  if (store.state.ui.page === 'flow' && store.state.ui.flowView === 'list' && event.target.matches?.('[data-flow-row]') && ['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) {
+    event.preventDefault();
+    if (event.key === 'Enter') { store.dispatch('flow-select-node', { id: event.target.dataset.id }); return; }
+    const rows = [...app.querySelectorAll('[data-flow-row]')];
+    rows[(rows.indexOf(event.target) + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length]?.focus(); return;
+  }
+  if (store.state.ui.page === 'flow' && store.state.ui.flowView !== 'list' && event.target.matches?.('.flow-diagram-scroll') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    event.target.scrollLeft += (event.key === 'ArrowRight' ? 1 : -1) * Math.max(80, event.target.clientWidth * 0.65);
+    return;
+  }
   if (event.key === 'Escape' && store.state.ui.materials.preview) { event.preventDefault(); store.dispatch('material-preview-close'); return; }
-  if (event.key === 'Escape' && store.state.ui.navOpen) { event.preventDefault(); store.dispatch('toggle-nav'); app.querySelector('[data-action="toggle-nav"]')?.focus(); }
+  if (event.key === 'Escape' && store.state.ui.navOpen) { event.preventDefault(); store.dispatch('toggle-nav'); app.querySelector('.mobile-menu [data-action="toggle-nav"]')?.focus(); }
   if (event.key === 'Tab' && store.state.ui.navOpen && window.innerWidth < 1024) {
-    const elements = [...app.querySelectorAll('.sidebar button:not(:disabled), .sidebar a[href]')].filter(element => element.getClientRects().length);
+    const elements = [...app.querySelectorAll('.sidebar button:not(:disabled), .sidebar a[href], .sidebar select:not(:disabled)')].filter(element => element.getClientRects().length);
     const first = elements[0]; const last = elements.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
 });
-window.addEventListener('hashchange', () => {
+function restoreNavigation() {
   if (!location.hash.startsWith('#/')) return;
-  suppressRoute = true; routeFromHash(); suppressRoute = false; render();
-});
+  navigation.restore(); render();
+}
+window.addEventListener('hashchange', restoreNavigation);
+window.addEventListener('popstate', restoreNavigation);
 window.addEventListener('beforeunload', () => { if (preserveOnExit) store.save(); });
 window.__loomriseDemo = { store, readiness, reset() { preserveOnExit = false; browserStorage.removeItem?.('loomrise:console-next:v1'); history.replaceState(null, '', '#/agents'); location.reload(); } };
-suppressRoute = true; routeFromHash(); suppressRoute = false; render();
+navigation.restore(); render();
 materialsController.contextChanged();
 visitorController.contextChanged();
 materialsController.reconcileFiles();

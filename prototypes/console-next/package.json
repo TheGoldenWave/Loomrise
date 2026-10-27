@@ -2,5 +2,14 @@
   "name": "loomrise-console-round2",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/*.test.js" }
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:browser": "node tests/run-browser-check.js config-ui-browser-check.js",
+    "test:navigation": "node tests/run-browser-check.js navigation-browser-check.js",
+    "test:sidebar": "node tests/run-browser-check.js sidebar-collapse-browser-check.js",
+    "check:terms": "node tests/run-browser-check.js terminology-browser-check.js"
+  },
+  "dependencies": {
+    "@e965/xlsx": "0.20.3"
+  }
 }

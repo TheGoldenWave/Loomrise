@@ -1,6 +1,6 @@
-# 版本钉与安装证据 v0.4
+# 版本钉与安装证据 v0.5
 
-状态：实测记录，2026-10-12。本文件只写**实际装了什么、从哪来、怎么复现**，不写"最新版"。
+状态：实测记录；S1 安装基线记录于 2026-10-12，后续复核时点分节标注，2026-10-26 补充前端 XLSX 依赖。本文件只写**实际装了什么、从哪来、怎么复现**，不写"最新版"。
 凡是文档别处出现版本号，都以本文件为准。
 
 **项目自身许可：`Apache-2.0`**（仓库根目录 `LICENSE`，署名见 `NOTICE`）。下表列出的许可证分属**上游依赖**，不是 Loomrise 自己的——`设置 · 系统诊断` 页的许可证清单应同时给出这两类。
@@ -152,3 +152,24 @@ python3 -m venv s1-voice && s1-voice/bin/pip install "pipecat-ai[tracing]==1.12.
 - 三条 ASR 候选（`fun-asr-realtime-2026-02-28` / `paraformer-realtime-v2` / `qwen-audio-3.0-asr-flash-streaming`）在同一段**合成**语音上均逐字一致；**这不等于真人噪声语料下的准确率**，字错率对照仍未做。
 - **媒体通道与业务通道分离**：`/ws/voice` 只搬声音，识别文本仍走 `POST /api/runs` → 同一 `ExecutionService`。语音不是第二条执行路径（[D-05](docs/VOICE-ARCHITECTURE-DECISIONS.md)）。
 - **浏览器侧尚未验证**：`web.html` 已换成 `getUserMedia` + `AudioWorklet` + WS，但本机 Chromium 的 WebAudio 在自动化环境里不可用，**没有真浏览器运行证据**。M-S1-08 仍记"未开始"。
+
+## 9. 配置后台前端原型表格解析器（2026-10-26）
+
+| 项 | 锁定值或来源 |
+|---|---|
+| 依赖与版本 | `@e965/xlsx@0.20.3`，精确值记录在 [package.json](prototypes/console-next/package.json) |
+| 安装源 | [npm registry tarball](https://registry.npmjs.org/@e965/xlsx/-/xlsx-0.20.3.tgz)，发布仓库为 [e965/sheetjs-npm-publisher](https://github.com/e965/sheetjs-npm-publisher) |
+| 构件锁 | [package-lock.json](prototypes/console-next/package-lock.json)，lockfile v3，记录上述 URL、精确版本和 `sha512` integrity |
+| 许可证 | `Apache-2.0`，已核对锁文件及安装包的 `package.json`；许可原文随安装包的 `LICENSE` 提供 |
+| 用途 | `prototypes/console-next/knowledge-model.js` 的 `parseWorkbook()` 在浏览器中读取用户选择的 XLSX，并生成待核对候选 |
+
+在仓库根目录执行锁定安装，再启动本机 HTTP 预览：
+
+```bash
+rtk npm --prefix prototypes/console-next ci
+rtk proxy python3 -m http.server 8765 --bind 127.0.0.1 --directory prototypes/console-next
+```
+
+打开 [本机原型页面](http://127.0.0.1:8765/)。前端没有构建步骤，XLSX 仅在用户选择相应文件时动态导入 `./node_modules/@e965/xlsx/xlsx.mjs`。静态服务必须能读取安装后的 `node_modules/`；只复制 HTML、CSS 和源码不能恢复 XLSX 解析。依赖文件由 `npm ci` 安装，不将 `node_modules/` 提交入仓库。
+
+CSV、TSV、TXT 和 Markdown 使用浏览器内解析，不加载该包。PDF、DOCX 与网址抓取仍待后端接入；解析候选不授予资料使用权，也不等于真实知识索引。该依赖不进入 `loomrise/` S1 Python 内核，CG-23 前后端接通仍未实现。运行验证与限制见[配置新布局首轮报告](docs/CONFIG-UI-ROUND1-REPORT.md)。

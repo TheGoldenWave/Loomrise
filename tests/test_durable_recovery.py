@@ -105,7 +105,7 @@ class TestRecovery(Base):
         store1 = SqliteStore(self.path, owner_id="p1")
         adapter = DurableRunAdapter(store1, owner_id="p1")
         request = queued_request(self.pack.agent_version.version_id)
-        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id)
+        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
         adapter.persist(
             RunEvent(
                 seq=store1.next_seq(run.run_id), event_type="run.started",
@@ -132,7 +132,7 @@ class TestRecovery(Base):
         store1 = SqliteStore(self.path, owner_id="p1")
         adapter = DurableRunAdapter(store1, owner_id="p1")
         request = queued_request(self.pack.agent_version.version_id)
-        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id)
+        run = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
         store1.close()
 
         store2 = SqliteStore(self.path, owner_id="p2")
@@ -181,13 +181,13 @@ class TestRecovery(Base):
         store = SqliteStore(self.path, owner_id="p1")
         adapter = DurableRunAdapter(store, owner_id="p1")
         request = queued_request(self.pack.agent_version.version_id)
-        first = adapter.begin(request, agent_version=self.pack.agent_version.version_id)
+        first = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
         store.recover(owner_id="p2")  # 另一个进程接手：第一条被判中断
         adapter2 = DurableRunAdapter(store, owner_id="p2")
         second = adapter2.begin(
             request, agent_version=self.pack.agent_version.version_id,
             lineage_parent=first.run_id, generation=first.occupancy_generation + 1,
-        )
+        ).run
         try:
             self.assertNotEqual(second.run_id, first.run_id)
             self.assertEqual(second.lineage_parent, first.run_id)

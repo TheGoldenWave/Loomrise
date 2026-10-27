@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from typing import Any, Iterator
 
 from .contracts import GENESIS_HASH, Channel, RunEvent, new_id
@@ -52,15 +53,22 @@ class EventLedger:
             idempotency_key=idempotency_key,
             payload=payload,
         ).seal(self._tail)
+        self.record(evt)
+        return evt
+
+    def record(self, evt: RunEvent, *, persist: bool = True) -> None:
+        """投影已接纳的首事件时关闭 sink，避免重复持久化。"""
+        if not persist:
+            evt = replace(evt).seal(self._tail)
         self._events.append(evt)
         self._tail = evt.hash
-        if self.sink is not None:
-            self.sink(evt)
+        if persist and self.sink is not None:
+            # 存储按 Run 重封；不能改写进程内全局链上的同一对象。
+            self.sink(replace(evt))
         if self.path:
             os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(evt.to_dict(), ensure_ascii=False) + "\n")
-        return evt
 
     # -- 读 ---------------------------------------------------------------
     @property

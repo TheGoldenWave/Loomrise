@@ -24,6 +24,7 @@ const paths = {
   check: '<path d="m5 12 4 4L19 6"/>',
   arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  'panel-left': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',

@@ -4,7 +4,7 @@
 .nav-sub-link { font-size: 12px; }
 .nav-link.has-active-child { background: var(--surface); font-weight: 600; }
 .breadcrumb-parent { font-size: inherit; color: var(--muted); }
-.next-step { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-left: 3px solid var(--accent); }
+.next-step { display: flex; align-items: center; justify-content: space-between; gap: 20px; background: var(--accent-soft); border-color: #d1e5ff; }
 .next-step > div { min-width: 0; }
 .next-step .eyebrow { margin-bottom: 5px; color: var(--accent-hover); font-size: var(--text-caption); }
 .next-step h2 { margin-bottom: 6px; font-size: var(--text-section); }
@@ -25,6 +25,8 @@
 @media (max-width: 640px) {
   .next-step { display: grid; gap: 14px; }
   .next-step-action .btn { width: 100%; }
-  .config-nav > button { flex-basis: 100%; min-height: 54px; }
+  .config-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .config-nav .config-nav-hint { grid-column: 1 / -1; }
+  .config-nav > button { min-height: 72px; padding: 8px; }
   .environment-label { max-width: 95px; font-size: 10px; }
 }

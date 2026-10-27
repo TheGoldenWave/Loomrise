@@ -19,9 +19,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-from .contracts import GENESIS_HASH, Run, RunEvent, ServiceRequest, now_iso
+from .contracts import (
+    GENESIS_HASH, Channel, RequestState, Run, RunAdmission, RunEvent, RunStatus,
+    ServiceRequest, now_iso,
+)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -92,6 +95,24 @@ CREATE TABLE IF NOT EXISTS outbox (
   created_at    TEXT NOT NULL,
   delivered_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS event_receipts (
+  tenant_id TEXT NOT NULL,
+  scenario_pack_id TEXT NOT NULL,
+  trigger_kind TEXT NOT NULL,
+  trigger_event_id TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  agent_version TEXT NOT NULL,
+  request_id TEXT NOT NULL REFERENCES requests(request_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  accepted_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, scenario_pack_id, trigger_kind, trigger_event_id)
+);
+CREATE TABLE IF NOT EXISTS event_admission_conflicts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  payload_hash TEXT NOT NULL,
+  observed_at TEXT NOT NULL
+);
 """
 
 
@@ -149,6 +170,10 @@ class SqliteStore:
                 raise RuntimeError(
                     f"store schema {row['value']} 比代码支持的 {SCHEMA_VERSION} 新，拒绝降级打开",
                 )
+            columns = {r["name"] for r in cur.execute("PRAGMA table_info(requests)")}
+            if "trigger_event_id" not in columns:
+                cur.execute("ALTER TABLE requests ADD COLUMN trigger_event_id TEXT")
+            cur.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(SCHEMA_VERSION),))
 
     @contextmanager
     def _tx(self) -> Iterator[sqlite3.Cursor]:
@@ -174,31 +199,82 @@ class SqliteStore:
     def begin_run(self, request: ServiceRequest, run: Run, events: list[RunEvent]) -> None:
         """请求行 + 运行行 + 首条事件同一事务。"""
         with self._tx() as cur:
+            self._begin_run(cur, request, run, events)
+
+    def _begin_run(
+        self, cur: sqlite3.Cursor, request: ServiceRequest, run: Run, events: list[RunEvent],
+    ) -> None:
+        existing = cur.execute(
+            "SELECT tenant_id FROM requests WHERE request_id=?", (request.request_id,),
+        ).fetchone()
+        if existing is not None and existing["tenant_id"] != request.tenant_id:
+            raise ValueError("request_id 不属于当前租户")
+        cur.execute(
+            "INSERT INTO requests(request_id, tenant_id, agent_version, channel, state,"
+            " subject_id, subject_scope, trigger_kind, trigger_ref, created_at, updated_at, trigger_event_id)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(request_id) DO UPDATE SET state=excluded.state,"
+            " updated_at=excluded.updated_at",
+            (
+                request.request_id, request.tenant_id, request.agent_version,
+                str(request.channel), str(request.state), request.subject_id,
+                str(request.subject_scope), request.trigger_kind, request.trigger_ref,
+                request.created_at, request.updated_at, request.trigger_event_id,
+            ),
+        )
+        cur.execute(
+            "INSERT INTO runs(run_id, request_id, tenant_id, agent_version, status,"
+            " occupancy_generation, owner_id, attempt_id, lineage_parent, started_at,"
+            " snapshot_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                run.run_id, run.request_id, run.tenant_id, run.agent_version,
+                run.status, run.occupancy_generation, run.owner_id, run.attempt_id,
+                run.lineage_parent, run.started_at,
+                json.dumps(run.snapshot, ensure_ascii=False),
+            ),
+        )
+        self._append(cur, events)
+
+    def admit_event(
+        self, request: ServiceRequest, run: Run, *, scenario_pack_id: str,
+        payload_hash: str, first_event: RunEvent,
+    ) -> RunAdmission:
+        """SQLite 写锁与唯一键裁决接纳；提交前不能进入执行体。"""
+        identity = request.event_identity(scenario_pack_id)
+        if identity is None:
+            raise ValueError("事件接纳必须提供 trigger_event_id")
+        with self._tx() as cur:
+            receipt = cur.execute(
+                "SELECT * FROM event_receipts WHERE tenant_id=? AND scenario_pack_id=?"
+                " AND trigger_kind=? AND trigger_event_id=?", identity,
+            ).fetchone()
+            if receipt is not None:
+                status = "duplicate" if receipt["payload_hash"] == payload_hash else "conflict"
+                if status == "conflict":
+                    cur.execute(
+                        "INSERT INTO event_admission_conflicts(run_id,payload_hash,observed_at) VALUES(?,?,?)",
+                        (receipt["run_id"], payload_hash, now_iso()),
+                    )
+                row = dict(cur.execute("SELECT * FROM runs WHERE run_id=?", (receipt["run_id"],)).fetchone())
+                row.pop("finish_reason")
+                row["snapshot"] = json.loads(row.pop("snapshot_json"))
+                row["status"] = RunStatus(row["status"])
+                original_run = Run(**row)
+                req = dict(cur.execute("SELECT * FROM requests WHERE request_id=?", (receipt["request_id"],)).fetchone())
+                # 请求可跨轮次；本次回执的版本/渠道以首次接纳的 Run 为准。
+                started = self._row_to_event(cur.execute(
+                    "SELECT * FROM events WHERE run_id=? ORDER BY seq LIMIT 1", (original_run.run_id,),
+                ).fetchone())
+                req.update(agent_version=original_run.agent_version, channel=Channel(started.channel),
+                           state=RequestState(req["state"]), trigger_kind=identity[2],
+                           trigger_event_id=identity[3])
+                return RunAdmission(status, ServiceRequest(**req), original_run)
+            self._begin_run(cur, request, run, [first_event])
             cur.execute(
-                "INSERT INTO requests(request_id, tenant_id, agent_version, channel, state,"
-                " subject_id, subject_scope, trigger_kind, trigger_ref, created_at, updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?)"
-                " ON CONFLICT(request_id) DO UPDATE SET state=excluded.state,"
-                " updated_at=excluded.updated_at",
-                (
-                    request.request_id, request.tenant_id, request.agent_version,
-                    str(request.channel), str(request.state), request.subject_id,
-                    str(request.subject_scope), request.trigger_kind, request.trigger_ref,
-                    request.created_at, request.updated_at,
-                ),
+                "INSERT INTO event_receipts VALUES(?,?,?,?,?,?,?,?,?)",
+                (*identity, payload_hash, run.agent_version, request.request_id, run.run_id, now_iso()),
             )
-            cur.execute(
-                "INSERT INTO runs(run_id, request_id, tenant_id, agent_version, status,"
-                " occupancy_generation, owner_id, attempt_id, lineage_parent, started_at,"
-                " snapshot_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    run.run_id, run.request_id, run.tenant_id, run.agent_version,
-                    run.status, run.occupancy_generation, run.owner_id, run.attempt_id,
-                    run.lineage_parent, run.started_at,
-                    json.dumps(run.snapshot, ensure_ascii=False),
-                ),
-            )
-            self._append(cur, events)
+            return RunAdmission("created", request, run, first_event)
 
     # -- 事件 --------------------------------------------------------------
     def append_events(self, events: list[RunEvent]) -> None:

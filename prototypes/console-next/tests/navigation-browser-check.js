@@ -1,0 +1,95 @@
+async (page) => {
+  const root = 'http://127.0.0.1:8765/';
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const scope = value => page.locator(`.app-shell[data-scope="${value}"]`).waitFor();
+  const openNav = async () => {
+    const menu = page.getByRole('button', { name: '打开导航', exact: true });
+    if (await menu.isVisible()) await menu.click();
+  };
+  const verifyWorkspace = async () => {
+    await scope('workspace');
+    check(!page.url().includes('agent='), '工作区地址仍携带专家');
+    check(await page.locator('.contextbar, .side-panel, [data-action="pending-toggle"], [data-action="open-trial"]').count() === 0, '工作区泄露专家面板或上下文');
+    const labels = await page.locator('.sidebar-nav .nav-link').allTextContents();
+    check(labels.join('|') === '专家列表|物料库|模型连接|部署与维护', '工作区导航归属不正确');
+  };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${root}#/agents`);
+  await verifyWorkspace();
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  await verifyWorkspace();
+  await page.getByLabel('专家名称').fill('导航核验·虚构专家甲');
+  await page.getByRole('button', { name: '创建手动草稿' }).click();
+  await scope('agent');
+  const id = new URLSearchParams(page.url().split('?').at(-1)).get('agent');
+  check(Boolean(id), '进入专家地址缺少专家 ID');
+  const overviewUrl = page.url();
+  await page.locator('.sidebar-nav [data-page="settings"]').click();
+  await page.locator('.app-shell[data-page="settings"]').waitFor();
+  const greeting = page.locator('[data-bind="greeting"]');
+  await greeting.fill('导航核验保留的欢迎语');
+  await greeting.blur();
+  const historyBeforeEdit = await page.evaluate(() => history.length);
+  await page.getByRole('button', { name: '试一试', exact: true }).click();
+  await page.getByRole('button', { name: '关闭侧栏', exact: true }).click();
+  check(await page.evaluate(() => history.length) === historyBeforeEdit, '普通编辑或面板操作新增了浏览器历史');
+  await page.goBack();
+  await page.locator('.app-shell[data-page="overview"]').waitFor();
+  await page.goForward();
+  await page.getByRole('heading', { name: '专家设置', exact: true }).waitFor();
+  check(await page.locator('[data-bind="greeting"]').inputValue() === '导航核验保留的欢迎语', '浏览器返回丢失草稿');
+  await page.getByRole('button', { name: '试一试', exact: true }).click();
+  await page.locator('.workspace-back').click();
+  await verifyWorkspace();
+  await page.locator(`.agent-name[data-id="${id}"]`).click();
+  await page.locator('.app-shell[data-page="overview"]').waitFor();
+  check(page.url() === overviewUrl, '列表进入没有落在该专家首页');
+  await page.goBack();
+  await verifyWorkspace();
+  await page.goForward();
+  await scope('agent');
+  await page.reload();
+  await page.locator('.app-shell[data-page="overview"]').waitFor();
+  check(page.url() === overviewUrl, '专家深链接刷新改变了目标');
+  await page.goto(`${root}#/knowledge?agent=does-not-exist`);
+  await verifyWorkspace();
+  check((await page.locator('.toast').innerText()).includes('专家不存在'), '无效专家链接没有提示');
+
+  // 通过界面创建第二个专家，确认侧栏切换保持当前工作面。
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  await page.getByLabel('专家名称').fill('导航核验·虚构专家乙');
+  await page.getByRole('button', { name: '创建手动草稿' }).click();
+  await page.locator('.sidebar-nav [data-page="knowledge"]').click();
+  const secondId = new URLSearchParams(page.url().split('?').at(-1)).get('agent');
+  check(secondId !== id, '第二个专家没有独立标识');
+  await page.getByLabel('切换当前专家', { exact: true }).selectOption(id);
+  await page.locator('.app-shell[data-page="knowledge"]').waitFor();
+  check(page.url().endsWith(`#/knowledge?agent=${id}`), '专家内切换没有保留工作面');
+  const reports = [];
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.goto(overviewUrl);
+    await scope('agent');
+    await openNav();
+    check(await page.locator('.workspace-back').isVisible(), '返回工作区入口不可见');
+    check(await page.getByLabel('切换当前专家', { exact: true }).inputValue() === id, '当前专家标识不正确');
+    check(await page.locator('.sidebar-nav .nav-link').count() === 8, '专家菜单不是七项加专家设置');
+    check(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), `${width}px 专家页横向溢出`);
+    await page.screenshot({ path: `output/playwright/sidebar-navigation/expert-${width}.png`, fullPage: true });
+    await page.locator('.workspace-back').click();
+    await verifyWorkspace();
+    await openNav();
+    check(!await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), `${width}px 工作区横向溢出`);
+    await page.screenshot({ path: `output/playwright/sidebar-navigation/workspace-${width}.png`, fullPage: true });
+    if (width === 390) await page.locator('.mobile-close [data-action="toggle-nav"]').click();
+    const enter = page.locator(`main [data-action="select-agent"][data-id="${id}"]`).filter({ hasText: '进入' });
+    await enter.click();
+    await page.locator('.app-shell[data-page="overview"]').waitFor();
+    check(await page.locator('.sidebar.is-open').count() === 0, '进入专家后手机导航未收起');
+    reports.push({ width, scopes: ['workspace', 'agent'], overflow: false });
+  }
+  check(errors.length === 0, `浏览器异常：${errors.join('; ')}`);
+  return { reports, history: '进入、返回、前进后退、刷新与无效链接通过', draft: '欢迎语保留', errors };
+}

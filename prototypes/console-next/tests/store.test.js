@@ -89,6 +89,85 @@ test('检索结果不跨专家、配置修订或浏览器重载保留', () => {
   assert.deepEqual(restored.state.ui.materials.autoResults, []);
 });
 
+test('返回工作区关闭专家临时面板与历史预览，保留选择、配置、版本和表单草稿', () => {
+  for (const page of ['agents', 'create', 'materials', 'connections', 'deployment']) {
+    const store = fresh();
+    store.dispatch('navigate', { page: 'knowledge' });
+    store.dispatch('update-config', { path: 'greeting', value: '我的草稿欢迎语' });
+    const agent = store.currentAgent();
+    const persisted = JSON.stringify({ config: agent.config, versions: agent.versions, revision: agent.revision });
+    store.state.ui.formDrafts = { 'saved-form': { answer: '尚未提交的回答' } };
+    Object.assign(store.state.ui, { sideOpen: true, pendingOpen: true, navOpen: true, previewVersionId: agent.versions[0]?.id || 'history', readonly: true, mobilePanel: 'side', focusTarget: 'old-target', evidenceTarget: { id: 'old-change' } });
+    store.dispatch('navigate', { page });
+    assert.equal(store.state.selectedAgentId, agent.id);
+    assert.equal(store.state.ui.page, page);
+    for (const key of ['sideOpen', 'pendingOpen', 'navOpen', 'readonly']) assert.equal(store.state.ui[key], false, `${page}: ${key}`);
+    for (const key of ['previewVersionId', 'focusTarget', 'evidenceTarget']) assert.equal(store.state.ui[key], null, `${page}: ${key}`);
+    assert.equal(store.state.ui.mobilePanel, 'editor');
+    assert.equal(JSON.stringify({ config: agent.config, versions: agent.versions, revision: agent.revision }), persisted);
+    assert.deepEqual(store.state.ui.formDrafts, { 'saved-form': { answer: '尚未提交的回答' } });
+    store.dispatch('toggle-nav');
+    assert.equal(store.state.ui.navOpen, true);
+  }
+});
+
+test('桌面侧栏偏好跨平面、专家与刷新保留，手机抽屉和只读不改变偏好或配置', () => {
+  const entries = new Map();
+  const storage = { getItem: key => entries.get(key) || null, setItem: (key, value) => entries.set(key, value) };
+  const store = createStore(storage);
+  assert.equal(store.state.ui.sidebarCollapsed, false);
+  const first = store.currentAgent().id;
+  store.dispatch('create', { name: '另一位虚构专家' });
+  store.dispatch('navigate', { page: 'knowledge' });
+  store.dispatch('readonly-toggle');
+  const before = JSON.stringify(store.state.agents);
+  assert.equal(store.dispatch('toggle-sidebar').ok, true);
+  assert.equal(store.state.ui.sidebarCollapsed, true);
+  assert.equal(store.state.ui.readonly, true);
+  assert.equal(store.state.ui.page, 'knowledge');
+  assert.equal(JSON.stringify(store.state.agents), before);
+  store.dispatch('navigate', { page: 'agents' });
+  assert.equal(store.state.ui.sidebarCollapsed, true);
+  store.dispatch('select-agent', { id: first });
+  assert.equal(store.state.ui.page, 'overview');
+  assert.equal(store.state.ui.sidebarCollapsed, true);
+  store.dispatch('toggle-nav');
+  assert.equal(store.state.ui.navOpen, true);
+  assert.equal(store.state.ui.sidebarCollapsed, true);
+  store.dispatch('toggle-nav');
+  assert.equal(store.state.ui.navOpen, false);
+  assert.equal(store.state.ui.sidebarCollapsed, true);
+  const restored = createStore(storage);
+  assert.equal(restored.state.ui.sidebarCollapsed, true);
+  assert.equal(restored.state.selectedAgentId, first);
+  assert.equal(restored.state.ui.page, 'overview');
+  const savedConfiguration = agents => agents.map(({ id, config, versions, revision }) => ({ id, config, versions, revision }));
+  assert.deepEqual(savedConfiguration(restored.state.agents), savedConfiguration(store.state.agents));
+  assert.equal(restored.dispatch('toggle-sidebar').ok, true);
+  assert.equal(restored.state.ui.sidebarCollapsed, false);
+  const legacy = clone(restored.state);
+  delete legacy.ui.sidebarCollapsed;
+  assert.equal(createStore({ getItem: () => JSON.stringify(legacy), setItem() {} }).state.ui.sidebarCollapsed, false);
+});
+
+test('专家内切换保留当前页与设置分节，从工作区选择则进入专家首页', () => {
+  const store = fresh();
+  const first = store.currentAgent().id;
+  store.dispatch('create', { name: '另一位专家' });
+  const second = store.currentAgent().id;
+  store.dispatch('navigate', { page: 'configuration', section: 'model' });
+  store.dispatch('select-agent', { id: first });
+  assert.equal(store.state.ui.page, 'configuration');
+  assert.equal(store.state.ui.section, 'model');
+  store.dispatch('navigate', { page: 'knowledge' });
+  store.dispatch('select-agent', { id: second });
+  assert.equal(store.state.ui.page, 'knowledge');
+  store.dispatch('navigate', { page: 'agents' });
+  store.dispatch('select-agent', { id: first });
+  assert.equal(store.state.ui.page, 'overview');
+  assert.equal(store.state.selectedAgentId, first);
+});
+
 test('完整手动创建不需要助手、资料或写工具；空草稿能保存', () => {
   const store = fresh();
   store.dispatch('create', { name: '售后专员', goal: '根据授权资料回答售后问题。', mode: 'manual' });

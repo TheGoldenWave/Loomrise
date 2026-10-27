@@ -1,0 +1,137 @@
+async (page) => {
+  const root = 'http://127.0.0.1:8765/';
+  const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${root}?configurationCheck=${Date.now()}#/agents`);
+  await page.getByRole('button', { name: '新建', exact: true }).click();
+  await page.getByLabel('专家名称').fill('本轮浏览器核验');
+  await page.getByLabel('希望帮助用户完成什么').fill('依据授权课表和价格回答问题');
+  await page.getByLabel('服务对象', { exact: true }).fill('咨询课程的访客');
+  await page.getByRole('button', { name: '创建手动草稿' }).click();
+  check(await page.locator('[data-batch-drop]').count() === 1, '新建没有进入三步首页');
+  await page.locator('[data-batch-files]').setInputFiles({ name: '虚构学费.csv', mimeType: 'text/csv', buffer: Buffer.from('名称,值,单位\n学费,3980,元\n') });
+  await page.getByRole('heading', { name: '核对新资料', exact: true }).waitFor();
+  check(await page.evaluate(() => window.__loomriseDemo.store.currentAgent().config.sources[0].rights === false), '导入不能默认授予资料授权');
+  const fact = page.locator('[data-review-kind="fact"]');
+  await fact.getByRole('button', { name: '改一下', exact: true }).click();
+  await fact.getByLabel('当前值').fill('4280');
+  await fact.getByLabel('出处').fill('原创虚构价格表');
+  await fact.getByRole('button', { name: '保存并核对' }).click();
+  check(await page.evaluate(() => window.__loomriseDemo.store.currentAgent().config.keyFacts[0].reviewStatus === 'reviewed'), '关键信息审核没有保存');
+  await page.locator('.knowledge-batch-rights').getByRole('button', { name: '修改', exact: true }).click();
+  await page.getByLabel('来源引用').fill('原创虚构价格表');
+  await page.getByLabel('有效期至').fill('2027-12-31');
+  await page.getByLabel('我确认有权在此客服场景中使用该资料').check();
+  await page.getByRole('button', { name: '保存新资料版本' }).click();
+  await page.getByRole('button', { name: '返回资料列表', exact: true }).click();
+  await page.locator('.sidebar-nav [data-page="knowledge"]').click();
+  await page.locator('[data-action="knowledge-tab"][data-tab="qa"]').first().click();
+  await page.locator('.knowledge-batch-intake > summary').click();
+  const batch = page.locator('[data-form="source-batch"]');
+  const workbookBytes = await page.evaluate(async () => {
+    const X = await import('/node_modules/@e965/xlsx/xlsx.mjs');
+    const book = X.utils.book_new();
+    X.utils.book_append_sheet(book, X.utils.aoa_to_sheet([['问题', '答案'], ['在哪里上课？', '通过线上教室'], ['价格多少？', '学费是 {学费}']]), '课表');
+    return [...new Uint8Array(X.write(book, { type: 'array', bookType: 'xlsx' }))];
+  });
+  await batch.getByLabel('选择资料').setInputFiles({ name: '虚构课表.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(workbookBytes) });
+  await batch.getByLabel('这批资料的出处').fill('原创虚构课表');
+  await batch.getByLabel('使用有效期至').fill('2027-12-31');
+  check(!await batch.getByRole('checkbox').isChecked(), '批次授权应默认未勾选');
+  await batch.getByRole('checkbox').check();
+  await batch.getByRole('button', { name: '拆分并核对' }).click();
+  await page.getByRole('heading', { name: '核对新资料', exact: true }).waitFor();
+  const price = page.locator('.knowledge-review-item').filter({ hasText: '价格多少？' });
+  await price.getByRole('button', { name: '对', exact: true }).click();
+  await page.getByRole('button', { name: '这 1 条都没问题', exact: true }).click();
+  await page.locator('[data-action="undo-batch"]').click();
+  check(await page.getByRole('button', { name: '这 1 条都没问题', exact: true }).count() === 1, '整组撤销没有恢复待核对内容');
+  await page.getByRole('button', { name: '这 1 条都没问题', exact: true }).click();
+  await page.locator('[data-action="knowledge-tab"][data-tab="qa"]').first().click();
+  const qa = page.locator('.knowledge-qa-row').filter({ hasText: '价格多少？' });
+  await qa.getByRole('button', { name: '试这一条', exact: true }).click();
+  await page.getByRole('button', { name: '提问', exact: true }).click();
+  check((await page.locator('.quick-trial-answer').innerText()).includes('4280 元'), '答复没有使用已审核的关键信息');
+  const pendingBefore = await page.locator('[data-action="pending-toggle"]').innerText();
+  await page.getByRole('button', { name: '答错了', exact: true }).click();
+  const pendingAfter = await page.locator('[data-action="pending-toggle"]').innerText();
+  check(Number(pendingAfter.match(/\d+/)[0]) === Number(pendingBefore.match(/\d+/)[0]) + 1, '反馈没有加入统一待处理');
+  await page.locator('.quick-trial-answer').getByRole('button', { name: '转为测试题', exact: true }).click();
+  await page.locator('[data-action="close-side-panel"]').click();
+  await page.locator('.sidebar-nav [data-page="flow"]').click();
+  await page.locator('[data-flow-branch-disclosure] > summary').click();
+  const branch = page.locator('[data-form="flow-branch"]');
+  await branch.getByLabel('客户想做什么').fill('问上课安排');
+  await branch.getByLabel('例句（至少 3 句，每行一句）').fill('什么时候上课\n几点上课\n怎么上课');
+  await page.getByRole('button', { name: '试一试', exact: true }).click();
+  await page.locator('[data-action="close-side-panel"]').click();
+  check(await branch.getByRole('radio', { name: '用知识库回答', exact: true }).isChecked(), '面板重绘改变了分支选项');
+  await branch.getByRole('button', { name: '加上', exact: true }).click();
+  check(await page.evaluate(() => window.__loomriseDemo.store.currentAgent().config.routeGraph.nodes.at(-1).type === 'reply'), '分支选项的值被表单恢复改写');
+  await page.getByRole('button', { name: '加转人工', exact: true }).click();
+  await page.getByRole('button', { name: /判断客户想做什么|判断 客户想做什么/ }).click();
+  const edge = page.locator('.flow-edge-editor').filter({ hasText: '问上课安排' });
+  await edge.locator('summary').click();
+  await edge.getByLabel('客户想做什么').fill('问上课时间');
+  await edge.getByRole('button', { name: '保存分支', exact: true }).click();
+  check((await page.locator('.flow-canvas').textContent()).includes('问上课时间'), '分支意图编辑未反映在流程图');
+  await page.getByRole('button', { name: '列表', exact: true }).click();
+  await page.locator('[data-flow-row]').first().focus();
+  await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  check(await page.locator('.flow-inspector').count() === 1, '流程列表键盘选择未显示详情');
+  const beforeReload = await page.evaluate(() => ({ id: window.__loomriseDemo.store.currentAgent().id, revision: window.__loomriseDemo.store.currentAgent().revision, runs: window.__loomriseDemo.store.state.runs.length }));
+  await page.reload();
+  check(await page.evaluate(before => { const store = window.__loomriseDemo.store; return store.currentAgent().id === before.id && store.currentAgent().revision === before.revision && store.state.runs.length === before.runs; }, beforeReload), '刷新后草稿或运行记录丢失');
+  const reports = [];
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    for (const route of ['overview', 'knowledge', 'redlines', 'business', 'flow', 'test', 'versions', 'settings']) {
+      if (width === 390 && await page.getByRole('button', { name: '打开导航', exact: true }).isVisible()) await page.getByRole('button', { name: '打开导航', exact: true }).click();
+      await page.locator(`.sidebar-nav [data-page="${route}"]`).click();
+      await page.getByRole('button', { name: '试一试', exact: true }).click();
+      check(await page.evaluate(route => window.__loomriseDemo.store.state.ui.page === route, route), '打开试一试改变了当前页面');
+      await page.locator('[data-action="close-side-panel"]').click();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
+      check(!overflow, `${width}px 的 ${route} 出现页面横向溢出`);
+      reports.push({ width, route, overflow });
+      if (await page.locator('[data-action="dismiss-toast"]').count()) await page.locator('[data-action="dismiss-toast"]').click();
+      if (['overview', 'knowledge', 'flow'].includes(route)) await page.screenshot({ path: `output/playwright/config-ui-round1/${route}-${width}.png`, fullPage: true });
+    }
+    await page.screenshot({ path: `output/playwright/config-ui-round1/settings-${width}.png`, fullPage: true });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.evaluate(() => {
+    const store = window.__loomriseDemo.store;
+    const nodes = [{ id: 'layout-start', type: 'start', title: '客户进入', instruction: '', ruleIds: [] }];
+    const edges = [];
+    for (let index = 1; index <= 5; index += 1) {
+      nodes.push({ id: `layout-reply-${index}`, type: 'reply', title: ['说明范围', '确认问题', '读取授权资料', '核对关键信息', '确认客户诉求'][index - 1], instruction: '虚构布局核验步骤', ruleIds: [] });
+      edges.push({ id: `layout-chain-${index}`, source: nodes[index - 1].id, target: nodes[index].id, label: '', examples: [], ruleIds: [] });
+    }
+    nodes.push({ id: 'layout-decision', type: 'decision', title: '客户想做什么', instruction: '', ruleIds: [] });
+    edges.push({ id: 'layout-to-decision', source: nodes[5].id, target: 'layout-decision', label: '', examples: [], ruleIds: [] });
+    for (let index = 0; index < 5; index += 1) {
+      const title = ['问价格', '问课程', '问时间', '了解老师', '其他'][index];
+      nodes.push({ id: `layout-end-${index}`, type: index === 4 ? 'handoff' : 'reply', title: index === 4 ? '交人工核实' : title, instruction: '', ruleIds: [] });
+      edges.push({ id: `layout-branch-${index}`, source: 'layout-decision', target: `layout-end-${index}`, label: title, examples: index === 4 ? [] : ['例句一', '例句二', '例句三'], ruleIds: [] });
+    }
+    store.currentAgent().config.routeGraph = { nodes, edges };
+    Object.assign(store.state.ui, { flowView: 'graph', selectedFlowNode: null, flowBranchFilter: 'all' });
+    store.dispatch('navigate', { page: 'flow' });
+  });
+  check(await page.locator('.flow-diagram .flow-node').count() === 12, '12 个节点的布局漏显步骤');
+  const layout = await page.locator('.flow-diagram').boundingBox();
+  check(layout.x + layout.width <= 1440 && layout.y + layout.height <= 900, '5 分支 12 节点未在桌面一屏显示');
+  await page.screenshot({ path: 'output/playwright/config-ui-round1/flow-12-nodes-1440.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.__loomriseDemo.store.dispatch('navigate', { page: 'flow' }));
+  check(await page.locator('.flow-scroll-cue').isVisible(), '窄屏流程图缺少横向延续提示');
+  const diagramScroll = page.locator('.flow-diagram-scroll');
+  check(await diagramScroll.getAttribute('role') === 'region' && await diagramScroll.getAttribute('tabindex') === '0', '窄屏流程图不可聚焦');
+  await diagramScroll.focus(); await page.keyboard.press('ArrowRight');
+  check(await diagramScroll.evaluate(element => element.scrollLeft > 0), '窄屏流程图不能通过方向键横向滚动');
+  check(errors.length === 0, `浏览器错误：${errors.join('; ')}`);
+  return { checks: ['冷启动上传', '关键信息就地修改审核', '显式批次授权', '浏览器内 XLSX 解析', '低风险整组核对撤销', '关键信息引用答复', '答错反馈与转测试题', '新增分支与人工出口', '分支意图编辑', '列表键盘', '刷新持久化', '全局试用', '16 个视窗页面无横向溢出'], reports, errors };
+}

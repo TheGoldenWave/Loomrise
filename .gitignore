@@ -44,3 +44,5 @@ runs/
 
 # Local browser captures and QA logs
 .playwright-mcp/
+.playwright-cli/
+output/playwright/

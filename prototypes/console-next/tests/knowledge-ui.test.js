@@ -6,6 +6,7 @@ import { renderKnowledge } from '../views/knowledge.js';
 
 function context() {
   const state = initialState();
+  state.ui.knowledgeTab = 'sources';
   const agent = state.agents[0];
   return { state, agent, ready: readiness(agent, state.connections), readonly: false };
 }

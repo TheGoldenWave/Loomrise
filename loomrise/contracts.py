@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 CONTRACT_VERSION = "s1.0"
 # 自持版本钉：不跟随上游"最新版"
@@ -190,8 +190,13 @@ class ServiceRequest:
     updated_at: str = field(default_factory=now_iso)
     outcome: dict[str, Any] | None = None
     result_id: str | None = None
+    trigger_event_id: str | None = None
 
     def __post_init__(self) -> None:
+        if self.trigger_event_id is not None and (
+            not isinstance(self.trigger_event_id, str) or not self.trigger_event_id.strip()
+        ):
+            raise ValueError("trigger_event_id 必须是非空稳定来源 ID，或 None")
         if not isinstance(self.subject_scope, SubjectScope):
             self.subject_scope = SubjectScope(self.subject_scope)
         if self.subject_scope is SubjectScope.MAPPED and not (self.subject_id or "").strip():
@@ -206,6 +211,15 @@ class ServiceRequest:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    def event_identity(self, scenario_pack_id: str) -> tuple[str, str, str, str] | None:
+        if self.trigger_event_id is None:
+            return None
+        if not all(isinstance(v, str) and v.strip() for v in (
+            self.tenant_id, scenario_pack_id, self.trigger_kind, self.trigger_event_id,
+        )):
+            raise ValueError("事件身份的租户、专家范围、类型和 ID 必须非空")
+        return self.tenant_id, scenario_pack_id, self.trigger_kind, self.trigger_event_id
 
 
 GENESIS_HASH = "0" * 64
@@ -284,6 +298,16 @@ class Run:
         d = asdict(self)
         d["status"] = str(self.status)
         return d
+
+
+@dataclass
+class RunAdmission:
+    """接纳裁决；重复/冲突只引用首次运行，不授予执行权。"""
+
+    status: Literal["created", "duplicate", "conflict"]
+    request: ServiceRequest
+    run: Run
+    first_event: RunEvent | None = None
 
 
 # --------------------------------------------------------------------------

@@ -2,19 +2,18 @@ import {
   escapeHtml, badge, button, field, section, emptyState, formatTime,
   renderReadiness, pageHeading,
 } from '../helpers.js';
-import { sourceValid, validateConfig } from '../domain.js';
+import { describeChange, pendingItems, sourceValid, validateConfig } from '../domain.js';
 
 const modules = [
   { id: 'service', title: '接待与回答', summary: '对象、范围、表达与人工出口', business: true },
-  { id: 'knowledge', title: '依据资料', summary: '来源、授权与可引用状态', layer: 'ContextSnapshot', business: true },
-  { id: 'flow', title: '服务流程', summary: '当前请求、步骤与回退', layer: 'RequestRouting', business: true },
+  { id: 'knowledge', title: '知识库', summary: '来源、授权与可引用状态', layer: 'ContextSnapshot', business: true },
+  { id: 'flow', title: '对话流程', summary: '当前问题、步骤与转人工', layer: 'RequestRouting', business: true },
   { id: 'fields', title: '业务字段', summary: '收集信息与工具结果', business: true },
-  { id: 'skills', title: '处理策略', summary: '适用条件与退出方式', layer: 'Skill / SOP', business: true },
-  { id: 'rules', title: '必须遵守的约束', summary: '锁定边界与待审建议', layer: 'HardRule' },
-  { id: 'tools', title: '业务动作', summary: '模拟、确认与结果证据', layer: 'ToolPolicy', business: true },
-  { id: 'outcome', title: '结果与验收', summary: '成功、未解与未知结果', layer: 'Outcome' },
+  { id: 'skills', title: '回复说明', summary: '适用条件与转人工方式', layer: 'Skill / SOP', business: true },
+  { id: 'rules', title: '红线', summary: '业务红线与平台底线', layer: 'HardRule' },
+  { id: 'tools', title: '业务办理', summary: '需客户确认与办成标志', layer: 'ToolPolicy', business: true },
+  { id: 'outcome', title: '办理结果', summary: '成功、未办成与结果不明', layer: 'Outcome' },
   { id: 'model', title: '模型与预算', summary: '连接引用与单次预算' },
-  { id: 'evidence', title: '版本与变更依据', summary: '有效值、来源与手动修改' },
 ];
 
 const sourceStates = {
@@ -25,10 +24,10 @@ const integrationTerms = '<details><summary>技术名称与接入边界</summary
 
 function sourceMarker(agent, path) {
   const entry = agent.manualPaths?.[path];
-  if (entry) return `<span class="source-marker">${badge('手动修改 · 受保护', 'neutral')}<span class="helper">${entry.revision ? `修订 r${escapeHtml(entry.revision)}` : '外部候选不会直接覆盖'}</span></span>`;
+  if (entry) return `<details class="source-marker"><summary>技术详情 · 手动修改受保护</summary><span class="helper">${entry.revision ? `修订 r${escapeHtml(entry.revision)}` : '外部候选不会直接覆盖'}</span></details>`;
   const origin = agent.origins?.[path];
   if (!origin) return '';
-  return `<span class="source-marker">${badge(origin.origin === '助手建议' ? '助手候选已采用 · 模拟' : origin.origin || '本地来源', 'neutral')}<span class="helper">修订 r${escapeHtml(origin.revision)}${origin.source ? ` · ${escapeHtml(origin.source)}` : ''}</span></span>`;
+  return `<details class="source-marker"><summary>技术详情 · 修改依据</summary><span class="helper">${escapeHtml(origin.origin || '本地来源')} · 修订 r${escapeHtml(origin.revision)}${origin.source ? ` · ${escapeHtml(origin.source)}` : ''}</span></details>`;
 }
 
 function editableField(ctx, label, path, value, options = {}) {
@@ -71,8 +70,8 @@ function readonlyNotice(ctx) {
 function saveState(ctx) {
   const ui = ctx.state.ui;
   const status = ui.saveStatus || 'saved';
-  const labels = { saving: '正在保存到本机', saved: '已保存到本机', error: '保存失败', unsaved: '有未保存修改' };
-  return `<div class="save-status inline" aria-live="polite">${badge(labels[status] || '草稿保存状态待确认', status === 'error' ? 'danger' : status === 'saved' ? 'success' : 'warning')}<span class="helper">${ui.savedAt ? formatTime(ui.savedAt) : '仅当前浏览器保存；未接后台'}</span>${button('save-now', status === 'error' ? '重试保存' : '保存草稿', { disabled: ctx.readonly || status === 'saving', variant: 'ghost' })}</div>`;
+  const labels = { saving: '正在自动保存', saved: '已自动保存', error: '保存失败', unsaved: '正在自动保存' };
+  return `<div class="save-status inline" aria-live="polite">${badge(labels[status] || '正在自动保存', status === 'error' ? 'danger' : 'neutral')}${status === 'error' ? button('save-now', '重试保存', { disabled: ctx.readonly, variant: 'ghost' }) : ''}</div>`;
 }
 
 function configNavigation(ctx) {
@@ -87,17 +86,11 @@ function configNavigation(ctx) {
 function moduleStates(ctx) {
   const config = ctx.agent.config;
   const errors = validateConfig(config);
-  const issueFor = {
-    service: /服务目标|服务对象|服务范围|资料不足|恢复检查/,
-    flow: /处理步骤|步骤标题/,
-    fields: /字段/,
-    tools: /业务写入/,
-    model: /预算/,
-  };
+  const fields = { service: ['goal', 'audience', 'scope', 'fallback', 'handoff.resumeMinutes'], flow: ['flow'], fields: ['fields'], tools: ['tools'], model: ['model.budget'] };
   return modules.map(item => {
-    const issue = errors.find(error => issueFor[item.id]?.test(error));
+    const issue = errors.find(error => fields[item.id]?.includes(error.path));
     let status = issue ? 'missing' : 'usable';
-    let detail = issue || '';
+    let detail = issue?.message || '';
     if (item.id === 'knowledge' && ctx.ready.items.find(entry => entry.id === 'knowledge')?.status !== 'ok') {
       status = 'missing'; detail = ctx.ready.items.find(entry => entry.id === 'knowledge')?.detail;
     }
@@ -113,7 +106,7 @@ function moduleStates(ctx) {
       status = ctx.agent.checks.testedRevision === ctx.agent.revision ? 'usable' : 'pending';
       detail = status === 'pending' ? '当前修订尚未重新检查' : '当前修订有本地检查记录';
     }
-    return { ...item, status, detail, validationIssue: issue };
+    return { ...item, status, detail, validationIssue: issue?.message };
   });
 }
 
@@ -142,17 +135,18 @@ export function renderAgents(ctx) {
   const { state } = ctx;
   const search = (state.ui.search || '').trim().toLocaleLowerCase();
   const agents = state.agents.filter(agent => !search || `${agent.name} ${agent.config.goal} ${agent.config.audience}`.toLocaleLowerCase().includes(search));
-  const actions = `<div class="button-group">${button('new-agent', '手动创建', { variant: 'primary', mode: 'manual' })}${button('new-agent', '查看创作助手方式', { mode: 'assistant' })}</div>`;
-  const heading = pageHeading('专家', '为客服或销售建立业务专家。从草稿开始，使用授权资料试用，再选择接入业务动作与网站。', actions);
+  const actions = `<div class="button-group">${button('new-agent', '新建', { variant: 'primary', mode: 'manual' })}${button('new-agent', '导入', { mode: 'assistant' })}</div>`;
+  const heading = pageHeading('专家列表', '选择一个专家，进入它的知识、配置与测试。', actions);
   const toolbar = `<div class="toolbar"><div class="field"><label for="agent-search" class="sr-only">搜索专家</label><input class="control input" id="agent-search" type="search" data-ui-bind="search" value="${escapeHtml(state.ui.search || '')}" placeholder="搜索名称、目标或服务对象"></div><span class="muted">${agents.length} 个专家</span></div>`;
   if (!state.agents.length) return `${heading}${emptyState('从你的第一个专家开始', '不需要先有工具、模型凭据或外部创作助手。手动创建空草稿，再录入授权问答即可体验脚本模拟。', actions)}`;
   if (!agents.length) return `${heading}${toolbar}${emptyState('没有匹配的专家', '调整搜索词，或清空搜索查看已有草稿。')}`;
-  return `${heading}${toolbar}<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">专家 / 服务目标</th><th scope="col">当前草稿</th><th scope="col">资料</th><th scope="col">入口绑定</th><th scope="col">操作</th></tr></thead><tbody>${agents.map(agent => {
-    const sources = agent.config.sources || [];
-    const usable = sources.filter(source => sourceValid(source, agent.revokedSourceIds || [])).length;
-    const bindings = [agent.bindings?.widget && '网站客服窗', agent.bindings?.contact && '联系页'].filter(Boolean);
-    return `<tr><td><button class="button-link agent-name" type="button" data-action="select-agent" data-id="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}</button><p class="helper">${escapeHtml(agent.config.goal || '尚未填写服务目标')}</p></td><td>${badge(`草稿 r${agent.revision}`, 'neutral')}<p class="helper">${agent.versions.length} 个冻结版本</p></td><td>${usable ? badge(`${usable} 项演示可引用`, 'success') : badge('待补资料', 'warning')}<p class="helper">共 ${sources.length} 项来源</p></td><td>${bindings.length ? bindings.map(label => badge(`${label} · 沙盒演示`, 'neutral')).join(' ') : '<span class="muted">尚未绑定</span>'}</td><td>${button('select-agent', '继续配置', { id: agent.id })}</td></tr>`;
-  }).join('')}</tbody></table></div><p class="helper">冻结版本与可变草稿分别保存；列表中的可引用状态和沙盒绑定均为本地演示，不代表真实服务已上线。</p>`;
+  return `${heading}${toolbar}<div class="table-wrap"><table class="data-table mobile-list"><thead><tr><th scope="col">名称</th><th scope="col">状态</th><th scope="col">接在哪</th><th scope="col">要处理的事</th><th scope="col">操作</th></tr></thead><tbody>${agents.map(agent => {
+    const bindings = [agent.bindings?.widget && '网站小窗', agent.bindings?.contact && '联系页'].filter(Boolean);
+    const pending = pendingItems(agent, state);
+    const first = pending.find(item => item.level === 'block') || pending[0];
+    const online = Boolean(bindings.length);
+    return `<tr><td data-label="名称"><button class="button-link agent-name" type="button" data-action="select-agent" data-id="${escapeHtml(agent.id)}" aria-label="进入${escapeHtml(agent.name)}">${escapeHtml(agent.name)}</button><p class="helper">${escapeHtml(agent.config.goal || '尚未填写服务目标')}</p></td><td data-label="状态">${online ? '线上运行中' : '未上线'}${online && agent.revision !== agent.versions.find(version => version.id === agent.bindings.widget)?.revision ? '<p class="helper">有未上线修改</p>' : ''}</td><td data-label="接在哪">${escapeHtml(bindings.join('、') || '未接入')}</td><td data-label="要处理的事">${escapeHtml(first?.text || '暂无待处理')}</td><td data-label="操作"><div class="button-group">${button('select-agent', '进入', { id: agent.id })}${first ? button('agent-next', '去处理', { id: agent.id, variant: 'ghost' }) : ''}</div></td></tr>`;
+  }).join('')}</tbody></table></div>`;
 }
 
 export function renderCreate(ctx) {
@@ -169,29 +163,24 @@ export function renderCreate(ctx) {
 
 export function renderOverview(ctx) {
   if (!ctx.agent) return unavailable(ctx);
-  const { agent, ready, readonly } = ctx;
+  const { agent, readonly } = ctx;
   const config = agent.config;
-  const indexed = (config.sources || []).filter(source => sourceValid(source, agent.revokedSourceIds || []));
-  const actions = button('set-depth', '查看业务配置', { depth: 'business', variant: 'ghost' });
-  const summary = `<dl class="definition-list"><div><dt>服务对象</dt><dd>${escapeHtml(config.audience || '尚未填写；可先保存草稿')}</dd></div><div><dt>业务目标</dt><dd>${escapeHtml(config.goal || '尚未填写业务目标')}</dd></div><div><dt>能回答什么</dt><dd>${escapeHtml(config.scope || '尚未明确服务范围')}</dd></div><div><dt>暂不能做什么</dt><dd>仅能使用已授权资料与当前模拟动作。真实业务写入、真实模型、消息渠道和云服务均未接入。</dd></div><div><dt>资料外问题</dt><dd>${escapeHtml(config.fallback || '请配置缺资料时的明确答复或转人工出口')}</dd></div><div><dt>人工出口</dt><dd>${escapeHtml(config.handoff?.condition || '尚未设置转人工条件')}；${escapeHtml(config.handoff?.recipient || '尚未登记接收者，无法证明人工已承接')}</dd></div></dl>`;
-  const sources = indexed.length
-    ? `<ul class="summary-list">${indexed.map(source => `<li><span><strong>${escapeHtml(source.title)}</strong><small>${escapeHtml(source.sourceRef || '来源标识待补')} · v${source.version}</small></span>${badge(source.fictional ? '虚构资料 · 演示' : '已登记授权 · 本地', 'neutral')}</li>`).join('')}</ul>`
-    : emptyState('还没有可引用资料', '新增问答并登记授权、有效期和撤回信息，完成演示审阅与索引；网址和复杂文件不会被真实抓取或解析。', button('navigate', readonly ? '查看资料' : '添加与审阅资料', { page: 'knowledge' }));
-  return `${pageHeading('业务概览', '概览、业务配置与详细配置共用同一份草稿；保存不代表发布。', actions)}${nextStep(ctx)}${readonlyNotice(ctx)}${saveState(ctx)}
-    <details class="overview-summary"><summary>服务摘要 · 对象、范围与人工出口</summary><div class="detail-content">${summary}${button('set-section', '查看接待与回答', { section: 'service' })}</div></details>
-    <details class="overview-summary"><summary>资料与业务动作 · ${indexed.length} 项可引用资料，${(config.tools || []).length} 项动作</summary><div class="detail-content">
-    <div class="grid-2">${section('依据资料', sources, { description: `${indexed.length} 项演示可引用；保存、授权、解析与索引是不同事实。`, actions: button('navigate', '管理全部来源', { page: 'knowledge', variant: 'ghost' }) })}${section('当前业务动作', (config.tools || []).length ? `<ul class="summary-list">${config.tools.map(tool => `<li><span><strong>${escapeHtml(tool.title)}</strong><small>${tool.sideEffect === 'write' ? '模拟写入 · 执行前需要确认' : '模拟只读'}</small></span>${badge('模拟', 'neutral')}</li>`).join('')}</ul>` : '<p>现在可以先做知识答疑。尚未配置业务动作，不能办理预约或生成外部结果。</p>', { actions: button('set-section', '配置业务动作', { section: 'tools' }) })}</div>
-    </div></details>
-    <details class="overview-summary"><summary>完整就绪检查 · 分项证据与版本条件</summary><div class="detail-content">${section('分项就绪与下一步', renderReadiness(ready), { description: '脚本模拟、人工批准演示、入口绑定演示分别记录；草稿保存不更新已冻结版本。', actions: `${button('recheck', '重新检查', { disabled: readonly })}${button('navigate', '查看版本与验收', { page: 'versions', variant: 'ghost' })}` })}</div></details>
-    <details class="overview-summary"><summary>使用效果预览 · 未发送消息</summary><div class="detail-content">${section('使用效果预览', `<div class="chat"><div class="chat-message message-assistant"><span class="helper">欢迎语 · 配置预览</span><p>${escapeHtml(config.greeting || '欢迎语尚未填写')}</p></div></div><p class="helper">这是外观与表达预览，没有发送消息。真实送达、人工承接和问题解决需要各自的运行证据。</p>`, { actions: button('navigate', '查看网站客服窗外观', { page: 'widget', variant: 'ghost' }) })}</div></details>`;
+  const sources = config.sources || [];
+  const pending = pendingItems(agent, ctx.state);
+  if (!sources.length && !(config.qaItems || []).length) return `${pageHeading(`${agent.name} · 首页`, '', '')}${readonlyNotice(ctx)}
+    <section class="intake" aria-label="开始配置"><h2>三步让它先能回答问题</h2><ol><li><strong>放资料</strong><p>价格表、政策、话术手册</p><div class="dropzone" data-batch-drop><label class="btn btn-secondary" for="home-batch-files">选择文件</label><input id="home-batch-files" type="file" data-batch-files multiple accept=".csv,.xlsx,.txt,.md,.pdf,.docx" ${readonly ? 'disabled' : ''}></div></li><li><strong>核对</strong><p>先看价格、承诺与说法不一致的内容</p></li><li><strong>试一试</strong><p>直接提问并检查这次答复</p></li></ol><div class="button-group">${button('load-demo-sources', '从示例模板开始', { disabled: readonly })}<label class="btn btn-ghost" for="home-batch-files">导入</label></div></section>`;
+  const first = pending.find(item => item.level === 'block') || pending[0];
+  const indexCount = sources.filter(source => sourceValid(source, agent.revokedSourceIds || [])).length;
+  const recent = (agent.changeLog || []).slice(0, 3);
+  return `${pageHeading(`${agent.name} · 首页`, '', button('navigate', '上线', { page: 'versions' }))}${readonlyNotice(ctx)}
+    <section class="next-step section"><div><p class="eyebrow">${readonly ? '历史版本' : '现在先做'}</p><h2>${escapeHtml(readonly ? '当前配置只读，修改需返回草稿' : first?.text || '当前没有待处理的事')}</h2></div>${readonly ? button('readonly-toggle', '返回可编辑草稿', { variant: 'primary' }) : first ? button('pending-open', first.fix, { id: first.id, variant: 'primary' }) : button('open-trial', '试一试', { variant: 'primary' })}</section>
+    <div class="overview-metrics"><button data-action="navigate" data-page="knowledge"><strong>知识库</strong><span>问答 ${((config.qaItems || []).length || sources.filter(source => source.type === 'FAQ').length)} · 可用资料 ${indexCount}</span></button><button data-action="navigate" data-page="redlines"><strong>红线</strong><span>${(config.businessRules || []).filter(rule => rule.enabled).length} 条在用</span></button><button data-action="navigate" data-page="business"><strong>业务办理</strong><span>${(config.tools || []).length} 项已登记</span></button><button data-action="navigate" data-page="flow"><strong>对话流程</strong><span>${(config.routeGraph?.edges || []).length} 条连接</span></button></div>
+    <section class="overview-changes"><h2>最近改动</h2>${recent.length ? `<ul class="summary-list">${recent.map(change => `<li><span>${escapeHtml(describeChange(change))}<small class="helper">${escapeHtml(change.origin || '人工修改')} · ${formatTime(change.time)}</small></span>${button('open-evidence', '依据', { id: change.id, variant: 'ghost' })}</li>`).join('')}</ul>` : '<p class="muted">还没有改动记录</p>'}</section>`;
 }
 
 function renderService(ctx) {
   const config = ctx.agent.config;
-  const handoff = config.handoff || {};
-  return `${section('接待与回答', `<div class="field"><label for="config-agent-name">专家名称</label><input class="control input" id="config-agent-name" data-agent-name value="${escapeHtml(ctx.agent.name)}" ${ctx.readonly ? 'disabled' : ''}></div><div class="grid-2">${editableField(ctx, '服务对象', 'audience', config.audience)}${editableField(ctx, '服务目标', 'goal', config.goal, { type: 'textarea', rows: 3 })}</div>${editableField(ctx, '回答范围', 'scope', config.scope, { type: 'textarea', help: '列出允许回答的业务范围；不把未确认价格、政策或承诺写成事实。' })}${editableField(ctx, '表达方式', 'tone', config.tone, { help: '只调整表达，不改变权限、确认要求或业务结果。' })}${editableField(ctx, '欢迎语', 'greeting', config.greeting, { type: 'textarea', rows: 3 })}${editableField(ctx, '没有资料或无人承接时如何回答', 'fallback', config.fallback, { type: 'textarea', help: '明确缺什么资料以及可继续的人工入口，不声称已经解决。' })}`, { actions: moduleActions(ctx, 'service') })}
-    ${section('转人工与恢复', `${editableField(ctx, '转人工条件', 'handoff.condition', handoff.condition, { type: 'textarea' })}<div class="grid-2">${editableField(ctx, '接收者或队列', 'handoff.recipient', handoff.recipient, { help: '这里只登记配置；接收者可用与实际承接由会话收件箱记录。' })}${editableField(ctx, '恢复检查等待时间（分钟）', 'handoff.resumeMinutes', handoff.resumeMinutes ?? 10, { type: 'number', help: '等待时间仅触发恢复检查，不自动证明任务完成或重用旧确认。' })}</div>${editableField(ctx, '触发短语', 'handoff.phrases', handoff.phrases || [], { type: 'textarea', format: 'lines', help: '每行一条。当前只是本地模拟触发，真实语义路由下一轮接入。' })}<p class="notice">人工接管、业务取消与问题解决分别留证。恢复前须检查当前占用、资料、权限、预算和确认有效性。</p>`, { actions: moduleActions(ctx, 'handoff') })}
-    ${ctx.state.ui.depth === 'detailed' ? section('表达层与结构化配置的关系', `<p>下面是当前字段的只读组合预览；没有独立隐藏提示词，也不会把硬规则交给表达层修改。</p><pre class="diff-value">${escapeHtml([`服务目标：${config.goal || '未填写'}`, `服务范围：${config.scope || '未填写'}`, `表达方式：${config.tone || '未填写'}`, `缺资料出口：${config.fallback || '未填写'}`].join('\n'))}</pre><p class="helper">模型外规则、工具授权、幂等与结果裁决仍在各自层；预览不代表运行模型已接入。</p>`) : ''}`;
+  return section('接待与回答', `<div class="field"><label for="config-agent-name">专家名称</label><input class="control input" id="config-agent-name" data-agent-name value="${escapeHtml(ctx.agent.name)}" ${ctx.readonly ? 'disabled' : ''}></div><div class="grid-2">${editableField(ctx, '服务对象', 'audience', config.audience)}${editableField(ctx, '服务目标', 'goal', config.goal, { type: 'textarea', rows: 3 })}</div>${editableField(ctx, '回答范围', 'scope', config.scope, { type: 'textarea' })}${editableField(ctx, '表达方式', 'tone', config.tone)}${editableField(ctx, '欢迎语', 'greeting', config.greeting, { type: 'textarea', rows: 3 })}${editableField(ctx, '没有资料时如何回答', 'fallback', config.fallback, { type: 'textarea' })}<p>${button('navigate', '查看和修改转人工红线', { page: 'redlines' })}</p>`);
 }
 
 function renderKnowledgeSummary(ctx) {
@@ -211,10 +200,7 @@ function renderFields(ctx) {
 }
 
 function renderFlow(ctx) {
-  const flow = ctx.agent.config.flow || [];
-  const body = flow.length ? `<ol class="config-list">${flow.map((item, index) => `<li><div class="item-heading"><strong>步骤 ${index + 1} · ${escapeHtml(item.title)}</strong><div class="item-actions">${button('flow-up', '上移', { id: item.id, variant: 'ghost', disabled: ctx.readonly || index === 0 })}${button('flow-down', '下移', { id: item.id, variant: 'ghost', disabled: ctx.readonly || index === flow.length - 1 })}${button('flow-remove', '删除', { id: item.id, variant: 'danger', disabled: ctx.readonly })}</div></div>${editableField(ctx, '步骤名称', `flow.${index}.title`, item.title)}${editableField(ctx, '触发、处理与回退说明', `flow.${index}.instruction`, item.instruction, { type: 'textarea', help: '说明何时进入、下一步、信息不足和失败时怎样结束；不使用任意脚本。' })}<details><summary>步骤标识与执行边界</summary><p class="helper">步骤 ID：<code>${escapeHtml(item.id)}</code>。当前按顺序模拟展示；优先级、任务代次和真实路由事件须由后端合同确认与记录。</p></details></li>`).join('')}</ol>` : emptyState('没有额外服务步骤', '纯问答答疑无需编排预约流程；需要收集信息或确认动作时可以添加步骤。');
-  const add = ctx.readonly ? '' : `<details class="add-section"><summary>添加服务步骤</summary><form class="stack compact-form" data-form="flow">${formField('步骤名称', 'title', { required: true, placeholder: '例如：确认用户希望了解的课程' })}${formField('处理与回退说明', 'instruction', { type: 'textarea', required: true, placeholder: '何时进入、如何处理、缺信息或取消时如何退出' })}${submitButton('添加步骤')}</form></details>`;
-  return section('请求与处理流程', `<p class="notice">请求路由选择当前唯一主请求。步骤文本是策略描述；权限与确认由锁定约束和工具策略决定。</p>${body}${add}`, { description: '请求路由 · 查看顺序、进入与回退，完整编辑当前草稿。', actions: moduleActions(ctx, 'flow') });
+  return section('对话流程', `<p>流程图和列表编辑同一份草稿。此历史入口不再单独编辑顺序步骤。</p>${button('navigate', '打开对话流程', { page: 'flow', variant: 'primary' })}`, { description: '流程只有一个编辑工作面，避免步骤清单和分支图出现不同结果。' });
 }
 
 function renderSkills(ctx) {
@@ -264,7 +250,7 @@ function renderEvidence(ctx) {
   const changeRows = changes.length
     ? `<ul class="config-list">${changes.map(change => `<li><div class="item-heading"><strong><code>${escapeHtml(change.path)}</code> · r${escapeHtml(change.revision)}</strong>${badge(change.origin === '助手建议' ? '助手建议 · 模拟' : change.origin || '来源未记录', 'neutral')}</div><p class="helper">${formatTime(change.time)}${change.source ? ` · ${escapeHtml(change.source)}` : ''}</p><details><summary>查看旧值 / 新值与修改依据</summary><div class="diff-grid"><div><span class="helper">修改前</span><pre class="diff-value">${escapeHtml(diffValue(change.before))}</pre></div><div><span class="helper">修改后</span><pre class="diff-value">${escapeHtml(diffValue(change.after))}</pre></div></div><p class="helper">此记录只描述本地草稿修改；采用后需要重新检查，不自动替换旧入口绑定。</p></details><div class="button-group">${button('set-section', '查看配置所在模块', { section: moduleFor(change.path || ''), variant: 'ghost' })}</div></li>`).join('')}</ul>`
     : emptyState('尚无本地修改差异', '手动编辑或逐项采用模拟建议后，记录会在这里展示；旧数据不会补造历史。');
-  return `${section('版本、有效值与证据', `<dl class="definition-list"><div><dt>当前配置</dt><dd>${ctx.state.ui.previewVersionId ? '当前冻结配置快照' : '同一个专家草稿'} r${escapeHtml(agent.revision)}；概览、业务配置与详细配置读取同一配置对象。</dd></div><div><dt>默认值与当前覆盖</dt><dd>界面展示当前配置的实际有效值。没有可变平台默认注入；已有冻结版本保留自己的值。</dd></div><div><dt>当前试用检查</dt><dd>${agent.checks?.testedRevision === agent.revision ? `r${escapeHtml(agent.revision)} · 本地演示检查` : '当前修改尚未重新检查'}</dd></div><div><dt>人工批准</dt><dd>${agent.checks?.approvedRevision === agent.revision ? `r${escapeHtml(agent.revision)} · 沙盒批准演示` : '当前草稿未批准'}</dd></div><div><dt>入口绑定</dt><dd>网站客服窗：${escapeHtml(agent.bindings?.widget || '未绑定')}；联系页：${escapeHtml(agent.bindings?.contact || '未绑定')}。修改草稿不自动替换旧绑定。</dd></div></dl><p class="notice">变更会使当前检查与审批待重验，旧运行和冻结版本保留自己的快照。服务端审计、完整依赖与真实发布门禁 尚未接入。</p>`, { actions: `${button('recheck', '检查当前草稿', { disabled: ctx.readonly })}${button('navigate', '查看版本与差异', { page: 'versions' })}${button('export-config', '导出当前配置', { variant: 'ghost' })}` })}
+  return `${section('版本、有效值与依据', `<dl class="definition-list"><div><dt>当前配置</dt><dd>${ctx.state.ui.previewVersionId ? '当前冻结配置快照' : '当前专家草稿'}；所有工作面读取同一配置。</dd></div><div><dt>默认值与当前覆盖</dt><dd>界面展示当前配置的实际有效值。没有可变平台默认注入；已有冻结版本保留自己的值。</dd></div><div><dt>当前测试结果</dt><dd>${agent.checks?.testedRevision === agent.revision ? '当前草稿已通过本地测试题回放' : '当前修改尚未通过测试题回放'}</dd></div><div><dt>人工批准</dt><dd>${agent.checks?.approvedRevision === agent.revision ? '当前版本已完成人工本地确认' : '当前草稿未批准'}</dd></div><div><dt>入口绑定</dt><dd>网站小窗：${escapeHtml(agent.bindings?.widget || '未绑定')}；联系页：${escapeHtml(agent.bindings?.contact || '未绑定')}。修改草稿不自动替换旧绑定。</dd></div></dl><p class="notice">变更会使当前测试结果与批准待重验，旧运行和冻结版本保留自己的快照。服务端审计、完整依赖与真实发布门禁尚未接入。</p>`, { actions: `${button('navigate', '查看测试题', { page: 'test' })}${button('navigate', '查看版本', { page: 'versions' })}${button('export-config', '导出当前配置', { variant: 'ghost' })}` })}
     ${section('本地字段来源', sourceRows, { description: '人工修改与助手采用保存在浏览器；手动字段默认受保护。这不是服务端审计。' })}
     ${section('本地修改差异', changeRows, { description: '最近最多 100 条草稿修改，包含来源、修订、时间与旧值/新值。冻结版本的完整来源审计尚未接入。' })}`;
 }
@@ -273,13 +259,14 @@ export function renderConfiguration(ctx) {
   if (!ctx.agent) return unavailable(ctx);
   const detailed = ctx.state.ui.depth === 'detailed';
   const { active, navigation } = configNavigation(ctx);
+  const link = (title, page) => section(title, `<p>在同一份草稿的专用页面查看和修改。</p>${button('navigate', `打开${title}`, { page, variant: 'primary' })}`);
   const renderers = {
-    service: renderService, knowledge: renderKnowledgeSummary, flow: renderFlow, fields: renderFields,
-    skills: renderSkills, rules: renderRules, tools: renderTools, outcome: renderOutcome,
-    model: renderModel, evidence: renderEvidence,
+    service: renderService, knowledge: () => link('知识库', 'knowledge'), flow: renderFlow, fields: renderFields,
+    skills: () => link('对话流程', 'flow'), rules: () => link('红线', 'redlines'), tools: () => link('业务办理', 'business'), outcome: () => `<details><summary>技术详情 · 结果记录要求</summary>${renderOutcome(ctx)}</details>`,
+    model: () => `<details open><summary>技术详情 · 模型连接与预算</summary>${renderModel(ctx)}</details>`,
   };
   const layers = detailed ? `<details class="section layer-map"><summary>六层配置与当前页面的关系</summary><dl class="definition-list">${modules.filter(item => item.layer).map(item => `<div><dt>${item.layer}</dt><dd>${item.title} · ${item.summary}</dd></div>`).join('')}</dl><p class="helper">接待表达、字段、模型、应用外观与版本证据围绕同一六层配置工作，不增加第七个业务层，也不暴露框架私有状态。</p></details>` : '';
-  return `${pageHeading(detailed ? '详细配置与证据' : '业务配置', detailed ? '查看六层定义、实际有效值、受保护边界与版本依据。未决合同明确保留，不用配置原文代替业务配置。' : '从日常业务模块编辑同一份草稿；需要时下探完整定义与证据。', `<div class="button-group">${button('navigate', '脚本模拟', { page: 'trial' })}${button('toggle-assistant', ctx.state.ui.assistantOpen ? '关闭创作助手' : '创作助手（后续）', { variant: 'ghost' })}</div>`)}${readonlyNotice(ctx)}${saveState(ctx)}${layers}<div class="config-layout">${navigation}<div class="config-module" id="module-${active.id}">${renderers[active.id](ctx)}</div></div>`;
+  return `${pageHeading('更多设置', '', `<div class="button-group">${button('navigate', '返回设置', { page: 'settings' })}${button('evidence-open', '依据', { variant: 'ghost' })}${button('export-config', '导出草稿', { variant: 'ghost' })}</div>`)}${readonlyNotice(ctx)}${saveState(ctx)}${layers}<div class="config-layout">${navigation}<div class="config-module" id="module-${active.id}">${renderers[active.id](ctx)}</div></div>`;
 }
 
 function diffValue(value) {

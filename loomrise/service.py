@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ from .contracts import (
     Channel,
     RequestState,
     Run,
+    RunAdmission,
     RunStatus,
     ScenarioPack,
     ServiceRequest,
@@ -71,6 +72,8 @@ class RunResult:
     written_result_ids: list[str] = field(default_factory=list)
     context_audit: dict[str, Any] = field(default_factory=dict)
     outcomes: list[str] = field(default_factory=list)
+    admission_status: str = "created"
+    run_status: RunStatus | None = None
 
     @property
     def write_count(self) -> int:
@@ -127,6 +130,8 @@ class ExecutionService:
         script: list[dict[str, Any]] | None = None,
         ask_confirm: Callable[[list[Any]], list[bool]] | None = None,
         failure_mode: str | None = None,
+        trigger_event_id: str | None = None,
+        trigger_kind: str | None = None,
     ) -> RunResult:
         return await self._handle(
             text,
@@ -135,6 +140,8 @@ class ExecutionService:
             script=script,
             ask_confirm=ask_confirm,
             failure_mode=failure_mode,
+            trigger_event_id=trigger_event_id,
+            trigger_kind=trigger_kind,
         )
 
     async def handle_utterance(
@@ -146,6 +153,8 @@ class ExecutionService:
         script: list[dict[str, Any]] | None = None,
         ask_confirm: Callable[[list[Any]], list[bool]] | None = None,
         failure_mode: str | None = None,
+        trigger_event_id: str | None = None,
+        trigger_kind: str | None = None,
     ) -> RunResult:
         """语音入口：与文字共用同一业务请求、权限与结果。"""
         return await self._handle(
@@ -156,6 +165,8 @@ class ExecutionService:
             script=script,
             ask_confirm=ask_confirm,
             failure_mode=failure_mode,
+            trigger_event_id=trigger_event_id,
+            trigger_kind=trigger_kind,
         )
 
     def cancel(self, request_id: str, *, run_id: str, reason: str = "user_cancel") -> bool:
@@ -195,21 +206,43 @@ class ExecutionService:
         ask_confirm: Callable[[list[Any]], list[bool]] | None = None,
         failure_mode: str | None = None,
         media_session_id: str | None = None,
+        trigger_event_id: str | None = None,
+        trigger_kind: str | None = None,
     ) -> RunResult:
         av = self.pack.agent_version
         req = request or self._new_request(channel, text)
-        self.requests[req.request_id] = req
+        if req.tenant_id != self.tenant_id:
+            raise ValueError("请求租户与执行服务不一致")
+        # 事件身份属于本轮输入，不能从上一轮可变请求继承。
+        candidate = replace(req, channel=channel, agent_version=av.version_id,
+                            state=RequestState.RUNNING,
+                            trigger_event_id=trigger_event_id,
+                            trigger_kind=req.trigger_kind if trigger_kind is None else trigger_kind)
+        if trigger_event_id is not None and self.durable is None:
+            raise ValueError("事件级幂等需要持久 store")
         run: Run | None = None
+        admission: RunAdmission | None = None
         if self.durable is not None:
-            run = self.durable.begin(
-                req,
+            admission = self.durable.begin(
+                candidate,
                 agent_version=av.version_id,
                 snapshot={"skill_routing": self.pack.routing,
                           "context_budget": av.context_budget_tokens},
+                scenario_pack_id=av.scenario_pack_id,
+                input_text=text,
+                event_seq=len(self.ledger.events),
+                media_session_id=media_session_id,
             )
+            run = admission.run
+            if admission.status != "created":
+                return RunResult(admission.request, run.run_id,
+                                 admission_status=admission.status, run_status=run.status)
             run_id = run.run_id
         else:
             run_id = new_id("run")
+        req.trigger_event_id = trigger_event_id
+        req.trigger_kind = candidate.trigger_kind
+        self.requests[req.request_id] = req
         req.state = RequestState.RUNNING
         self._active[run_id] = asyncio.current_task()
 
@@ -225,7 +258,11 @@ class ExecutionService:
                 **payload,
             )
 
-        emit("run.started", trigger_kind=req.trigger_kind, input=text)
+        if admission is not None and admission.first_event is not None:
+            self.ledger.record(admission.first_event, persist=False)
+        else:
+            emit("run.started", trigger_kind=candidate.trigger_kind, input=text,
+                 event_deduplication=False)
 
         # 1) 路由（确定性，不交给模型）
         skill_id = self._route(text)
@@ -357,7 +394,8 @@ class ExecutionService:
             emit("run.cancel_confirmed", write_prevented=not written, business_action_revoked=False, result_ids=written)
             emit("run.finished", request_state=req.state.value, write_count=len(written), result_ids=written)
             close_run()
-            return RunResult(req, run_id, written_result_ids=written, context_audit=ctx.audit_answer(), outcomes=outcomes)
+            return RunResult(req, run_id, written_result_ids=written, context_audit=ctx.audit_answer(),
+                             outcomes=outcomes, run_status=run.status if run else None)
 
         try:
             async for etype, evt in drive_reply(
@@ -425,6 +463,7 @@ class ExecutionService:
             written_result_ids=written,
             context_audit=ctx.audit_answer(),
             outcomes=outcomes,
+            run_status=run.status if run else None,
         )
 
     # -- 辅助 --------------------------------------------------------------

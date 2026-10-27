@@ -10,15 +10,18 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .contracts import (
     GENESIS_HASH,
     Run,
+    RunAdmission,
     RunEvent,
     RunStatus,
     ServiceRequest,
     new_id,
+    sha256,
 )
 from .durable_store import RecoveryReport, SqliteStore
 
@@ -60,7 +63,13 @@ class DurableRunAdapter:
         lineage_parent: str | None = None,
         generation: int = 1,
         attempt_id: str | None = None,
-    ) -> Run:
+        scenario_pack_id: str = "",
+        input_text: str = "",
+        event_seq: int = 0,
+        media_session_id: str | None = None,
+    ) -> RunAdmission:
+        if request.tenant_id != self.tenant_id:
+            raise ValueError("请求租户与执行服务不一致")
         run = Run(
             run_id=new_id("run"),
             request_id=request.request_id,
@@ -72,8 +81,25 @@ class DurableRunAdapter:
             lineage_parent=lineage_parent,
             snapshot=dict(snapshot or {}),
         )
+        if request.event_identity(scenario_pack_id) is not None:
+            payload_hash = sha256(json.dumps({
+                "text": input_text,
+                "subject_id": request.persistent_subject,
+                "subject_scope": str(request.subject_scope),
+            }, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            first = RunEvent(
+                seq=event_seq, event_type="run.started", request_id=request.request_id,
+                run_id=run.run_id, tenant_id=request.tenant_id, agent_version=agent_version,
+                channel=str(request.channel), media_session_id=media_session_id,
+                payload={"trigger_kind": request.trigger_kind, "input": input_text,
+                         "trigger_event_id": request.trigger_event_id, "event_deduplication": True},
+            ).seal(GENESIS_HASH)
+            return self.store.admit_event(
+                request, run, scenario_pack_id=scenario_pack_id,
+                payload_hash=payload_hash, first_event=first,
+            )
         self.store.begin_run(request, run, [])
-        return run
+        return RunAdmission("created", request, run)
 
     def persist(self, evt: RunEvent) -> None:
         """事件落库入口（挂在 `EventLedger.sink` 上，逐条调用）。
