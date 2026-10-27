@@ -365,6 +365,13 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Run the R1 configuration CLI through the established command tree."""
+    from .config_cli import main as configuration_main
+
+    return configuration_main(args.config_args)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="loomrise", description="Loomrise S1 执行内核")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -391,6 +398,10 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("audit", help="查看账本与上下文审计")
     a.add_argument("--ledger", required=True)
     a.set_defaults(func=cmd_audit)
+
+    cfg = sub.add_parser("config", help="读取和修改版本化配置草稿")
+    cfg.add_argument("config_args", nargs=argparse.REMAINDER)
+    cfg.set_defaults(func=cmd_config)
 
     c = sub.add_parser("configure-model", help="一次性录入本机 Coding Plan 凭据")
     c.set_defaults(func=lambda _: __import__("loomrise.local_config", fromlist=["configure"]).configure() or 0)

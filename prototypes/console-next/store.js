@@ -101,7 +101,7 @@ export function createStore(storage = null, seed = initialState()) {
   }
   if (routeScope(state.ui.page) === 'workspace') leaveAgentContext();
   function resolveConfigurationSection() {
-    if (state.ui.page !== 'configuration' || ['service', 'knowledge', 'flow', 'fields', 'skills', 'rules', 'tools', 'outcome', 'model', 'evidence'].includes(state.ui.section)) return;
+    if (state.ui.page !== 'configuration' || ['service', 'knowledge', 'flow', 'fields', 'skills', 'rules', 'tools', 'outcome', 'model', 'evidence', 'r1-server'].includes(state.ui.section)) return;
     const agent = currentAgent();
     const snapshot = agent?.versions.find(version => version.id === state.ui.previewVersionId);
     const ready = readiness(snapshot ? { ...agent, config: snapshot.config } : agent, state.connections);

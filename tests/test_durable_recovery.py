@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""重启恢复自检：旧代不复活、中断事实保留、幂等索引跨重启。
-
-对应矩阵 `M-A-02`（重启可续）、`M-A-03`（不丢义务/不重复）与细化行 `M-A-19`
-（提交可见性与 lineage）。全部本地执行，不触网、不调模型。
-"""
+"""重启恢复自检：旧代不复活、中断事实保留、待确认状态与幂等索引跨重启。"""
 
 from __future__ import annotations
 
@@ -23,6 +19,7 @@ from loomrise.contracts import (  # noqa: E402
     RunEvent,
     ScenarioPack,
     ServiceRequest,
+    SubjectScope,
     new_id,
 )
 from loomrise.durable_adapter import DurableRunAdapter, action_key  # noqa: E402
@@ -90,6 +87,30 @@ class TestPersistedRun(Base):
         finally:
             store.close()
 
+    async def test_confirmation_wait_is_persisted_before_the_callback(self) -> None:
+        svc, store = self.service("p1")
+        observed: list[str] = []
+
+        async def confirm(calls):
+            request = next(iter(svc.requests.values()))
+            persisted = store.request_row(request.request_id)
+            observed.append(persisted["state"])
+            self.assertEqual(request.state, RequestState.WAITING_CONFIRM)
+            return [True] * len(calls)
+
+        try:
+            result = await svc.handle_text(
+                self.case.turns[0]["text"], script=self.case.script,
+                ask_confirm=confirm,
+            )
+            self.assertEqual(observed, [RequestState.WAITING_CONFIRM.value])
+            self.assertEqual(
+                store.request_row(result.request.request_id)["state"],
+                RequestState.SUCCESS.value,
+            )
+        finally:
+            store.close()
+
     async def test_no_store_means_no_behavior_change(self) -> None:
         svc = ExecutionService(self.pack)
         r = await svc.handle_text(
@@ -100,11 +121,41 @@ class TestPersistedRun(Base):
 
 
 class TestRecovery(Base):
+    async def test_subject_scope_controls_subject_id_durability(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter = DurableRunAdapter(store1, owner_id="p1")
+
+        ephemeral = queued_request(self.pack.agent_version.version_id)
+        ephemeral.subject_id = "session-only-subject"
+        ephemeral.subject_scope = SubjectScope.EPHEMERAL
+        mapped = queued_request(self.pack.agent_version.version_id)
+        mapped.subject_id = "customer-42"
+        mapped.subject_scope = SubjectScope.MAPPED
+        adapter.begin(ephemeral, agent_version=self.pack.agent_version.version_id)
+        adapter.begin(mapped, agent_version=self.pack.agent_version.version_id)
+        store1.close()
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        try:
+            self.assertIsNone(store2.request_row(ephemeral.request_id)["subject_id"])
+            self.assertEqual(
+                store2.request_row(ephemeral.request_id)["subject_scope"],
+                SubjectScope.EPHEMERAL.value,
+            )
+            self.assertEqual(store2.request_row(mapped.request_id)["subject_id"], "customer-42")
+            self.assertEqual(
+                store2.request_row(mapped.request_id)["subject_scope"],
+                SubjectScope.MAPPED.value,
+            )
+        finally:
+            store2.close()
+
     async def test_local_running_is_interrupted_not_resumed(self) -> None:
         """进程在收尾前消失：旧运行记失败，不续跑（Task §7.1）。"""
         store1 = SqliteStore(self.path, owner_id="p1")
         adapter = DurableRunAdapter(store1, owner_id="p1")
         request = queued_request(self.pack.agent_version.version_id)
+        request.state = RequestState.RUNNING
         run = adapter.begin(request, agent_version=self.pack.agent_version.version_id).run
         adapter.persist(
             RunEvent(
@@ -123,8 +174,54 @@ class TestRecovery(Base):
             row = store2.run_row(run.run_id)
             self.assertEqual(row["status"], "failed")
             self.assertEqual(row["finish_reason"], "restart_interrupted")
+            self.assertEqual(store2.request_row(request.request_id)["state"], RequestState.FAILED.value)
             self.assertEqual(store2.load_events(run.run_id)[-1].event_type, "run.interrupted")
             self.assertTrue(store2.verify_chain())
+        finally:
+            store2.close()
+
+    async def test_waiting_confirmation_remains_discoverable_without_reviving_old_run(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter1 = DurableRunAdapter(store1, owner_id="p1")
+        request = queued_request(self.pack.agent_version.version_id)
+        run = adapter1.begin(request, agent_version=self.pack.agent_version.version_id).run
+        store1.set_request_state(request.request_id, RequestState.WAITING_CONFIRM.value)
+        store1.close()
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        try:
+            store2.recover(owner_id="p2")
+            recovered = store2.request_row(request.request_id)
+            self.assertEqual(recovered["state"], RequestState.WAITING_CONFIRM.value)
+            self.assertEqual(recovered["latest_run_id"], run.run_id)
+            self.assertEqual(recovered["latest_run_status"], "failed")
+            self.assertEqual(
+                [item["request_id"] for item in store2.recoverable_requests(tenant_id="tenant_demo")],
+                [request.request_id],
+            )
+            event_count = len(store2.load_events(run.run_id))
+            store2.recover(owner_id="p2")
+            self.assertEqual(len(store2.load_events(run.run_id)), event_count)
+            self.assertFalse(store2.is_running(run.run_id))
+        finally:
+            store2.close()
+
+    async def test_cancelled_request_state_does_not_reenter_recovery_list(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter1 = DurableRunAdapter(store1, owner_id="p1")
+        request = queued_request(self.pack.agent_version.version_id)
+        adapter1.begin(request, agent_version=self.pack.agent_version.version_id)
+        store1.set_request_state(request.request_id, RequestState.CANCELLED.value)
+        store1.close()
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        try:
+            store2.recover(owner_id="p2")
+            self.assertEqual(store2.request_row(request.request_id)["state"], RequestState.CANCELLED.value)
+            self.assertNotIn(
+                request.request_id,
+                [item["request_id"] for item in store2.recoverable_requests(tenant_id="tenant_demo")],
+            )
         finally:
             store2.close()
 
@@ -152,8 +249,8 @@ class TestRecovery(Base):
         finally:
             store2.close()
 
-    async def test_idempotent_key_survives_restart(self) -> None:
-        """重启后同一幂等键不能再写一次，且内存索引按裸键恢复。"""
+    async def test_idempotent_key_survives_restart_across_channels(self) -> None:
+        """重启后换渠道重试同一操作，仍复用原结果且不重复落副作用。"""
         svc1, store1 = self.service("p1")
         r1 = await svc1.handle_text(
             self.case.turns[0]["text"], script=self.case.script, ask_confirm=confirm_all,
@@ -165,13 +262,22 @@ class TestRecovery(Base):
         try:
             svc2 = ExecutionService(self.pack, store=store2, owner_id="p2")
             self.assertEqual(svc2._writes.get("idem-c2"), result_id)  # noqa: SLF001
-            r2 = await svc2.handle_text(
-                self.case.turns[0]["text"], script=self.case.script, ask_confirm=confirm_all,
+            r2 = await svc2.handle_utterance(
+                self.case.turns[0]["text"], media_session_id="restart-voice",
+                script=self.case.script, ask_confirm=confirm_all,
             )
+            self.assertNotEqual(r2.run_id, r1.run_id)
+            self.assertEqual(r2.request.channel, Channel.VOICE)
             # 同一幂等键不得产生第二次业务写入
             self.assertEqual(r2.write_count, 0, r2.written_result_ids)
             n = store2._conn.execute("SELECT COUNT(*) AS n FROM idempotency").fetchone()["n"]
             self.assertEqual(n, 1)
+            persisted = store2._conn.execute(
+                "SELECT result_id FROM idempotency WHERE key=?",
+                (action_key("create_booking", "idem-c2"),),
+            ).fetchone()
+            self.assertEqual(persisted["result_id"], result_id)
+            self.assertEqual(len(store2.pending_outbox()), 1)
             self.assertTrue(store2.verify_chain())
         finally:
             store2.close()

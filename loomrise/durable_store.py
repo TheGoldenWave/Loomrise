@@ -24,7 +24,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -113,6 +113,39 @@ CREATE TABLE IF NOT EXISTS event_admission_conflicts (
   payload_hash TEXT NOT NULL,
   observed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS configuration_drafts (
+  tenant_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  base_version_id TEXT,
+  config_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, agent_id)
+);
+CREATE TABLE IF NOT EXISTS configuration_stable_versions (
+  tenant_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  version_id TEXT NOT NULL,
+  config_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, agent_id, version_id)
+);
+CREATE TABLE IF NOT EXISTS change_proposals (
+  tenant_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  source_revision INTEGER NOT NULL,
+  base_version_id TEXT,
+  config_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, agent_id, candidate_id),
+  UNIQUE (tenant_id, agent_id, idempotency_key)
+);
 """
 
 
@@ -161,6 +194,7 @@ class SqliteStore:
             for stmt in statements:
                 cur.execute(stmt)
             row = cur.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            previous_version = int(row["value"]) if row is not None else 0
             if row is None:
                 cur.execute(
                     "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
@@ -173,6 +207,15 @@ class SqliteStore:
             columns = {r["name"] for r in cur.execute("PRAGMA table_info(requests)")}
             if "trigger_event_id" not in columns:
                 cur.execute("ALTER TABLE requests ADD COLUMN trigger_event_id TEXT")
+            if "subject_scope" not in columns:
+                cur.execute("ALTER TABLE requests ADD COLUMN subject_scope TEXT")
+                cur.execute("UPDATE requests SET subject_id=NULL WHERE subject_id IS NOT NULL")
+            elif previous_version < 4:
+                # Only explicitly mapped identifiers are durable; legacy scope cannot prove that.
+                cur.execute(
+                    "UPDATE requests SET subject_id=NULL "
+                    "WHERE subject_scope IS NULL OR subject_scope<>'mapped'",
+                )
             cur.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(SCHEMA_VERSION),))
 
     @contextmanager
@@ -217,7 +260,7 @@ class SqliteStore:
             " updated_at=excluded.updated_at",
             (
                 request.request_id, request.tenant_id, request.agent_version,
-                str(request.channel), str(request.state), request.subject_id,
+                str(request.channel), str(request.state), request.persistent_subject,
                 str(request.subject_scope), request.trigger_kind, request.trigger_ref,
                 request.created_at, request.updated_at, request.trigger_event_id,
             ),
@@ -422,6 +465,15 @@ class SqliteStore:
             )
             self._append(cur, [event])
 
+    def set_request_state(self, request_id: str, state: str) -> None:
+        with self._tx() as cur:
+            updated = cur.execute(
+                "UPDATE requests SET state=?,updated_at=? WHERE request_id=?",
+                (state, now_iso(), request_id),
+            ).rowcount
+            if not updated:
+                raise KeyError(f"未知 request {request_id}")
+
     # -- 恢复 --------------------------------------------------------------
     def recover(
         self, *, reason: str = "restart_interrupted", owner_id: str | None = None,
@@ -466,6 +518,11 @@ class SqliteStore:
                     " WHERE run_id=? AND status='running'",
                     (now_iso(), reason, row["run_id"]),
                 )
+                cur.execute(
+                    "UPDATE requests SET state='failed',updated_at=?"
+                    " WHERE request_id=? AND state='running'",
+                    (now_iso(), row["request_id"]),
+                )
                 self._append(cur, [evt])
             report.interrupted.append(row["run_id"])
         with self._lock:
@@ -494,6 +551,39 @@ class SqliteStore:
             row = self._conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
         return dict(row) if row else None
 
+    def request_row(self, request_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT q.*,(SELECT r.run_id FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_run_id,"
+                "(SELECT r.status FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_run_status,"
+                "(SELECT r.occupancy_generation FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_generation"
+                " FROM requests q WHERE q.request_id=?",
+                (request_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def recoverable_requests(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            query = (
+                "SELECT q.*,(SELECT r.run_id FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_run_id,"
+                "(SELECT r.status FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_run_status,"
+                "(SELECT r.occupancy_generation FROM runs r WHERE r.request_id=q.request_id"
+                " ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_generation"
+                " FROM requests q WHERE q.state IN ('queued','waiting_confirm')"
+            )
+            params: tuple[str, ...] = ()
+            if tenant_id is not None:
+                query += " AND q.tenant_id=?"
+                params = (tenant_id,)
+            query += " ORDER BY q.created_at,q.request_id"
+            rows = self._conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def pending_outbox(self) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
@@ -501,11 +591,243 @@ class SqliteStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def mark_outbox(self, outbox_id: str, *, state: str = "delivered") -> None:
+    def note_outbox_attempt(self, outbox_id: str) -> bool:
+        """Count a delivery attempt while leaving the row retryable until ack."""
         with self._tx() as cur:
+            row = cur.execute(
+                "SELECT state FROM outbox WHERE id=?", (outbox_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"未知 outbox {outbox_id}")
+            if row["state"] != "pending":
+                return False
             cur.execute(
-                "UPDATE outbox SET state=?, attempts=attempts+1, delivered_at=? WHERE id=?",
-                (state, now_iso(), outbox_id),
+                "UPDATE outbox SET attempts=attempts+1 WHERE id=? AND state='pending'",
+                (outbox_id,),
+            )
+            return True
+
+    # -- 配置草稿、稳定快照与冻结候选 ------------------------------------
+    @staticmethod
+    def _config_json(value: dict[str, Any]) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _config_row(cls, row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        for key in ("config_json", "diff_json"):
+            if key in result:
+                result[key.removesuffix("_json")] = json.loads(result.pop(key))
+        return result
+
+    def register_stable_config(
+        self, *, tenant_id: str, agent_id: str, version_id: str,
+        config: dict[str, Any], content_hash: str,
+    ) -> dict[str, Any]:
+        """登记导入/现有的稳定快照；重复登记只接受完全相同内容。"""
+        encoded = self._config_json(config)
+        with self._tx() as cur:
+            current = cur.execute(
+                "SELECT * FROM configuration_stable_versions"
+                " WHERE tenant_id=? AND agent_id=? AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+            if current is not None:
+                if current["content_hash"] != content_hash or current["config_json"] != encoded:
+                    raise ValueError("稳定版本标识已绑定其他内容")
+                return self._config_row(current)
+            cur.execute(
+                "INSERT INTO configuration_stable_versions"
+                " (tenant_id,agent_id,version_id,config_json,content_hash,created_at)"
+                " VALUES(?,?,?,?,?,?)",
+                (tenant_id, agent_id, version_id, encoded, content_hash, now_iso()),
+            )
+            row = cur.execute(
+                "SELECT * FROM configuration_stable_versions"
+                " WHERE tenant_id=? AND agent_id=? AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+            return self._config_row(row)
+
+    def get_stable_config(
+        self, *, tenant_id: str, agent_id: str, version_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM configuration_stable_versions"
+                " WHERE tenant_id=? AND agent_id=? AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+        return self._config_row(row) if row else None
+
+    def list_stable_configs(
+        self, *, tenant_id: str, agent_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT tenant_id,agent_id,version_id,content_hash,created_at"
+                " FROM configuration_stable_versions"
+                " WHERE tenant_id=? AND agent_id=? ORDER BY created_at,version_id",
+                (tenant_id, agent_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_config_draft(
+        self, *, tenant_id: str, agent_id: str, base_version_id: str | None,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        with self._tx() as cur:
+            current = cur.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+            if current is not None:
+                if current["base_version_id"] != base_version_id:
+                    raise ValueError("该专家已有基于其他稳定版本的草稿")
+                return self._config_row(current)
+            if base_version_id is not None:
+                base = cur.execute(
+                    "SELECT 1 FROM configuration_stable_versions"
+                    " WHERE tenant_id=? AND agent_id=? AND version_id=?",
+                    (tenant_id, agent_id, base_version_id),
+                ).fetchone()
+                if base is None:
+                    raise KeyError("未知稳定版本")
+            cur.execute(
+                "INSERT INTO configuration_drafts"
+                " (tenant_id,agent_id,revision,base_version_id,config_json,updated_at)"
+                " VALUES(?,?,1,?,?,?)",
+                (tenant_id, agent_id, base_version_id, self._config_json(config), now_iso()),
+            )
+            row = cur.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+            return self._config_row(row)
+
+    def get_config_draft(self, *, tenant_id: str, agent_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+        return self._config_row(row) if row else None
+
+    def save_config_draft(
+        self, *, tenant_id: str, agent_id: str, expected_revision: int,
+        config: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Compare-and-swap save; returns (saved, current-on-conflict)."""
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知配置草稿")
+            if row["revision"] != expected_revision:
+                return None, self._config_row(row)
+            cur.execute(
+                "UPDATE configuration_drafts SET revision=revision+1,config_json=?,updated_at=?"
+                " WHERE tenant_id=? AND agent_id=? AND revision=?",
+                (self._config_json(config), now_iso(), tenant_id, agent_id, expected_revision),
+            )
+            updated = cur.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+            return self._config_row(updated), None
+
+    def freeze_config_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        idempotency_key: str, expected_revision: int, content_hash: str,
+        diff: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Freeze the exact current draft revision as an immutable proposal."""
+        with self._tx() as cur:
+            existing = cur.execute(
+                "SELECT * FROM change_proposals WHERE tenant_id=? AND agent_id=? AND idempotency_key=?",
+                (tenant_id, agent_id, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                proposal = self._config_row(existing)
+                if (proposal["source_revision"] == expected_revision
+                        and proposal["content_hash"] == content_hash):
+                    return proposal, None
+                raise ValueError("幂等键已用于其他候选内容")
+
+            draft = cur.execute(
+                "SELECT * FROM configuration_drafts WHERE tenant_id=? AND agent_id=?",
+                (tenant_id, agent_id),
+            ).fetchone()
+            if draft is None:
+                raise KeyError("未知配置草稿")
+            if draft["revision"] != expected_revision:
+                return None, self._config_row(draft)
+            config_json = draft["config_json"]
+            actual_hash = __import__("hashlib").sha256(config_json.encode("utf-8")).hexdigest()
+            if actual_hash != content_hash:
+                raise ValueError("候选内容与当前草稿不一致")
+            cur.execute(
+                "INSERT INTO change_proposals"
+                " (tenant_id,agent_id,candidate_id,idempotency_key,source_revision,base_version_id,"
+                "config_json,content_hash,diff_json,status,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,'frozen',?)",
+                (tenant_id, agent_id, candidate_id, idempotency_key, expected_revision,
+                 draft["base_version_id"], config_json, content_hash,
+                 json.dumps(diff, ensure_ascii=False, sort_keys=True, separators=(",", ":")), now_iso()),
+            )
+            row = cur.execute(
+                "SELECT * FROM change_proposals WHERE tenant_id=? AND agent_id=? AND candidate_id=?",
+                (tenant_id, agent_id, candidate_id),
+            ).fetchone()
+            return self._config_row(row), None
+
+    def get_config_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM change_proposals"
+                " WHERE tenant_id=? AND agent_id=? AND candidate_id=?",
+                (tenant_id, agent_id, candidate_id),
+            ).fetchone()
+        return self._config_row(row) if row else None
+
+    def get_config_candidate_by_idempotency_key(
+        self, *, tenant_id: str, agent_id: str, idempotency_key: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM change_proposals"
+                " WHERE tenant_id=? AND agent_id=? AND idempotency_key=?",
+                (tenant_id, agent_id, idempotency_key),
+            ).fetchone()
+        return self._config_row(row) if row else None
+
+    def list_config_candidates(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM change_proposals WHERE tenant_id=? AND agent_id=? ORDER BY created_at,candidate_id",
+                (tenant_id, agent_id),
+            ).fetchall()
+        return [self._config_row(row) for row in rows]
+
+    def mark_outbox(self, outbox_id: str, *, state: str = "delivered") -> None:
+        if state != "delivered":
+            raise ValueError("outbox 只允许在消费者成功后标记 delivered")
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT state FROM outbox WHERE id=?", (outbox_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"未知 outbox {outbox_id}")
+            if row["state"] == "delivered":
+                return
+            cur.execute(
+                "UPDATE outbox SET state='delivered', delivered_at=?"
+                " WHERE id=? AND state='pending'",
+                (now_iso(), outbox_id),
             )
 
 

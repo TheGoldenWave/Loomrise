@@ -1,6 +1,6 @@
-# 架构与对象权威 v0.15
+# 架构与对象权威 v0.16
 
-状态：2026-10-23，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。本版补充 [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 的执行耐久机制参照，并按 Task §7.1 明确恢复裁决；**未引入依赖或实现 Adapter**。网页音频、真实模型端到端 SSE、完整持久化与重启恢复仍待验证。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
+状态：2026-10-27，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；R1 SQLite 配置服务、HTTP/MCP/CLI 共用应用服务及配置工作面的本机 fixture 浏览器联调已有实现与验证证据，但 R1 Gate 未通过。六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。本版补充 [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 的执行耐久机制参照，并按 Task §7.1 明确恢复裁决；**未引入依赖或实现 Adapter**。网页音频、真实模型端到端 SSE、完整持久化、TaskItem 撤销恢复与生产身份仍待验证。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)、[R1 证据摘要](reports/R1-EVIDENCE.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
 
 项目采用**交付工作台 + 官方客服应用 + 统一执行内核 + 分类适配器**，区分**产品控制面**、**客服会话与一线操作**、**业务执行**、**媒体与渠道**、**知识摄入与检索**、**业务工具**、**观测与评测**、**部署交付**。首个云交付以单 Agent、单租户实例为目标；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -169,7 +169,7 @@ pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺�
 
 | 阶段 | 采用范围 | 当前状态与硬边界 |
 |---|---|---|
-| S2-a / R1 | 先落 `Run`、可选 `TaskAttempt` 关联及请求/事件/幂等/outbox 存储合同；定义 `DurableRunAdapter` 接口，以无副作用步骤验证事务提交可见性、重启裁决、重复提交和旧 generation，不建设完整 Task 调度。Checkpoint 可作为实现机制，是否采用由 R1 选型/设计 Gate 决定 | **未实现**。S1 仍是进程内请求、活动任务、幂等与状态；JSONL 只恢复事件，不能恢复完整请求或业务结果 |
+| S2-a / R1 | 先落 `Run`、可选 `TaskAttempt` 关联及请求/事件/幂等/outbox 存储合同；定义 `DurableRunAdapter` 接口，以无副作用步骤验证事务提交可见性、重启裁决、重复提交和旧 generation，不建设完整 Task 调度。Checkpoint 可作为实现机制，是否采用由 R1 选型/设计 Gate 决定 | **部分实现（2026-10-27）**。SQLite 耐久层、loopback 配置 HTTP、共用配置服务、CLI/MCP、版本/diff/校验及代表性恢复/outbox 测试已落；配置工作面的本机 fixture 浏览器联调已验。TaskItem 与主体/用途隔离合同未落，独立 `set_request_state` 崩溃点、M-A-04 与多项父 Gate 未通过。逐项证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md) |
 | S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **未实现**。R2 的运行可信 Gate 仍需 `result_id`、只写一次、迟到回执和 `UNKNOWN` 对账证据；不能把 durable task 成功当作业务成功 |
 | S2-b / R3 → S2-c / R4 | 在前两批验证后再接嵌套 task/phase、后台 worker、查看/重放/parking 和真实业务工具沙盒；真实写入仍由 Loomrise 幂等与结果合同保护 | **规划**。不因引入 Adapter 改变 `ServiceRequest`、`RunEvent`、`Outcome`、权限或发布权威 |
 | S3 / R5a | 首云部署时再验多进程/多 worker、备份恢复、升级迁移、存储替换和云端故障；可按需实现 SQLite/其他存储 Adapter | **未实现**。没有通过真实云恢复、迁移和升级 Gate 前，不宣称云端耐久执行或生产级恢复 |
@@ -197,7 +197,7 @@ pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺�
 
 ## 领域合同目标与 S1 实现边界
 
-`loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和 `ChangeProposal` 合同尚未实现。S1 请求与幂等账本在进程内，CLI 回放可持久化事件 JSONL；执行中取消及确认已有代码级验证，完整业务持久化、重启恢复及真实写入撤销仍待补齐。
+`loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和领域 `ChangeProposal` 合同尚未实现。未注入 store 的 S1 执行仍使用进程内请求/幂等状态并可导出 JSONL；R1 已新增 SQLite 耐久入口与配置候选存储，配置工作面也已完成本机 fixture HTTP 联调；完整 TaskItem、恢复 Gate、真实写入撤销和生产身份仍待补齐。
 
 - `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、专家内 `task_blueprints`、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置、依赖引用和合同版本，不携带凭据；任务蓝图不引用共享可变策略，动态事实/授权须保留每次重验的来源/版本证据。当前 S1 的可变 AgentVersion dataclass 尚未实现完整冻结和蓝图校验。
 - `Unit@v1`（**已采纳合同；R1 落最小实现，R3 落嵌套与画布**）：契约层九字段 + 内容层（子图或原子）。路由三层：G0 确定性闸门 → G1 在**闭集**内选 → G2 兜底；连接五类：同层边、端口边、边界事件可用，组合环与裸跨层边不可；条件引用只允许已声明字段，深度 ≤2 层。它是 `RequestRouting` 与 `Skill/SOP` 的组织形态，**不是第七层**。R1 只实现清单投影所需字段与九条校验函数，嵌套/端口/边界事件的能力实现见 [RELEASE-PLAN](RELEASE-PLAN.md) §3 R3。

@@ -15,13 +15,21 @@ import { renderFlow } from './views/flow.js';
 import { renderQuickTrial, renderEvidencePanel } from './views/config-panels.js';
 import { parseBatchText, parseWorkbook } from './knowledge-model.js';
 import { createNavigationHistory, routeScope } from './navigation.js';
+import { createR1ConfigurationWorkspace } from './r1-configuration.js';
 
 let browserStorage;
 try { browserStorage = window.localStorage; } catch { browserStorage = { getItem() { throw new Error('存储不可用'); }, setItem() { throw new Error('存储不可用'); } }; }
 const store = createStore(browserStorage);
 const app = document.querySelector('#app');
+let renderingR1Configuration = false;
+const r1Configuration = createR1ConfigurationWorkspace({
+  onChange() {
+    if (store.state.ui.page === 'configuration' && store.state.ui.section === 'r1-server') render();
+  },
+});
 let materialsController;
 let visitorController;
+let previousR1Context = null;
 function fileContext() {
   const { ui, selectedAgentId } = store.state;
   if (ui.page !== 'knowledge' || ui.sourceTab !== 'File' || !ui.sourceForm || store.readonly()) return null;
@@ -123,7 +131,7 @@ function render() {
   visitorController?.beforeRender();
   const focused = document.activeElement;
   const previewFocus = focused?.closest('.material-preview-dialog') ? actionSelector(focused) : null;
-  const identifier = focused?.dataset.bind ? ['bind', focused.dataset.bind] : focused?.dataset.uiBind ? ['ui-bind', focused.dataset.uiBind] : focused?.hasAttribute('data-agent-name') ? ['agent-name', ''] : null;
+  const identifier = focused?.dataset.bind ? ['bind', focused.dataset.bind] : focused?.dataset.uiBind ? ['ui-bind', focused.dataset.uiBind] : focused?.dataset.r1Bind ? ['r1-bind', focused.dataset.r1Bind] : focused?.dataset.r1Json ? ['r1-json', focused.dataset.r1Json] : focused?.hasAttribute('data-agent-name') ? ['agent-name', ''] : null;
   const selection = focused && ['INPUT', 'TEXTAREA'].includes(focused.tagName) ? { start: focused.selectionStart, end: focused.selectionEnd } : null;
   const focusedForm = focused?.closest('[data-form]');
   const formFocus = !identifier && focusedForm && focused.name ? { key: formKey(focusedForm), name: focused.name } : null;
@@ -138,12 +146,14 @@ function render() {
   if (previousLibrary?.mode === 'list' && previousLibrary.key !== nextLibrary?.key) {
     libraryListPositions.set(previousLibrary.scope, window.scrollY);
   }
+  ctx.r1Configuration = r1Configuration;
   const renderer = pages[ctx.state.ui.page] || renderAgents;
   let body;
   try { body = renderer(ctx); }
   catch (error) { console.error(error); body = emptyState('这个页面未能载入', '草稿仍在本地保留。返回专家列表后重试。', button('navigate', '返回列表', { page: 'agents' })); }
   const scoped = routeScope(ctx.state.ui.page) === 'agent';
   if (scoped && !ctx.agent) body = emptyState('先选择一个专家', '创建或选择专家后，查看它的资料、配置和运行记录。', button('new-agent', '手动创建', { mode: 'manual', variant: 'primary' }));
+  if (!scoped || !ctx.agent) ctx.r1Configuration.closeSnapshot();
   const withSide = scoped && ctx.agent && ctx.state.ui.sideOpen;
   const side = withSide ? ctx.state.ui.sidePanel === 'evidence' ? renderEvidencePanel(ctx) : renderQuickTrial(ctx) : '';
   app.innerHTML = renderShell(ctx, body, side) + renderMaterialPreview(ctx);
@@ -164,6 +174,13 @@ function render() {
     if (restored?.focus) { restored.focus({ preventScroll: true }); if (selection?.start !== null && typeof restored.setSelectionRange === 'function') { try { restored.setSelectionRange(selection.start, selection.end); } catch {} } }
   }
   renderedLibrary = nextLibrary;
+  const r1Context = ctx.state.ui.page === 'configuration' && ctx.state.ui.section === 'r1-server' && ctx.agent
+    ? `${ctx.agent.id}:r1-server` : null;
+  if (r1Context !== previousR1Context && r1Context && !renderingR1Configuration) {
+    renderingR1Configuration = true;
+    void r1Configuration.load(ctx.agent?.id).finally(() => { renderingR1Configuration = false; });
+  }
+  previousR1Context = r1Context;
   if (nextLibrary && nextLibrary.key !== previousLibrary?.key) {
     if (nextLibrary.mode === 'list' && nextLibrary.scope === previousLibrary?.scope) {
       window.scrollTo({ top: libraryListPositions.get(nextLibrary.scope) || 0, behavior: 'instant' });
@@ -283,6 +300,17 @@ async function intakeFiles(files, details = {}) {
 app.addEventListener('click', async event => {
   const target = event.target.closest('[data-action]'); if (!target || target.disabled || target.tagName === 'SELECT' || target.tagName === 'INPUT') return;
   const { action, ...data } = target.dataset;
+  if (action === 'r1-refresh') { await r1Configuration.refresh(); return; }
+  if (action === 'r1-create-draft') { await r1Configuration.createDraft(data.versionId); return; }
+  if (action === 'r1-save') { await r1Configuration.save(r1Configuration.state.editorConfig); return; }
+  if (action === 'r1-validate') { await r1Configuration.validate(); return; }
+  if (action === 'r1-freeze') { await r1Configuration.freezeCandidate(); return; }
+  if (action === 'r1-reload-conflict') { r1Configuration.reloadConflict(); return; }
+  if (action === 'r1-retry-conflict') { await r1Configuration.retryConflict(); return; }
+  if (action === 'r1-open-stable') { await r1Configuration.openStable(data.versionId); return; }
+  if (action === 'r1-open-candidate') { await r1Configuration.openCandidate(data.candidateId); return; }
+  if (action === 'r1-close-snapshot') { r1Configuration.closeSnapshot(); return; }
+  if (action === 'r1-tab') { r1Configuration.setTab(data.tab); return; }
   if ((action === 'material-preview' && data.mode !== 'download') || action === 'visitor-attachment-preview') materialPreviewReturn = actionSelector(target);
   if (await visitorController.click(action, data)) return;
   if (await materialsController.click(action, data)) return;
@@ -310,6 +338,15 @@ app.addEventListener('click', async event => {
   if (action === 'navigate' || action === 'select-agent' || action === 'new-agent') window.scrollTo({ top: 0 });
   if (action === 'toggle-sidebar') requestAnimationFrame(() => app.querySelector('[data-action="toggle-sidebar"]')?.focus({ preventScroll: true }));
   if (action === 'toggle-nav') requestAnimationFrame(() => app.querySelector(store.state.ui.navOpen ? '.mobile-close [data-action="toggle-nav"]' : '.mobile-menu [data-action="toggle-nav"]')?.focus({ preventScroll: true }));
+});
+app.addEventListener('input', event => {
+  const target = event.target;
+  if (target.dataset.r1Bind) {
+    const value = target.type === 'number' ? Number(target.value) : target.value;
+    r1Configuration.updateField(target.dataset.r1Bind, value);
+  } else if (target.dataset.r1Json) {
+    r1Configuration.updateJsonField(target.dataset.r1Json, target.value);
+  }
 });
 function updateBound(target) {
   if (target.dataset.action === 'material-filter') { store.dispatch('material-filter', { path: target.dataset.path, value: target.value }); return; }

@@ -21,7 +21,7 @@
 | Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
-| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | `ServiceRequest → Run → runtime_execution_id`；TaskAttempt 是可选调度关联；旧本地 running 尝试失败，获准新尝试可复用兼容已提交结果；R3/R4 才做 Worker/parking，未引入默认依赖 |
+| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [R1 证据摘要](../reports/R1-EVIDENCE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | SQLite `DurableRunAdapter` 已部分实现；旧本地 running 尝试失败、待确认事实保留但不自动续跑；TaskItem 撤销与完整恢复 Gate 未通过；R3/R4 才做 Worker/parking，未引入默认依赖 |
 | 到底已经跑通哪些功能 | [S1 交付与验收](../S1-BUILD-REPORT.md)、对应原型报告 | 运行证据与局限；不能用规划或原型代替服务验收 |
 | 实际安装的是哪个构件 | [VERSION-PINS](../../VERSION-PINS.md) | 实测版本、commit、许可证与安装复现 |
 | 什么材料可以公开 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、脱敏、公开晋升、许可与提交红线 |
@@ -61,7 +61,8 @@
 | [ARCHITECTURE](../ARCHITECTURE.md) | 领域权威、数据与适配边界 | 区分 S1 最小实现与目标合同 |
 | [六层配置合同](../CONFIGURATION-LAYERS.md) | Context／Routing／Skill／Rule／Tool／Outcome | S1 部分实现，完整配置规划 |
 | [ROADMAP](../ROADMAP.md) | 阶段总表、优先顺序、Gate | 不承诺日期；实现状态要有验收依据 |
-| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.6**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；只引用父 Gate 行号，耐久细化行不独立阻断退出 |
+| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.11**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；只引用父 Gate 行号，耐久细化行不独立阻断退出 |
+| [R1 证据摘要](../reports/R1-EVIDENCE.md) | R1 后端代码、测试样本与限制：SQLite、恢复/outbox、配置服务/HTTP/MCP/CLI、校验及 WP9 本机浏览器联调 | **进行中 v0.8**；WP3/WP4/WP6/WP8 后端已实现，WP2/WP5/WP7 部分；当前已识别 SQLite 写点有硬退出证据；WP9 页面联调已验，M-A-03/17/18 待签核，M-A-04 与父 Gate 未全绿 |
 | [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.4**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；条文变更先改权威文件再改本表；R0 行已回填状态，08/10 带偏离、13/14 挂账 |
 | [RELEASE-PLAN 与当前产品方向评审记录](../RELEASE-PLAN-REVIEW.md)（**v0.1**） | 产品、市场、架构、平台、交付管理与设计六个视角的综合评审；记录优势、风险优先级、知识库启发和待决事项 | 评审意见，不是产品/架构决策或实现证据；不替代 ROADMAP 与客服交付方案 Gate |
 | [评审处置台账](../RELEASE-PLAN-REVIEW-RESPONSE.md)（**v0.1**） | 15 条评审意见的采纳/部分采纳/不采纳、改动落点、被修正的事实前提、5 项未关闭 | 只记处置，不重复原文；未关闭项是下轮评审入口 |
@@ -85,7 +86,7 @@
 | [配置化优化需求 · 新布局对现状差距](../CONFIG-GAP-REQUIREMENTS.md) | 对照 `prototypes/console-next/` 与线框 v0.2 逐页盘点差距；23 条需求（CG-01…CG-23）、验收口径、落版建议（V1-a…V1-d）、风险与明确不做 | **需求提案，待评审排期**；实施前按批次拆工作包；V1-a 不依赖后端，可先做；依赖后端的先在本地模式完成 |
 | [配置化前端改版轮次 1 交付报告](../CONFIG-UI-ROUND1-REPORT.md) | 本地配置 UI 改版范围、测试/浏览器证据与后续阻塞；第 6 节单列两平面导航与展开收起跟进 | 本地原型已验证；首轮 200/200、导航 209/209、展开收起 212/212 分批记录，桌面/手机交互通过；不改变 S2 正式服务/Gate 状态 |
 | [终态侧边栏菜单设计规范](../S2-SIDEBAR-SPEC.md) | 两平面（工作区 3 项 / 专家 8 项 + 底部设置）的菜单候选、出现条件、角标与队列、⌘K 边界、命名与分期；含**与 ElevenLabs 的四类裁决**及与 IA 的 8 处差异处置 | **设计规范候选稿 v0.1**；原型已有工作区资源直达与专家 7+专家设置两平面，平台设置聚合/变更/任务等仍未实现；本地事实见导航跟进报告 |
-| [前后端进度对账与迭代计划](../FRONTEND-BACKEND-ITERATION-PLAN.md) | 当前配置原型与服务端状态对账；记录两平面/配置页面的本地实现边界、S2-a/b/c 与 R1/R2/R3/R4/R5a/R5b 的候选映射、I0–I5 后续联调计划及实施前跨文档差异 | **进度对账 + 迭代提案 v0.2**；不改 Gate/合同/代码；终态侧栏仍为候选，WP9 页面范围、摄入分期及 localStorage 长期定位待协调 |
+| [前后端进度对账与迭代计划](../FRONTEND-BACKEND-ITERATION-PLAN.md) | 当前配置原型与服务端状态对账；记录两平面/配置页面的数据边界、S2-a/b/c 与 R1/R2/R3/R4/R5a/R5b 的候选映射、I0–I5 后续迭代及跨文档差异 | **R1 实现/联调进度对账 + 迭代提案 v0.8**；不改 Gate/合同；R1 配置主链与 WP9 本机浏览器联调已验，M-A-04 与父 Gate 仍未通过；终态侧栏仍为候选 |
 | [第二轮后台 UI 走查与优化计划](../CONSOLE-UI-WALKTHROUGH-PLAN.md) | `console-next` 全后台信息优先级、集合状态、四组导航确认与本轮交接 | 本轮取舍已确认、UI已实现；验证与剩余Gate见第二轮报告第11节，真实S2服务未实现 |
 | [S2 范围决策](../S2-SCOPE-DECISIONS.md) | 人机协同、提名／真值、审批与改进范围 | 已确认方向，完整治理归 S2-c；不是执行完成报告 |
 | [S2 治理设计](../S2-DESIGN.md) | Case、Eval、ChangeProposal、权限与流程 | 设计草案；已吸收 Gate Reserve，完整流程未实现 |
@@ -101,7 +102,7 @@
 | [Task 与上下文联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 两条研究归并、TM-01–14、DurableRunAdapter 分期、首片/AGI依赖，§7 后台 CT 采纳入口 | 方案/顺序与 UI 设计已登记；旧 running Attempt 失败/新尝试规则不变；服务/新增 UI 未实现，不改变原型和 S1 验收状态 |
 | [专家任务与 Harness 首片实施计划](../superpowers/plans/2026-10-16-expert-task-harness.md) | 蓝图冻结、初始化、内部任务账本/意图、工作集与语义工具假 Adapter | 文件级待执行计划；只验内部沙盒，不承诺已支持调度/发送/生产持久化 |
 | [R0 合同对齐开工清单](../superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检、证据两层约定、语音阈值登记表模板、WP0–WP6（媒体/指标/SSE/合同落地/合入回归/签核）与 DoD | 执行清单，未开工；合同代码不合主干；不建配置器、不动原型；不替代 Gate 权威 |
-| [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | R1/R2 的 `Run`、可选 Task 关联、事务持久化/恢复裁决/挂起/未知对账；Worker 接管/parking 留 R3/R4 | 文件级规划，未实现；矩阵细化项不新增 Gate；不引入 `pi-durable` 默认依赖，不宣称云端或外部 exactly-once |
+| [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | R1/R2 的 `Run`、可选 Task 关联、事务持久化/恢复裁决/挂起/未知对账；Worker 接管/parking 留 R3/R4 | 实现部分持久化与恢复；完整故障矩阵、TaskItem 调度、R2 唤醒/对账、R3/R4 Worker 仍待做；矩阵细化项不新增 Gate，不引入 `pi-durable` 默认依赖，不宣称云端或外部 exactly-once |
 | [阿里云端到端语音选型](../ALIYUN-VOICE-SELECTION.md) | 流式 ASR/TTS 候选、锁版本策略（日期快照 vs 别名）、接口形状、与现有链路的差距、待核项 | **调研与候选登记，未跑通**；key 未到位；SDK 兼容性待验；不替代 `M-S1-09` |
 | [配置后台 Task/Harness 前端增量开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) | `console-next` 的版本内蓝图、服务事项/Inbox、渐进披露、情景预览与 Diff | 仅前端执行计划，CT-00–06 全待开始；不连接正式 API/调度/渠道，不改变服务 Gate |
 | [用户记忆内核提案](../MEMORY-FOUNDATION-DESIGN.md) | TDAI的历史核查与候选Adapter；模块职责转看用户上下文设计 | 供应商选型/映射待确认，未联调；“采用”是原推荐，不等于已批准或双内核选定 |

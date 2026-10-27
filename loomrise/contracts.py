@@ -392,11 +392,20 @@ class ContextFragment:
     priority: int = 0
     sensitivity: str = "internal"
     valid_until: str | None = None
+    revoked_at: str | None = None
     token_estimate: int = 0
+    subject_id: str | None = None
+    subject_scope: SubjectScope | None = None
 
     def __post_init__(self) -> None:
         if not self.token_estimate:
             self.token_estimate = estimate_tokens(self.content)
+        if self.subject_scope is not None and not isinstance(self.subject_scope, SubjectScope):
+            self.subject_scope = SubjectScope(self.subject_scope)
+        if self.subject_scope is None and self.subject_id is not None:
+            raise ValueError("上下文主体 ID 必须同时声明 subject_scope")
+        if self.subject_scope is not None and not (self.subject_id or "").strip():
+            raise ValueError("主体绑定的上下文片段必须提供 subject_id")
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ContextFragment":
@@ -413,6 +422,7 @@ class AgentVersion:
     skill_ids: list[str] = field(default_factory=list)
     tool_ids: list[str] = field(default_factory=list)
     rule_ids: list[str] = field(default_factory=list)
+    task_blueprints: list[dict[str, Any]] = field(default_factory=list)
     context_budget_tokens: int = 4000
     frozen_at: str = field(default_factory=now_iso)
     fingerprints: dict[str, str] = field(default_factory=dict)

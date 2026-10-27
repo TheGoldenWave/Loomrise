@@ -35,14 +35,14 @@ Loomrise 在完整网页客服、业务执行、验收与持续改进之外，�
 | 领域 | 当前事实 | 接入前缺口 |
 |---|---|---|
 | 执行服务 | [`service.py`](../loomrise/service.py)有请求、活动执行、幂等和取消，已有写入前权限/幂等/取消检查；账本主要在进程内 | 持久化、重启恢复、事项领取/调度，以及面向新增主体、触达许可、Task revision与占用代次的最终检查 |
-| 执行耐久层 | `pi durable` 已完成机制级源码核对，尚无 Loomrise Adapter 或运行依赖 | `Run`/`TaskAttempt`/checkpoint/lineage、原子提交、挂起/唤醒、旧 worker/generation、parking 与 Adapter→`RunEvent` 投影；不得让内部 task/phase 变成第二套业务状态 |
+| 执行耐久层 | `pi durable` 已完成机制级源码核对；Loomrise 已有 SQLite `DurableRunAdapter` 与请求/事件/outbox 持久化，但完整恢复 Gate 未通过 | `Run`/`TaskAttempt`/checkpoint/lineage、原子提交、挂起/唤醒、旧 worker/generation、parking 与 Adapter→`RunEvent` 投影；不得让内部 task/phase 变成第二套业务状态 |
 | 事件合同 | [`contracts.py`](../loomrise/contracts.py)的 RunEvent 需 request/run关联 | 运行前的事项/记忆事件需扩展同一 event envelope，不能虚构运行或创建平行业务真值 |
-| 上下文 | [`context.py`](../loomrise/context.py)有三段式选择、来源/版本、过期/预算记录 | 严格时间、主体/用途/撤销、动态压缩与跨会话模块 |
-| 用户身份 | 请求有租户与版本，缺稳定业务用户合同 | 匿名范围、受信跨渠道身份、主体关系、合并/拆分和权限重算 |
+| 上下文 | [`context.py`](../loomrise/context.py)有三段式选择、来源/版本、预算记录，以及时间/撤销/主体作用域过滤 | 用途授权、动态压缩与跨会话模块 |
+| 用户身份 | 请求有租户、版本与 `subject_id/subject_scope`；稳定 ID 仍由受信业务映射提供 | 匿名范围、跨渠道身份映射、主体关系、合并/拆分和权限重算 |
 | 记忆候选 | TencentDB Agent Memory 与 Hindsight 已有提案/历史源码研究 | Provider、存储映射、候选采用、检索/删除和效果尚未联调 |
 | 外部 Agent | [AGI-01–11](AGENT-INTEGRATION-PLAN.md)已排为高优先级方向 | API/MCP/Skills/Worker 未实现；新增事项和记忆用例不得绕过原权限 |
 
-本轮代码审读及纯内存核对确认：带时区合法 `valid_until` 已接入过期过滤；格式错误在现有 `_expired` 中返回未过期，无时区日期还可能导致比较异常。这属于记忆接入的前置修正项，不宣称本轮已修复或新增回归测试文件。因此旧记忆提案“未接线”不能作为当前状态描述。
+2026-10-27 回填：上下文片段的 `valid_until` 与 `revoked_at` 使用严格 RFC3339 时区解析；无效、无时区、已过期或已撤销片段 fail-closed。`ContextFragment` 新增可选 `subject_id/subject_scope`，当前请求 ID 与作用域必须完全匹配才加载主体绑定片段；不匹配会留跳过原因。`tests/test_context_validity.py` 覆盖时间和主体隔离。用途隔离合同仍未定；既有 replay、TaskItem 撤销恢复与完整 TM-02 越权矩阵仍需分别验收。
 
 S1 的历史 11/11 继续按[S1 报告](S1-BUILD-REPORT.md)解释，未重跑，不能作为以上新增模块验收。正在建设的第二轮本地前端按其实施报告判断，不因为本轮增加产品概念而改变原型完成度。
 

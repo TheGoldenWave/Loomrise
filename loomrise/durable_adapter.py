@@ -54,6 +54,9 @@ class DurableRunAdapter:
     def recover(self) -> RecoveryReport:
         return self.store.recover(owner_id=self.owner_id)
 
+    def update_request_state(self, request_id: str, state: str) -> None:
+        self.store.set_request_state(request_id, state)
+
     def begin(
         self,
         request: ServiceRequest,

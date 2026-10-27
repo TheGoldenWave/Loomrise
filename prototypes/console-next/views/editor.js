@@ -3,6 +3,7 @@ import {
   renderReadiness, pageHeading,
 } from '../helpers.js';
 import { describeChange, pendingItems, sourceValid, validateConfig } from '../domain.js';
+import { renderR1Configuration } from './r1-configuration.js';
 
 const modules = [
   { id: 'service', title: '接待与回答', summary: '对象、范围、表达与人工出口', business: true },
@@ -14,6 +15,7 @@ const modules = [
   { id: 'tools', title: '业务办理', summary: '需客户确认与办成标志', layer: 'ToolPolicy', business: true },
   { id: 'outcome', title: '办理结果', summary: '成功、未办成与结果不明', layer: 'Outcome' },
   { id: 'model', title: '模型与预算', summary: '连接引用与单次预算' },
+  { id: 'r1-server', title: '服务端版本', summary: '共享草稿、服务端校验与冻结候选' },
 ];
 
 const sourceStates = {
@@ -105,6 +107,13 @@ function moduleStates(ctx) {
     if (item.id === 'evidence') {
       status = ctx.agent.checks.testedRevision === ctx.agent.revision ? 'usable' : 'pending';
       detail = status === 'pending' ? '当前修订尚未重新检查' : '当前修订有本地检查记录';
+    }
+    if (item.id === 'r1-server') {
+      const workspace = ctx.r1Configuration?.state;
+      status = workspace?.status === 'error' ? 'pending' : workspace?.status === 'ready' ? 'usable' : 'optional';
+      detail = workspace?.status === 'ready' ? `服务端 revision r${workspace.draft?.revision ?? '-'}`
+        : workspace?.status === 'error' ? '服务端未连接或专家未授权'
+          : 'SQLite 共享版本服务';
     }
     return { ...item, status, detail, validationIssue: issue?.message };
   });
@@ -263,6 +272,7 @@ export function renderConfiguration(ctx) {
   const renderers = {
     service: renderService, knowledge: () => link('知识库', 'knowledge'), flow: renderFlow, fields: renderFields,
     skills: () => link('对话流程', 'flow'), rules: () => link('红线', 'redlines'), tools: () => link('业务办理', 'business'), outcome: () => `<details><summary>技术详情 · 结果记录要求</summary>${renderOutcome(ctx)}</details>`,
+    'r1-server': () => renderR1Configuration(ctx),
     model: () => `<details open><summary>技术详情 · 模型连接与预算</summary>${renderModel(ctx)}</details>`,
   };
   const layers = detailed ? `<details class="section layer-map"><summary>六层配置与当前页面的关系</summary><dl class="definition-list">${modules.filter(item => item.layer).map(item => `<div><dt>${item.layer}</dt><dd>${item.title} · ${item.summary}</dd></div>`).join('')}</dl><p class="helper">接待表达、字段、模型、应用外观与版本证据围绕同一六层配置工作，不增加第七个业务层，也不暴露框架私有状态。</p></details>` : '';

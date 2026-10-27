@@ -23,8 +23,10 @@ from .contracts import (
     ContextFragment,
     ContextScope,
     LoadStatus,
+    SubjectScope,
     estimate_tokens,
 )
+from .temporal import parse_rfc3339_utc
 
 
 # --------------------------------------------------------------------------
@@ -117,6 +119,8 @@ class ContextLedger:
     run_id: str
     request_id: str
     budget_tokens: int = 4000
+    subject_id: str | None = None
+    subject_scope: SubjectScope | None = None
     fragments: dict[str, ContextFragment] = field(default_factory=dict)
     used_tokens: int = 0
     decisions: list[LoadDecision] = field(default_factory=list)
@@ -198,13 +202,21 @@ class ContextLedger:
     ) -> list[ContextFragment]:
         loaded: list[ContextFragment] = []
         for f in sorted(candidates, key=lambda x: (-x.priority, x.fragment_id)):
-            if f.valid_until and _expired(f.valid_until):
+            failure = _fragment_scope_failure(
+                f, subject_id=self.subject_id, subject_scope=self.subject_scope,
+            ) or _fragment_validity_failure(f)
+            if failure is not None:
+                status = (
+                    LoadStatus.EXPIRED
+                    if failure.startswith("来源已过期")
+                    else LoadStatus.SKIPPED
+                )
                 self._record(
                     f,
-                    LoadStatus.EXPIRED,
+                    status,
                     stage=stage,
                     activation_reason=default_reason,
-                    skip_reason=f"来源已过期（valid_until={f.valid_until}）",
+                    skip_reason=failure,
                 )
                 continue
             if self.used_tokens + f.token_estimate > self.budget_tokens:
@@ -307,11 +319,36 @@ class ContextLedger:
         }
 
 
-def _expired(valid_until: str) -> bool:
-    try:
-        return datetime.fromisoformat(valid_until) < datetime.now(timezone.utc)
-    except ValueError:
-        return False
+def _fragment_scope_failure(
+    fragment: ContextFragment,
+    *,
+    subject_id: str | None,
+    subject_scope: SubjectScope | None,
+) -> str | None:
+    if fragment.subject_scope is None:
+        return None
+    if subject_scope is None or fragment.subject_scope is not subject_scope:
+        return "主体作用域与当前请求不匹配，按越权片段跳过"
+    if not subject_id or fragment.subject_id != subject_id:
+        return "主体 ID 与当前请求不匹配，按越权片段跳过"
+    return None
+
+
+def _fragment_validity_failure(fragment: ContextFragment) -> str | None:
+    now = datetime.now(timezone.utc)
+    if fragment.revoked_at is not None:
+        revoked_at = parse_rfc3339_utc(fragment.revoked_at)
+        if revoked_at is None:
+            return "撤销时间格式无效或缺少时区，按已撤销处理"
+        if revoked_at <= now:
+            return f"来源已撤销（revoked_at={fragment.revoked_at}）"
+    if fragment.valid_until is not None:
+        valid_until = parse_rfc3339_utc(fragment.valid_until)
+        if valid_until is None:
+            return "有效期格式无效或缺少时区，按不可用处理"
+        if valid_until <= now:
+            return f"来源已过期（valid_until={fragment.valid_until}）"
+    return None
 
 
 __all__ = [

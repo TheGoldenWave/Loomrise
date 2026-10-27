@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
@@ -274,6 +275,8 @@ class ExecutionService:
             run_id=run_id,
             request_id=req.request_id,
             budget_tokens=av.context_budget_tokens,
+            subject_id=req.subject_id,
+            subject_scope=req.subject_scope,
         )
         ctx.register_many(self.pack.fragments)
         ctx.stage_baseline()
@@ -363,6 +366,22 @@ class ExecutionService:
         )
         self._states[req.request_id] = agent.state
 
+        async def persisted_ask_confirm(calls: list[Any]) -> list[bool]:
+            if self.durable is not None:
+                req.state = RequestState.WAITING_CONFIRM
+                req.updated_at = now_iso()
+                self.durable.update_request_state(req.request_id, req.state.value)
+            try:
+                answers = (ask_confirm or self.ask_confirm)(calls)
+                if inspect.isawaitable(answers):
+                    answers = await answers
+                return answers
+            finally:
+                if self.durable is not None and req.state is RequestState.WAITING_CONFIRM:
+                    req.state = RequestState.RUNNING
+                    req.updated_at = now_iso()
+                    self.durable.update_request_state(req.request_id, req.state.value)
+
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""
         text_emitted = False  # 是否已产出过 reply.text（AG-UI 的文本来源）
@@ -402,7 +421,7 @@ class ExecutionService:
                 agent,
                 emit,
                 first_input=Msg(name="user", role="user", content=[TextBlock(text=text)]),
-                ask_confirm=ask_confirm or self.ask_confirm,
+                ask_confirm=persisted_ask_confirm,
                 confirms=confirms,
                 is_cancelled=lambda: req.state is RequestState.CANCELLING,
             ):

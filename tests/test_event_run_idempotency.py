@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
 import os
 import sqlite3
@@ -294,10 +295,10 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
 
 
 class TestMigration(unittest.TestCase):
-    def test_v1_request_survives_additive_migration(self):
+    def test_v1_migration_redacts_ephemeral_subject_but_preserves_mapped(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "v1.db")
-            with sqlite3.connect(path) as old:
+            with closing(sqlite3.connect(path)) as old:
                 old.executescript("""
                     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                     INSERT INTO meta VALUES ('schema_version', '1');
@@ -310,19 +311,39 @@ class TestMigration(unittest.TestCase):
                     );
                     INSERT INTO requests VALUES (
                         'req_old', 'tenant_demo', 'av_old', 'text', 'success',
-                        NULL, 'ephemeral', 'inbound_message', '旧输入', 'res_old',
+                        'session-only-subject', 'ephemeral', 'inbound_message', '旧输入', 'res_old',
+                        '2026-10-23T00:00:00+00:00', '2026-10-23T00:00:01+00:00'
+                    );
+                    INSERT INTO requests VALUES (
+                        'req_mapped', 'tenant_demo', 'av_old', 'text', 'success',
+                        'customer-42', 'mapped', 'inbound_message', NULL, 'res_mapped',
                         '2026-10-23T00:00:00+00:00', '2026-10-23T00:00:01+00:00'
                     );
                 """)
-                before = old.execute("SELECT * FROM requests").fetchone()
+                before = old.execute(
+                    "SELECT * FROM requests WHERE request_id='req_old'",
+                ).fetchone()
             store = SqliteStore(path)
             try:
-                after = tuple(store._conn.execute("SELECT * FROM requests").fetchone())
-                self.assertEqual(after[:-1], before)
+                after = tuple(store._conn.execute(
+                    "SELECT * FROM requests WHERE request_id='req_old'",
+                ).fetchone())
+                expected = list(before)
+                expected[5] = None
+                self.assertEqual(after[:-1], tuple(expected))
                 self.assertIsNone(after[-1])
+                mapped = store._conn.execute(
+                    "SELECT subject_id, subject_scope FROM requests WHERE request_id='req_mapped'",
+                ).fetchone()
+                self.assertEqual(tuple(mapped), ("customer-42", "mapped"))
                 self.assertEqual(int(store._conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]), SCHEMA_VERSION)
                 store.migrate()
-                self.assertEqual(tuple(store._conn.execute("SELECT * FROM requests").fetchone()), after)
+                self.assertEqual(tuple(store._conn.execute(
+                    "SELECT * FROM requests WHERE request_id='req_old'",
+                ).fetchone()), after)
+                self.assertEqual(tuple(store._conn.execute(
+                    "SELECT subject_id, subject_scope FROM requests WHERE request_id='req_mapped'",
+                ).fetchone()), ("customer-42", "mapped"))
                 adapter = DurableRunAdapter(store, owner_id="p1")
                 accepted = adapter.begin(request(), agent_version="av_1", scenario_pack_id="pack", input_text="你好")
                 self.assertEqual(accepted.status, "created")

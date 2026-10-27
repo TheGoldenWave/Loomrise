@@ -131,7 +131,9 @@ test('配置模块沿用结构化路径缺口，修复后不自动跳模块', ()
   store.dispatch('navigate', { page: 'configuration' });
   const selected = store.state.ui.section;
   assert.equal(selected, 'knowledge');
-  assert.equal((renderConfiguration(context(store)).match(/data-module-status=/g) || []).length, 9);
+  const moduleStatus = renderConfiguration(context(store)).match(/data-module-status="[^"]+"/g) || [];
+  assert.equal(moduleStatus.length, 10);
+  assert.match(renderConfiguration(context(store)), /data-section="r1-server"/);
   store.dispatch('load-demo-sources');
   assert.equal(store.state.ui.section, selected);
   store.dispatch('set-section', { section: 'model' });
