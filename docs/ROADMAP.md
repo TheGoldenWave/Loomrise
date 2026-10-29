@@ -34,7 +34,7 @@ S1 进度沿用 Git 基线 `2f0633a`（S0 文档 Gate）及其后已留证的 S1
 |---|---|---|
 | S0 产品与文档边界 | 已完成 | 基线提交 `2f0633a`；私有目录保持忽略 |
 | S1 合同与执行内核 | 已实现最小切片 | 业务请求、事件账本、三段式上下文、模型外规则、模拟预约和事件投影；无 B 端界面 |
-| 执行耐久与恢复层 | 部分实现（R1 最小切片） | `Run`/事件/幂等/outbox/中断裁决与 lineage 已落 SQLite（`DurableRunAdapter`，零新依赖，证据见 [R1 证据摘要](reports/R1-EVIDENCE.md)）；`pi durable` 只作机制参照。活动任务、Agent 上下文与 resume 驱动仍为进程内，R2 的挂起/唤醒、确认持久化与未知结果对账未实现，跨进程 Worker/parking 归 R3/R4 |
+| 执行耐久与恢复层 | R1 部分实现；R2-WP5 首片已落 | `Run`/事件/幂等/outbox/中断裁决与 lineage 已落 SQLite；schema v6 加工具意图，未决操作转 `reconciling` 并阻止自动重放。尚无外部结果查询/收敛、确认唤醒或只读运行状态 API；详见 [R2 证据摘要](reports/R2-EVIDENCE.md)。跨进程 Worker/parking 归 R3/R4 |
 | S1 固定案例 | 干净环境回放 11/11 | 精确 AgentScope commit 安装、完整自检、取消专项案例均通过；仍使用脚本模型 |
 | 语音与取消 | 部分实现（真实模型已验取消，媒体未验） | 执行中取消、确认和文字/语音跨渠道断言通过（脚本模型 + 真实模型双覆盖）；Web Speech 网页入口已就绪，固定 STT/TTS 组合及浏览器音频未验，中文可懂度、语音首响与打断恢复未测，重启恢复未验 |
 | S1 网页 / HTTP-SSE 入口 | 已实现，自检通过（脚本模型） | 回环监听的 `web.py`：文字/语音输入、AG-UI 事件经 SSE 投送、页面人工确认/拒绝/取消；音视频走浏览器 Web Speech，非云端 ASR/TTS。真实模型下已起服务（`/api/status` 为 `configured: true`），页面实测待人工 |

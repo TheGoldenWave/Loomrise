@@ -779,8 +779,8 @@ SqliteStore(sys.argv[1], owner_id='p2')
         finally:
             replay.close()
 
-    def test_v4_to_v5_schema_crash_rolls_back_task_table_and_can_be_retried(self) -> None:
-        path = os.path.join(self.tmp.name, "schema-v4-to-v5.db")
+    def test_v4_schema_crash_rolls_back_migration_and_can_be_retried(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v4-migration.db")
         store = SqliteStore(path, owner_id="p1")
         store.close()
         with closing(sqlite3.connect(path)) as connection:
@@ -788,7 +788,7 @@ SqliteStore(sys.argv[1], owner_id='p2')
             connection.execute("DROP TABLE task_items")
             connection.commit()
 
-        trigger = "crash_schema_v4_to_v5"
+        trigger = "crash_schema_v4_migration"
         _install_trigger(
             path, trigger, "meta", "UPDATE",
             f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
@@ -819,6 +819,50 @@ SqliteStore(sys.argv[1], owner_id='p2')
             )
             self.assertIsNotNone(replay._conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_items'",
+            ).fetchone())
+        finally:
+            replay.close()
+
+    def test_v5_to_v6_tool_intent_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v5-to-v6.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE meta SET value='5' WHERE key='schema_version'")
+            connection.execute("DROP INDEX idx_tool_attempts_run")
+            connection.execute("DROP TABLE tool_attempts")
+            connection.commit()
+
+        trigger = "crash_schema_v5_to_v6"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tool_attempts'",
+            ).fetchone()
+        self.assertEqual(version, "5")
+        self.assertIsNone(table)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tool_attempts'",
             ).fetchone())
         finally:
             replay.close()

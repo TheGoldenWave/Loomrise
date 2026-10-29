@@ -51,7 +51,7 @@ class TaskItemRecoveryTests(unittest.TestCase):
                 migrated._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()["value"],
-                "5",
+                "6",
             )
             migrated.close()
 

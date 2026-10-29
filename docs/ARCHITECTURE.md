@@ -1,6 +1,6 @@
-# 架构与对象权威 v0.16
+# 架构与对象权威 v0.17
 
-状态：2026-10-29，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；R1 SQLite 配置服务、HTTP/MCP/CLI 共用应用服务、TaskItem 撤销恢复最小切片及配置工作面的本机 fixture 浏览器联调已有实现与验证证据，但 R1 Gate 未通过。六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。本版补充 [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 的执行耐久机制参照，并按 Task §7.1 明确恢复裁决；**已落最小 `DurableRunAdapter` + SQLite 存储（零新依赖），未引入上游依赖**，R2 的挂起/唤醒与未知结果对账未实现。完整 TaskItem/TaskAttempt、用途隔离及生产身份仍待验证。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)、[R1 证据摘要](reports/R1-EVIDENCE.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
+状态：2026-10-29，**路由与能力单元 `Unit` 已采纳为正式合同（v1.0），R1 落最小实现、R3 落画布与嵌套**；官方网页客服应用、统一业务执行与治理、自有云快捷交付，以及专家内版本化任务蓝图和 Harness 渐进披露的架构方案已确认，新增模块和合同仍为规划。S1 最小合同、执行内核及渐进式上下文加载已有代码；R1 SQLite 配置服务、HTTP/MCP/CLI 共用应用服务、TaskItem 撤销恢复最小切片及配置工作面的本机 fixture 浏览器联调已有实现与验证证据，但 R1 Gate 未通过。六层职责见[配置合同](CONFIGURATION-LAYERS.md)；`Unit` 契约见[路由与能力单元](ROUTE-GRAPH-AND-UNITS.md)，版本落点见[版本切分](RELEASE-PLAN.md)。本版补充 [pi durable](https://github.com/earendil-works/pi/tree/main/packages/durable) 的执行耐久机制参照，并按 Task §7.1 明确恢复裁决；**已落最小 `DurableRunAdapter` + SQLite 存储（零新依赖），未引入上游依赖**。截至 2026-10-29，R2-WP5 新增持久工具意图和未知操作阻断首片；外部结果对账收敛、挂起/唤醒仍未实现。完整 TaskItem/TaskAttempt、用途隔离及生产身份仍待验证。以下架构图和对象表同时包含 S1 切片与目标规范；真实证据见[S1 交付与验收](S1-BUILD-REPORT.md)、[R1 证据摘要](reports/R1-EVIDENCE.md)、[R2 证据摘要](reports/R2-EVIDENCE.md)和[版本钉](../VERSION-PINS.md)，建设顺序见[客服与自有云交付方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md)。
 
 项目采用**交付工作台 + 官方客服应用 + 统一执行内核 + 分类适配器**，区分**产品控制面**、**客服会话与一线操作**、**业务执行**、**媒体与渠道**、**知识摄入与检索**、**业务工具**、**观测与评测**、**部署交付**。首个云交付以单 Agent、单租户实例为目标；决策 Provider 只给建议，硬规则和发布权仍在 Loomrise。
 
@@ -170,7 +170,7 @@ pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺�
 | 阶段 | 采用范围 | 当前状态与硬边界 |
 |---|---|---|
 | S2-a / R1 | 先落 `Run`、可选 `TaskAttempt` 关联及请求/事件/幂等/outbox 存储合同；定义 `DurableRunAdapter` 接口，以无副作用步骤验证事务提交可见性、重启裁决、重复提交和旧 generation，不建设完整 Task 调度。Checkpoint 可作为实现机制，是否采用由 R1 选型/设计 Gate 决定 | **部分实现（2026-10-29）**。SQLite 耐久层、loopback 配置 HTTP、共用配置服务、CLI/MCP、版本/diff/校验及恢复/outbox 测试已落；配置工作面的本机 fixture 浏览器联调已验。schema v5 增加最小 TaskItem 身份/来源/状态/revision 持久化，M-A-04 撤销恢复切片有测试证据；完整 TaskItem/TaskAttempt、主体/用途隔离、M-A-03/17/18 签核与 R1 父 Gate 仍未关闭。逐项证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md) |
-| S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **未实现**。R2 的运行可信 Gate 仍需 `result_id`、只写一次、迟到回执和 `UNKNOWN` 对账证据；不能把 durable task 成功当作业务成功 |
+| S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **部分实现（2026-10-29）**。schema v6 新增工具意图持久化；未决操作转为 `reconciling` 并阻止自动重放，证据见 [R2-EVIDENCE](reports/R2-EVIDENCE.md#wp5-副作用意图首片)。尚无结果查询/回执收敛、发布、摄入、物料、Widget/Inbox 或确认唤醒；R2 Gate 未关闭。不能把 durable task 成功当作业务成功 |
 | S2-b / R3 → S2-c / R4 | 在前两批验证后再接嵌套 task/phase、后台 worker、查看/重放/parking 和真实业务工具沙盒；真实写入仍由 Loomrise 幂等与结果合同保护 | **规划**。不因引入 Adapter 改变 `ServiceRequest`、`RunEvent`、`Outcome`、权限或发布权威 |
 | S3 / R5a | 首云部署时再验多进程/多 worker、备份恢复、升级迁移、存储替换和云端故障；可按需实现 SQLite/其他存储 Adapter | **未实现**。没有通过真实云恢复、迁移和升级 Gate 前，不宣称云端耐久执行或生产级恢复 |
 

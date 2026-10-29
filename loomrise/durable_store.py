@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sqlite3
 import threading
@@ -25,7 +26,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -86,6 +87,18 @@ CREATE TABLE IF NOT EXISTS idempotency (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_idem_bare ON idempotency(bare_key);
+CREATE TABLE IF NOT EXISTS tool_attempts (
+  attempt_key  TEXT PRIMARY KEY,
+  run_id       TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  args_hash    TEXT NOT NULL,
+  state        TEXT NOT NULL,
+  result_id    TEXT,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES runs(run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_tool_attempts_run ON tool_attempts(run_id, state);
 CREATE TABLE IF NOT EXISTS outbox (
   id            TEXT PRIMARY KEY,
   run_id        TEXT NOT NULL,
@@ -493,6 +506,11 @@ class SqliteStore:
                 " VALUES(?,?,?,?,?,?)",
                 (key, bare_key or key, run_id, action, result_id, now_iso()),
             )
+            cur.execute(
+                "UPDATE tool_attempts SET state='succeeded',result_id=?,updated_at=? "
+                "WHERE attempt_key=? AND run_id=? AND state IN ('intent','unknown','reconciling')",
+                (result_id, now_iso(), key, run_id),
+            )
             self._append(cur, [event])
             cur.execute(
                 "INSERT INTO outbox(id, run_id, kind, payload_json, state, created_at)"
@@ -505,6 +523,94 @@ class SqliteStore:
                 ),
             )
             return True, result_id
+
+    def begin_tool_attempt(
+        self, run_id: str, *, attempt_key: str, action: str, arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist the exact operation intent before entering a side-effecting adapter.
+
+        Repeated calls return the existing state. An unknown/in-flight attempt is never
+        permission to execute again; callers must reconcile it first.
+        """
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (attempt_key, action)):
+            raise ValueError("attempt_key 与 action 必须是非空字符串")
+        if not isinstance(arguments, dict):
+            raise ValueError("arguments 必须是 JSON 对象")
+        encoded = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        args_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        timestamp = now_iso()
+        with self._tx() as cur:
+            run = cur.execute("SELECT status FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if run is None:
+                raise KeyError(f"未知 run {run_id}")
+            if run["status"] != "running":
+                raise RuntimeError(f"run {run_id} 已停止，不能开始业务操作")
+            row = cur.execute(
+                "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+            ).fetchone()
+            if row is not None:
+                if row["action"] != action or row["args_hash"] != args_hash:
+                    raise ValueError("幂等操作键已绑定不同的动作或参数")
+                if row["state"] == "succeeded":
+                    return {**dict(row), "created": False}
+                if row["state"] == "failed":
+                    cur.execute(
+                        "UPDATE tool_attempts SET run_id=?,state='intent',updated_at=? "
+                        "WHERE attempt_key=? AND state='failed'",
+                        (run_id, timestamp, attempt_key),
+                    )
+                    return {**dict(cur.execute(
+                        "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+                    ).fetchone()), "created": True}
+                raise RuntimeError(
+                    f"操作状态为 {row['state']}，必须先对账，不能再次执行",
+                )
+            cur.execute(
+                "INSERT INTO tool_attempts(attempt_key,run_id,action,args_hash,state,created_at,updated_at)"
+                " VALUES(?,?,?,?, 'intent', ?, ?)",
+                (attempt_key, run_id, action, args_hash, timestamp, timestamp),
+            )
+            return {**dict(cur.execute(
+                "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+            ).fetchone()), "created": True}
+
+    def tool_attempt(self, attempt_key: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def mark_tool_attempt_unknown(self, attempt_key: str, *, run_id: str) -> bool:
+        """Mark a timed-out operation unknown while its owning Run is still active."""
+        with self._tx() as cur:
+            run = cur.execute("SELECT status FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if run is None:
+                raise KeyError(f"未知 run {run_id}")
+            if run["status"] != "running":
+                raise RuntimeError("旧代不得更新工具操作状态")
+            updated = cur.execute(
+                "UPDATE tool_attempts SET state='reconciling',updated_at=? "
+                "WHERE attempt_key=? AND run_id=? AND state='intent'",
+                (now_iso(), attempt_key, run_id),
+            ).rowcount
+            return bool(updated)
+
+    def mark_tool_attempt_failed(self, attempt_key: str, *, run_id: str) -> bool:
+        """Record a definite non-acceptance; a later explicit attempt may retry."""
+        with self._tx() as cur:
+            run = cur.execute("SELECT status FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if run is None:
+                raise KeyError(f"未知 run {run_id}")
+            if run["status"] != "running":
+                raise RuntimeError("旧代不得更新工具操作状态")
+            updated = cur.execute(
+                "UPDATE tool_attempts SET state='failed',updated_at=? "
+                "WHERE attempt_key=? AND run_id=? AND state='intent'",
+                (now_iso(), attempt_key, run_id),
+            ).rowcount
+            return bool(updated)
 
     # -- 收尾 --------------------------------------------------------------
     def finish_run(
@@ -529,6 +635,11 @@ class SqliteStore:
                 "UPDATE requests SET state=?, updated_at=?, result_id=COALESCE(?, result_id)"
                 " WHERE request_id=?",
                 (request_state, now_iso(), result_id, row["request_id"]),
+            )
+            cur.execute(
+                "UPDATE tool_attempts SET state='reconciling',updated_at=? "
+                "WHERE run_id=? AND state='intent'",
+                (now_iso(), run_id),
             )
             self._append(cur, [event])
 
@@ -589,6 +700,11 @@ class SqliteStore:
                     "UPDATE requests SET state='failed',updated_at=?"
                     " WHERE request_id=? AND state='running'",
                     (now_iso(), row["request_id"]),
+                )
+                cur.execute(
+                    "UPDATE tool_attempts SET state='reconciling',updated_at=? "
+                    "WHERE run_id=? AND state='intent'",
+                    (now_iso(), row["run_id"]),
                 )
                 self._append(cur, [evt])
             report.interrupted.append(row["run_id"])

@@ -28,7 +28,7 @@ from .contracts import (
     now_iso,
 )
 from .context import CompactionPolicy, ContextLedger
-from .durable_adapter import DurableRunAdapter
+from .durable_adapter import DurableRunAdapter, action_key
 from .durable_store import RecoveryReport, SqliteStore
 from .ledger import EventLedger
 from .rules import DecisionPolicy
@@ -384,9 +384,32 @@ class ExecutionService:
         async def _book(course_id: str, learner_name: str, slot: str, idempotency_key: str):
             if req.state is RequestState.CANCELLING:
                 raise asyncio.CancelledError()
+            attempt_key = action_key("create_booking", idempotency_key)
+            if self.durable is not None:
+                attempt = self.durable.store.begin_tool_attempt(
+                    run_id=run_id,
+                    attempt_key=attempt_key,
+                    action="create_booking",
+                    arguments={
+                        "course_id": course_id,
+                        "learner_name": learner_name,
+                        "slot": slot,
+                    },
+                )
+                if not attempt["created"]:
+                    raise RuntimeError("该业务操作已有结果，拒绝再次执行")
             r: ToolResult = await sandbox.create_booking(
                 course_id, learner_name, slot, idempotency_key,
             )
+            if self.durable is not None:
+                if r.outcome is ToolOutcome.UNKNOWN:
+                    self.durable.store.mark_tool_attempt_unknown(
+                        attempt_key, run_id=run_id,
+                    )
+                elif r.outcome is not ToolOutcome.SUCCESS:
+                    self.durable.store.mark_tool_attempt_failed(
+                        attempt_key, run_id=run_id,
+                    )
             emit(
                 "tool.outcome",
                 tool="create_booking",
@@ -395,7 +418,7 @@ class ExecutionService:
                 duration_ms=r.duration_ms,
                 # 幂等键必须进事件本身：耐久层靠它把"写入事实"与
                 # 幂等记录/outbox 放进同一事务，而不是另开一张表再对账。
-                idempotency_key=idempotency_key if r.result_id else None,
+                idempotency_key=idempotency_key,
             )
             outcomes.append(r.outcome.value)
             if r.result_id:
