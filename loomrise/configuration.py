@@ -715,8 +715,18 @@ class ConfigurationApplication:
             "stable.get", "release.checklist", "knowledge.source.list", "knowledge.search",
         }:
             raise PermissionError("外部 Agent 只能读取或创建受限草稿/候选")
+        if action == "run.status" and principal.role not in {"owner", "editor"}:
+            raise PermissionError("运行状态仅限 owner 或 editor 查询")
 
         tenant_id = principal.tenant_id
+        if action == "run.status":
+            _keys(payload, {"agent_id", "run_id"})
+            status = self.service.store.read_run_status(
+                tenant_id=tenant_id, agent_id=agent_id, run_id=payload["run_id"],
+            )
+            if status is None:
+                raise KeyError("未找到授权范围内的运行")
+            return status
         if action == "draft.get":
             _keys(payload, {"agent_id"})
             return self.service.get_draft(tenant_id=tenant_id, agent_id=agent_id)

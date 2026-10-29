@@ -9,7 +9,8 @@ import unittest
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from loomrise.config_http import APPLICATION_KEY, create_configuration_http_app
+from loomrise.config_http import APPLICATION_KEY, STORE_KEY, create_configuration_http_app
+from loomrise.contracts import Channel, RequestState, Run, ServiceRequest
 
 
 def valid_config(goal: str = "预约咨询") -> dict:
@@ -150,6 +151,44 @@ class ConfigurationHttpTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/configuration/health")
         self.assertEqual(response.status, 200)
         self.assertEqual((await response.json())["schema_version"], "config-api-v1")
+
+    async def test_run_status_is_read_only_redacted_and_agent_scoped(self):
+        store = self.app[STORE_KEY]
+        request = ServiceRequest(
+            request_id="req-status", tenant_id="tenant-a", agent_version="v1",
+            channel=Channel.TEXT, state=RequestState.RUNNING,
+        )
+        run = Run(
+            run_id="run-status", request_id=request.request_id, tenant_id="tenant-a",
+            agent_version="v1", owner_id="owner-a",
+        )
+        store.begin_run(request, run, [])
+
+        response = await self.client.post("/api/configuration", json={
+            "action": "run.status",
+            "payload": {"agent_id": "expert-a", "run_id": "run-status"},
+        })
+        self.assertEqual(response.status, 200)
+        body = await response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["result"]["run_status"], "running")
+        self.assertEqual(body["result"]["request_state"], "running")
+        self.assertEqual(body["result"]["event_count"], 0)
+        self.assertNotIn("snapshot_json", body["result"])
+        self.assertNotIn("payload_json", body["result"])
+        self.assertTrue(store.is_running(run.run_id))
+
+        forbidden = await self.client.post("/api/configuration", json={
+            "action": "run.status",
+            "payload": {"agent_id": "expert-b", "run_id": "run-status"},
+        })
+        self.assertEqual(forbidden.status, 403)
+
+        missing = await self.client.post("/api/configuration", json={
+            "action": "run.status",
+            "payload": {"agent_id": "expert-a", "run_id": "run-missing"},
+        })
+        self.assertEqual(missing.status, 404)
 
     async def test_customer_service_http_uses_shared_authenticated_application(self):
         same_origin = str(self.client.make_url("/").origin())

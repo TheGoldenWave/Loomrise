@@ -885,6 +885,25 @@ class SqliteStore:
             row = self._conn.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
         return dict(row) if row else None
 
+    def read_run_status(
+        self, *, tenant_id: str, agent_id: str, run_id: str,
+    ) -> dict[str, Any] | None:
+        """Return a redacted run summary scoped through its registered version."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT r.run_id,r.request_id,r.agent_version,r.status AS run_status,"
+                "r.started_at,r.ended_at,r.finish_reason,q.state AS request_state,"
+                "COUNT(e.rid) AS event_count,MAX(e.ts) AS latest_event_at "
+                "FROM runs r JOIN requests q ON q.request_id=r.request_id "
+                "JOIN configuration_stable_versions v ON v.tenant_id=r.tenant_id "
+                "AND v.agent_id=? AND v.version_id=r.agent_version "
+                "LEFT JOIN events e ON e.run_id=r.run_id "
+                "WHERE r.tenant_id=? AND r.run_id=? "
+                "GROUP BY r.run_id,q.state",
+                (agent_id, tenant_id, run_id),
+            ).fetchone()
+        return dict(row) if row else None
+
     def request_row(self, request_id: str) -> dict[str, Any] | None:
         with self._lock:
             row = self._conn.execute(
