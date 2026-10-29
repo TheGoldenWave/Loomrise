@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import uuid
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -26,7 +27,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 10
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -175,6 +176,134 @@ CREATE TABLE IF NOT EXISTS change_proposals (
   PRIMARY KEY (tenant_id, agent_id, candidate_id),
   UNIQUE (tenant_id, agent_id, idempotency_key)
 );
+CREATE TABLE IF NOT EXISTS release_approvals (
+  tenant_id    TEXT NOT NULL,
+  agent_id     TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  environment  TEXT NOT NULL CHECK (environment='sandbox'),
+  entry_id     TEXT NOT NULL,
+  version_id   TEXT NOT NULL,
+  approved_by  TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, agent_id, candidate_id, content_hash, environment, entry_id, version_id)
+);
+CREATE TABLE IF NOT EXISTS sandbox_releases (
+  release_id   TEXT PRIMARY KEY,
+  tenant_id    TEXT NOT NULL,
+  agent_id     TEXT NOT NULL,
+  environment  TEXT NOT NULL CHECK (environment='sandbox'),
+  candidate_id TEXT NOT NULL,
+  version_id   TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  config_json  TEXT NOT NULL,
+  knowledge_state TEXT NOT NULL DEFAULT 'ready' CHECK (knowledge_state IN ('ready','stale')),
+  created_at   TEXT NOT NULL,
+  UNIQUE (tenant_id, agent_id, environment, version_id)
+);
+CREATE TABLE IF NOT EXISTS sandbox_entries (
+  tenant_id   TEXT NOT NULL,
+  agent_id    TEXT NOT NULL,
+  entry_id    TEXT NOT NULL,
+  environment TEXT NOT NULL CHECK (environment='sandbox'),
+  release_id  TEXT NOT NULL REFERENCES sandbox_releases(release_id),
+  version_id  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL,
+  PRIMARY KEY (tenant_id, agent_id, entry_id, environment)
+);
+CREATE INDEX IF NOT EXISTS idx_sandbox_release_candidate
+  ON sandbox_releases(tenant_id, agent_id, candidate_id);
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  source_id       TEXT PRIMARY KEY,
+  tenant_id       TEXT NOT NULL,
+  agent_id        TEXT NOT NULL,
+  kind            TEXT NOT NULL CHECK (kind IN ('faq','url','file')),
+  locator         TEXT NOT NULL,
+  display_name    TEXT NOT NULL,
+  authorization   TEXT NOT NULL,
+  state           TEXT NOT NULL CHECK (state IN ('queued','processing','ready','failed','revoked')),
+  attempt_count   INTEGER NOT NULL DEFAULT 0,
+  content_hash    TEXT,
+  error_code      TEXT,
+  error_message   TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL,
+  revoked_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_scope
+  ON knowledge_sources(tenant_id,agent_id,state);
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+  document_id  TEXT PRIMARY KEY,
+  source_id    TEXT NOT NULL REFERENCES knowledge_sources(source_id),
+  tenant_id    TEXT NOT NULL,
+  agent_id     TEXT NOT NULL,
+  content      TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_index (
+  document_id TEXT NOT NULL REFERENCES knowledge_documents(document_id),
+  ordinal     INTEGER NOT NULL,
+  text        TEXT NOT NULL,
+  PRIMARY KEY(document_id,ordinal)
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_index_text ON knowledge_index(text);
+CREATE TABLE IF NOT EXISTS material_assets (
+  asset_id       TEXT PRIMARY KEY,
+  tenant_id      TEXT NOT NULL,
+  agent_id       TEXT NOT NULL,
+  display_name   TEXT NOT NULL,
+  filename       TEXT NOT NULL,
+  media_type     TEXT NOT NULL,
+  authorization  TEXT NOT NULL,
+  expires_at     TEXT,
+  state          TEXT NOT NULL CHECK (state IN ('active','revoked')),
+  current_version_id TEXT NOT NULL,
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_material_assets_scope
+  ON material_assets(tenant_id,agent_id,state);
+CREATE TABLE IF NOT EXISTS material_versions (
+  version_id   TEXT PRIMARY KEY,
+  asset_id     TEXT NOT NULL REFERENCES material_assets(asset_id),
+  version      INTEGER NOT NULL,
+  display_name TEXT NOT NULL,
+  filename     TEXT NOT NULL,
+  media_type   TEXT NOT NULL,
+  authorization TEXT NOT NULL,
+  expires_at   TEXT,
+  content_hash TEXT NOT NULL,
+  content      BLOB NOT NULL,
+  created_at   TEXT NOT NULL,
+  UNIQUE(asset_id,version)
+);
+CREATE TABLE IF NOT EXISTS customer_conversations (
+  conversation_id TEXT PRIMARY KEY,
+  tenant_id       TEXT NOT NULL,
+  agent_id        TEXT NOT NULL,
+  entry_id        TEXT NOT NULL,
+  release_id      TEXT NOT NULL,
+  release_version TEXT NOT NULL,
+  visitor_token_hash TEXT NOT NULL UNIQUE,
+  state           TEXT NOT NULL CHECK (state IN ('bot','human_requested','human')),
+  occupancy_generation INTEGER NOT NULL DEFAULT 0,
+  assigned_to     TEXT,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_customer_conversations_inbox
+  ON customer_conversations(tenant_id,agent_id,state,updated_at);
+CREATE TABLE IF NOT EXISTS customer_messages (
+  conversation_id TEXT NOT NULL REFERENCES customer_conversations(conversation_id),
+  sequence        INTEGER NOT NULL,
+  sender           TEXT NOT NULL CHECK (sender IN ('visitor','assistant','operator')),
+  actor_id         TEXT,
+  text             TEXT NOT NULL,
+  asset_id         TEXT,
+  asset_version_id TEXT,
+  created_at       TEXT NOT NULL,
+  PRIMARY KEY(conversation_id,sequence)
+);
 """
 
 
@@ -244,6 +373,28 @@ class SqliteStore:
                 cur.execute(
                     "UPDATE requests SET subject_id=NULL "
                     "WHERE subject_scope IS NULL OR subject_scope<>'mapped'",
+                )
+            version_columns = {r["name"] for r in cur.execute("PRAGMA table_info(material_versions)")}
+            if "display_name" not in version_columns:
+                cur.execute("ALTER TABLE material_versions ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+            if "filename" not in version_columns:
+                cur.execute("ALTER TABLE material_versions ADD COLUMN filename TEXT NOT NULL DEFAULT ''")
+            if "media_type" not in version_columns:
+                cur.execute("ALTER TABLE material_versions ADD COLUMN media_type TEXT NOT NULL DEFAULT 'application/octet-stream'")
+            if "authorization" not in version_columns:
+                cur.execute("ALTER TABLE material_versions ADD COLUMN authorization TEXT NOT NULL DEFAULT 'owned'")
+            if "expires_at" not in version_columns:
+                cur.execute("ALTER TABLE material_versions ADD COLUMN expires_at TEXT")
+            if previous_version < 10:
+                cur.execute(
+                    "UPDATE material_versions SET "
+                    "display_name=COALESCE(NULLIF(display_name,''),(SELECT display_name FROM material_assets WHERE asset_id=material_versions.asset_id)), "
+                    "filename=COALESCE(NULLIF(filename,''),(SELECT filename FROM material_assets WHERE asset_id=material_versions.asset_id)), "
+                    "media_type=CASE WHEN media_type='application/octet-stream' THEN "
+                    "(SELECT media_type FROM material_assets WHERE asset_id=material_versions.asset_id) ELSE media_type END, "
+                    "authorization=CASE WHEN authorization='owned' THEN "
+                    "(SELECT authorization FROM material_assets WHERE asset_id=material_versions.asset_id) ELSE authorization END, "
+                    "expires_at=COALESCE(expires_at,(SELECT expires_at FROM material_assets WHERE asset_id=material_versions.asset_id))"
                 )
             cur.execute("UPDATE meta SET value=? WHERE key='schema_version'", (str(SCHEMA_VERSION),))
 
@@ -1078,6 +1229,579 @@ class SqliteStore:
                 (tenant_id, agent_id),
             ).fetchall()
         return [self._config_row(row) for row in rows]
+
+    def approve_release_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        content_hash: str, environment: str, entry_id: str, version_id: str,
+        approved_by: str,
+    ) -> dict[str, Any]:
+        """Record one immutable human approval bound to the frozen content hash."""
+        if environment != "sandbox":
+            raise ValueError("R2 仅支持 sandbox 环境")
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (approved_by, entry_id, version_id, content_hash)):
+            raise ValueError("批准人与发布目标必须是非空字符串")
+        with self._tx() as cur:
+            candidate = cur.execute(
+                "SELECT content_hash,status FROM change_proposals "
+                "WHERE tenant_id=? AND agent_id=? AND candidate_id=?",
+                (tenant_id, agent_id, candidate_id),
+            ).fetchone()
+            if candidate is None:
+                raise KeyError("未知冻结候选")
+            if candidate["status"] != "frozen":
+                raise RuntimeError("只有 frozen 候选可以审批")
+            if candidate["content_hash"] != content_hash:
+                raise ValueError("审批内容哈希与冻结候选不一致")
+            cur.execute(
+                "INSERT OR IGNORE INTO release_approvals "
+                "(tenant_id,agent_id,candidate_id,content_hash,environment,entry_id,version_id,approved_by,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (tenant_id, agent_id, candidate_id, content_hash, environment,
+                 entry_id, version_id, approved_by, now_iso()),
+            )
+            row = cur.execute(
+                "SELECT * FROM release_approvals WHERE tenant_id=? AND agent_id=? "
+                "AND candidate_id=? AND content_hash=? AND environment=? AND entry_id=? AND version_id=?",
+                (tenant_id, agent_id, candidate_id, content_hash, environment, entry_id, version_id),
+            ).fetchone()
+        return dict(row)
+
+    def release_approval(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        content_hash: str, environment: str, entry_id: str, version_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM release_approvals WHERE tenant_id=? AND agent_id=? "
+                "AND candidate_id=? AND content_hash=? AND environment=? AND entry_id=? AND version_id=?",
+                (tenant_id, agent_id, candidate_id, content_hash, environment, entry_id, version_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def publish_sandbox_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        entry_id: str, version_id: str,
+    ) -> dict[str, Any]:
+        """Atomically materialize a frozen approved candidate and bind its sandbox entry."""
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (entry_id, version_id)):
+            raise ValueError("entry_id 与 version_id 必须是非空字符串")
+        with self._tx() as cur:
+            candidate = cur.execute(
+                "SELECT * FROM change_proposals WHERE tenant_id=? AND agent_id=? AND candidate_id=?",
+                (tenant_id, agent_id, candidate_id),
+            ).fetchone()
+            if candidate is None:
+                raise KeyError("未知冻结候选")
+            if candidate["status"] != "frozen":
+                raise RuntimeError("只有 frozen 候选可以发布")
+            approval = cur.execute(
+                "SELECT 1 FROM release_approvals WHERE tenant_id=? AND agent_id=? "
+                "AND candidate_id=? AND content_hash=? AND environment='sandbox' "
+                "AND entry_id=? AND version_id=?",
+                (tenant_id, agent_id, candidate_id, candidate["content_hash"], entry_id, version_id),
+            ).fetchone()
+            if approval is None:
+                raise PermissionError("候选尚未获得绑定当前内容的人工批准")
+            config = candidate["config_json"]
+            created_at = now_iso()
+            existing = cur.execute(
+                "SELECT * FROM sandbox_releases WHERE tenant_id=? AND agent_id=? "
+                "AND environment='sandbox' AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+            if existing is not None and (
+                existing["candidate_id"] != candidate_id
+                or existing["content_hash"] != candidate["content_hash"]
+            ):
+                raise ValueError("沙盒版本 ID 已绑定不同内容")
+            release_id = existing["release_id"] if existing else "rel_" + hashlib.sha256(
+                f"{candidate_id}:{version_id}".encode("utf-8"),
+            ).hexdigest()[:20]
+            stable = cur.execute(
+                "SELECT content_hash FROM configuration_stable_versions "
+                "WHERE tenant_id=? AND agent_id=? AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+            if stable is not None and stable["content_hash"] != candidate["content_hash"]:
+                raise ValueError("稳定版本 ID 已绑定不同内容")
+            cur.execute(
+                "INSERT OR IGNORE INTO configuration_stable_versions "
+                "(tenant_id,agent_id,version_id,config_json,content_hash,created_at) "
+                "VALUES(?,?,?,?,?,?)",
+                (tenant_id, agent_id, version_id, config, candidate["content_hash"], created_at),
+            )
+            cur.execute(
+                "INSERT OR IGNORE INTO sandbox_releases "
+                "(release_id,tenant_id,agent_id,environment,candidate_id,version_id,content_hash,config_json,created_at) "
+                "VALUES(?,?,?,'sandbox',?,?,?,?,?)",
+                (release_id, tenant_id, agent_id, candidate_id, version_id,
+                 candidate["content_hash"], config, created_at),
+            )
+            cur.execute(
+                "INSERT INTO sandbox_entries(tenant_id,agent_id,entry_id,environment,release_id,version_id,updated_at) "
+                "VALUES(?,?,?,'sandbox',?,?,?) ON CONFLICT(tenant_id,agent_id,entry_id,environment) "
+                "DO UPDATE SET release_id=excluded.release_id,version_id=excluded.version_id,updated_at=excluded.updated_at",
+                (tenant_id, agent_id, entry_id, release_id, version_id, created_at),
+            )
+            row = cur.execute(
+                "SELECT * FROM sandbox_entries WHERE tenant_id=? AND agent_id=? AND entry_id=? AND environment='sandbox'",
+                (tenant_id, agent_id, entry_id),
+            ).fetchone()
+        return dict(row)
+
+    def sandbox_entry(
+        self, *, tenant_id: str, agent_id: str, entry_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT e.*,r.candidate_id,r.content_hash,r.config_json,r.knowledge_state "
+                "FROM sandbox_entries e JOIN sandbox_releases r ON r.release_id=e.release_id "
+                "WHERE e.tenant_id=? AND e.agent_id=? AND e.entry_id=? AND e.environment='sandbox'",
+                (tenant_id, agent_id, entry_id),
+            ).fetchone()
+        if row is None:
+            return None
+        value = dict(row)
+        value["config"] = json.loads(value.pop("config_json"))
+        return value
+
+    def mark_sandbox_versions_for_revalidation(
+        self, *, tenant_id: str, agent_id: str,
+    ) -> list[str]:
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE sandbox_releases SET knowledge_state='stale' "
+                "WHERE tenant_id=? AND agent_id=? AND environment='sandbox'",
+                (tenant_id, agent_id),
+            )
+            rows = cur.execute(
+                "SELECT version_id FROM sandbox_releases WHERE tenant_id=? AND agent_id=? "
+                "AND environment='sandbox' AND knowledge_state='stale' ORDER BY version_id",
+                (tenant_id, agent_id),
+            ).fetchall()
+        return [row["version_id"] for row in rows]
+
+    def sandbox_release_knowledge_state(
+        self, *, tenant_id: str, agent_id: str, version_id: str,
+    ) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT knowledge_state FROM sandbox_releases WHERE tenant_id=? AND agent_id=? "
+                "AND environment='sandbox' AND version_id=?",
+                (tenant_id, agent_id, version_id),
+            ).fetchone()
+        return row["knowledge_state"] if row else None
+
+    def create_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+        kind: str, locator: str, display_name: str, authorization: str,
+    ) -> dict[str, Any]:
+        if kind not in {"faq", "url", "file"}:
+            raise ValueError("不支持的知识来源类型")
+        if not all(isinstance(value, str) and value.strip() for value in
+                   (tenant_id, agent_id, source_id, locator, display_name, authorization)):
+            raise ValueError("知识来源身份、位置、授权与名称必须非空")
+        timestamp = now_iso()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO knowledge_sources(source_id,tenant_id,agent_id,kind,locator,display_name,"
+                "authorization,state,attempt_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'queued',0,?,?)",
+                (source_id, tenant_id, agent_id, kind, locator, display_name,
+                 authorization, timestamp, timestamp),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
+            ).fetchone())
+
+    def knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
+                (tenant_id, agent_id, source_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_knowledge_sources(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? "
+                "ORDER BY created_at,source_id", (tenant_id, agent_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_knowledge_source_processing_failed(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any] | None:
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE knowledge_sources SET state='failed',error_code='interrupted',"
+                "error_message='摄入进程中断，需要显式重试',updated_at=? "
+                "WHERE tenant_id=? AND agent_id=? AND source_id=? AND state='processing'",
+                (now_iso(), tenant_id, agent_id, source_id),
+            )
+            row = cur.execute(
+                "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
+                (tenant_id, agent_id, source_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def start_knowledge_ingestion(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any]:
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
+                (tenant_id, agent_id, source_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知知识来源")
+            if row["state"] == "revoked":
+                raise RuntimeError("已撤回来源不能重新摄入")
+            cur.execute(
+                "UPDATE knowledge_sources SET state='processing',attempt_count=attempt_count+1,"
+                "error_code=NULL,error_message=NULL,updated_at=? WHERE source_id=?",
+                (now_iso(), source_id),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
+            ).fetchone())
+
+    def finish_knowledge_ingestion(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+        content: str | None = None, chunks: list[str] | None = None,
+        error_code: str | None = None, error_message: str | None = None,
+    ) -> dict[str, Any]:
+        if (content is None) == (error_code is None):
+            raise ValueError("摄入完成必须恰好提供内容或失败信息")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest() if content is not None else None
+        now = now_iso()
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT state FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
+                (tenant_id, agent_id, source_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知知识来源")
+            if row["state"] != "processing":
+                raise RuntimeError("知识来源不处于摄入状态")
+            if error_code is not None:
+                cur.execute(
+                    "UPDATE knowledge_sources SET state='failed',error_code=?,error_message=?,updated_at=? "
+                    "WHERE source_id=?",
+                    (error_code, error_message or "摄入失败", now, source_id),
+                )
+            else:
+                document_id = f"doc_{uuid.uuid4().hex}"
+                cur.execute(
+                    "INSERT INTO knowledge_documents VALUES(?,?,?,?,?,?,?)",
+                    (document_id, source_id, tenant_id, agent_id, content, digest, now),
+                )
+                pieces = chunks or [content]
+                for ordinal, piece in enumerate(pieces):
+                    if piece.strip():
+                        cur.execute(
+                            "INSERT INTO knowledge_index(document_id,ordinal,text) VALUES(?,?,?)",
+                            (document_id, ordinal, piece),
+                        )
+                cur.execute(
+                    "UPDATE knowledge_sources SET state='ready',content_hash=?,error_code=NULL,"
+                    "error_message=NULL,updated_at=? WHERE source_id=?",
+                    (digest, now, source_id),
+                )
+            return dict(cur.execute(
+                "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
+            ).fetchone())
+
+    def revoke_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any]:
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
+                (tenant_id, agent_id, source_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知知识来源")
+            if row["state"] == "revoked":
+                return dict(row)
+            doc_ids = [r["document_id"] for r in cur.execute(
+                "SELECT document_id FROM knowledge_documents WHERE source_id=?", (source_id,),
+            ).fetchall()]
+            for document_id in doc_ids:
+                cur.execute("DELETE FROM knowledge_index WHERE document_id=?", (document_id,))
+                cur.execute("DELETE FROM knowledge_documents WHERE document_id=?", (document_id,))
+            now = now_iso()
+            cur.execute(
+                "UPDATE knowledge_sources SET state='revoked',revoked_at=?,updated_at=? WHERE source_id=?",
+                (now, now, source_id),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
+            ).fetchone())
+
+    def search_knowledge_index(
+        self, *, tenant_id: str, agent_id: str, query: str, limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        tokens = [token for token in query.lower().split() if token]
+        if not tokens:
+            return []
+        clauses = " AND ".join("lower(i.text) LIKE ?" for _ in tokens)
+        params: list[Any] = [f"%{token}%" for token in tokens]
+        params.extend((tenant_id, agent_id, limit))
+        sql = (
+            "SELECT i.text,s.source_id,d.document_id FROM knowledge_index i "
+            "JOIN knowledge_documents d ON d.document_id=i.document_id "
+            "JOIN knowledge_sources s ON s.source_id=d.source_id "
+            f"WHERE {clauses} AND s.tenant_id=? AND s.agent_id=? AND s.state='ready' "
+            "ORDER BY s.source_id,i.ordinal LIMIT ?"
+        )
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_material(
+        self, *, tenant_id: str, agent_id: str, asset_id: str, version_id: str,
+        display_name: str, filename: str, media_type: str, authorization: str,
+        expires_at: str | None, content: bytes,
+    ) -> dict[str, Any]:
+        digest = hashlib.sha256(content).hexdigest()
+        timestamp = now_iso()
+        with self._tx() as cur:
+            asset = cur.execute(
+                "SELECT * FROM material_assets WHERE tenant_id=? AND agent_id=? AND asset_id=?",
+                (tenant_id, agent_id, asset_id),
+            ).fetchone()
+            if asset is None:
+                version = 1
+                cur.execute(
+                    "INSERT INTO material_assets VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (asset_id, tenant_id, agent_id, display_name, filename, media_type,
+                     authorization, expires_at, "active", version_id, timestamp),
+                )
+            else:
+                if asset["state"] != "active":
+                    raise RuntimeError("已撤回物料不能追加新版本")
+                version = cur.execute(
+                    "SELECT COALESCE(MAX(version),0)+1 AS version FROM material_versions WHERE asset_id=?",
+                    (asset_id,),
+                ).fetchone()["version"]
+                cur.execute(
+                    "UPDATE material_assets SET display_name=?,filename=?,media_type=?,authorization=?,"
+                    "expires_at=?,current_version_id=? WHERE asset_id=?",
+                    (display_name, filename, media_type, authorization, expires_at,
+                     version_id, asset_id),
+                )
+            cur.execute(
+                "INSERT INTO material_versions "
+                "(version_id,asset_id,version,display_name,filename,media_type,authorization,expires_at,content_hash,content,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (version_id, asset_id, version, display_name, filename, media_type,
+                 authorization, expires_at, digest, sqlite3.Binary(content), timestamp),
+            )
+            row = cur.execute(
+                "SELECT * FROM material_assets WHERE asset_id=?", (asset_id,),
+            ).fetchone()
+        return {**dict(row), "version": version, "content_hash": digest}
+
+    def list_materials(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT a.*,v.version,v.version_id,v.content_hash,v.display_name AS version_display_name,"
+                "v.filename AS version_filename,v.media_type AS version_media_type,"
+                "v.authorization AS version_authorization,v.expires_at AS version_expires_at FROM material_assets a "
+                "JOIN material_versions v ON v.version_id=a.current_version_id "
+                "WHERE a.tenant_id=? AND a.agent_id=? ORDER BY a.created_at,a.asset_id",
+                (tenant_id, agent_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def material_version(
+        self, *, tenant_id: str, agent_id: str, asset_id: str, version_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT a.*,v.version,v.version_id,v.content_hash,v.content,"
+                "v.display_name AS version_display_name,v.filename AS version_filename,"
+                "v.media_type AS version_media_type,v.authorization AS version_authorization,"
+                "v.expires_at AS version_expires_at FROM material_assets a "
+                "JOIN material_versions v ON v.asset_id=a.asset_id "
+                "WHERE a.tenant_id=? AND a.agent_id=? AND a.asset_id=? "
+                "AND v.version_id=COALESCE(?,a.current_version_id)",
+                (tenant_id, agent_id, asset_id, version_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def revoke_material(
+        self, *, tenant_id: str, agent_id: str, asset_id: str,
+    ) -> dict[str, Any]:
+        with self._tx() as cur:
+            cur.execute(
+                "UPDATE material_assets SET state='revoked' WHERE tenant_id=? AND agent_id=? AND asset_id=?",
+                (tenant_id, agent_id, asset_id),
+            )
+            row = cur.execute(
+                "SELECT * FROM material_assets WHERE tenant_id=? AND agent_id=? AND asset_id=?",
+                (tenant_id, agent_id, asset_id),
+            ).fetchone()
+        if row is None:
+            raise KeyError("未知物料")
+        return dict(row)
+
+    def open_customer_conversation(
+        self, *, tenant_id: str, agent_id: str, entry_id: str,
+        conversation_id: str, visitor_token_hash: str,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self._tx() as cur:
+            release = cur.execute(
+                "SELECT e.release_id,e.version_id,r.knowledge_state FROM sandbox_entries e "
+                "JOIN sandbox_releases r ON r.release_id=e.release_id "
+                "WHERE e.tenant_id=? AND e.agent_id=? AND e.entry_id=? AND e.environment='sandbox'",
+                (tenant_id, agent_id, entry_id),
+            ).fetchone()
+            if release is None:
+                raise KeyError("未知沙盒入口")
+            if release["knowledge_state"] != "ready":
+                raise RuntimeError("沙盒入口所绑版本待重新验收，不能接待访客")
+            cur.execute(
+                "INSERT INTO customer_conversations VALUES(?,?,?,?,?,?,?,'bot',0,NULL,?,?)",
+                (conversation_id, tenant_id, agent_id, entry_id, release["release_id"],
+                 release["version_id"], visitor_token_hash, timestamp, timestamp),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM customer_conversations WHERE conversation_id=?", (conversation_id,),
+            ).fetchone())
+
+    def add_visitor_message(
+        self, *, conversation_id: str, visitor_token_hash: str,
+        text: str, request_human: bool = False,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self._tx() as cur:
+            conversation = cur.execute(
+                "SELECT * FROM customer_conversations WHERE conversation_id=? AND visitor_token_hash=?",
+                (conversation_id, visitor_token_hash),
+            ).fetchone()
+            if conversation is None:
+                raise KeyError("访客会话凭据无效")
+            sequence = cur.execute(
+                "SELECT COALESCE(MAX(sequence),0)+1 AS sequence FROM customer_messages WHERE conversation_id=?",
+                (conversation["conversation_id"],),
+            ).fetchone()["sequence"]
+            cur.execute(
+                "INSERT INTO customer_messages(conversation_id,sequence,sender,text,created_at) VALUES(?,?, 'visitor',?,?)",
+                (conversation["conversation_id"], sequence, text, timestamp),
+            )
+            state = "human_requested" if request_human else conversation["state"]
+            cur.execute(
+                "UPDATE customer_conversations SET state=?,updated_at=? WHERE conversation_id=?",
+                (state, timestamp, conversation["conversation_id"]),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM customer_messages WHERE conversation_id=? AND sequence=?",
+                (conversation["conversation_id"], sequence),
+            ).fetchone())
+
+    def list_customer_conversations(
+        self, *, tenant_id: str, agent_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM customer_conversations WHERE tenant_id=? AND agent_id=? "
+                "ORDER BY updated_at DESC,conversation_id",
+                (tenant_id, agent_id),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def claim_customer_conversation(
+        self, *, tenant_id: str, agent_id: str, conversation_id: str, actor_id: str,
+    ) -> dict[str, Any]:
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT * FROM customer_conversations WHERE tenant_id=? AND agent_id=? AND conversation_id=?",
+                (tenant_id, agent_id, conversation_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知会话")
+            if row["state"] == "human":
+                raise RuntimeError("会话已被人工接管")
+            generation = row["occupancy_generation"] + 1
+            cur.execute(
+                "UPDATE customer_conversations SET state='human',assigned_to=?,occupancy_generation=?,updated_at=? "
+                "WHERE conversation_id=? AND occupancy_generation=?",
+                (actor_id, generation, now_iso(), conversation_id, row["occupancy_generation"]),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM customer_conversations WHERE conversation_id=?", (conversation_id,),
+            ).fetchone())
+
+    def add_operator_message(
+        self, *, tenant_id: str, agent_id: str, conversation_id: str, actor_id: str,
+        generation: int, text: str, asset_id: str | None = None,
+        asset_version_id: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self._tx() as cur:
+            conversation = cur.execute(
+                "SELECT * FROM customer_conversations WHERE tenant_id=? AND agent_id=? AND conversation_id=?",
+                (tenant_id, agent_id, conversation_id),
+            ).fetchone()
+            if conversation is None:
+                raise KeyError("未知会话")
+            if conversation["state"] != "human" or conversation["assigned_to"] != actor_id or conversation["occupancy_generation"] != generation:
+                raise RuntimeError("客服会话占用已变化，拒绝发送")
+            if asset_id is not None:
+                material = cur.execute(
+                    "SELECT a.current_version_id,a.state,a.expires_at,v.version_id "
+                    "FROM material_assets a JOIN material_versions v ON v.asset_id=a.asset_id "
+                    "WHERE a.tenant_id=? AND a.agent_id=? AND a.asset_id=? AND v.version_id=?",
+                    (tenant_id, agent_id, asset_id, asset_version_id),
+                ).fetchone()
+                if material is None or material["state"] != "active" or material["current_version_id"] != asset_version_id:
+                    raise RuntimeError("物料已撤回或版本已变化，拒绝发送")
+                if material["expires_at"] and material["expires_at"] <= timestamp:
+                    raise RuntimeError("物料授权已过期，拒绝发送")
+            sequence = cur.execute(
+                "SELECT COALESCE(MAX(sequence),0)+1 AS sequence FROM customer_messages WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()["sequence"]
+            cur.execute(
+                "INSERT INTO customer_messages VALUES(?,?,?,?,?,?,?,?)",
+                (conversation_id, sequence, "operator", actor_id, text, asset_id,
+                 asset_version_id, timestamp),
+            )
+            cur.execute(
+                "UPDATE customer_conversations SET updated_at=? WHERE conversation_id=?",
+                (timestamp, conversation_id),
+            )
+            return dict(cur.execute(
+                "SELECT * FROM customer_messages WHERE conversation_id=? AND sequence=?",
+                (conversation_id, sequence),
+            ).fetchone())
+
+    def customer_messages(
+        self, *, conversation_id: str, tenant_id: str | None = None,
+        agent_id: str | None = None, visitor_token_hash: str | None = None,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            conversation = self._conn.execute(
+                "SELECT 1 FROM customer_conversations WHERE conversation_id=? "
+                "AND (? IS NULL OR tenant_id=?) AND (? IS NULL OR agent_id=?) "
+                "AND (? IS NULL OR visitor_token_hash=?)",
+                (conversation_id, tenant_id, tenant_id, agent_id, agent_id,
+                 visitor_token_hash, visitor_token_hash),
+            ).fetchone()
+            if conversation is None:
+                raise KeyError("未知或无权访问会话")
+            rows = self._conn.execute(
+                "SELECT * FROM customer_messages WHERE conversation_id=? ORDER BY sequence",
+                (conversation_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def mark_outbox(self, outbox_id: str, *, state: str = "delivered") -> None:
         if state != "delivered":

@@ -150,6 +150,20 @@ class ConfigurationCliCase(unittest.TestCase):
         self.assertFalse(checklist["result"]["ready"])
         self.assertFalse(checklist["result"]["publish_enabled"])
 
+        owner_file = json.loads(self.principal_file.read_text(encoding="utf-8"))
+        owner_file.update(actor_id="local-owner", role="owner")
+        self.principal_file.write_text(json.dumps(owner_file), encoding="utf-8")
+        if os.name == "posix":
+            self.principal_file.chmod(0o600)
+        code, blocked = self.invoke(
+            "release", "publish", "--agent-id", "expert-a",
+            "--candidate-id", candidate["candidate_id"], "--entry-id", "visitor-entry",
+            "--version-id", "sandbox-v1",
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(blocked["error"]["code"], "release_blocked")
+        self.assertFalse(blocked["ok"])
+
     def test_revision_conflict_is_mcp_compatible_and_nonzero(self):
         self.invoke("draft", "create", "--agent-id", "expert-a", "--base-version-id", "v1")
         self.invoke(

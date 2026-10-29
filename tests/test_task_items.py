@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 
-from loomrise.durable_store import SqliteStore
+from loomrise.durable_store import SCHEMA_VERSION, SqliteStore
 
 
 class TaskItemRecoveryTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class TaskItemRecoveryTests(unittest.TestCase):
                 migrated._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()["value"],
-                "6",
+                str(SCHEMA_VERSION),
             )
             migrated.close()
 

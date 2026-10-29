@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -94,6 +95,48 @@ class TestSchema(StoreCase):
         self.assertTrue(
             {"requests", "runs", "events", "idempotency", "outbox"} <= names, names,
         )
+
+    def test_v9_material_metadata_is_snapshotted_during_v10_migration(self) -> None:
+        path = os.path.join(self.tmp.name, "legacy-material.db")
+        legacy = SqliteStore(path, owner_id="legacy")
+        saved = legacy.save_material(
+            tenant_id="tenant_demo", agent_id="expert-a", asset_id="asset-1",
+            version_id="version-1", display_name="Legacy guide", filename="guide.txt",
+            media_type="text/plain", authorization="licensed",
+            expires_at="2099-01-01T00:00:00+00:00", content=b"guide",
+        )
+        legacy.close()
+        with sqlite3.connect(path) as connection:
+            connection.execute("ALTER TABLE material_versions RENAME TO material_versions_v10")
+            connection.execute(
+                "CREATE TABLE material_versions (version_id TEXT PRIMARY KEY,"
+                "asset_id TEXT NOT NULL REFERENCES material_assets(asset_id),"
+                "version INTEGER NOT NULL,content_hash TEXT NOT NULL,content BLOB NOT NULL,"
+                "created_at TEXT NOT NULL,UNIQUE(asset_id,version))",
+            )
+            connection.execute(
+                "INSERT INTO material_versions SELECT version_id,asset_id,version,content_hash,content,created_at "
+                "FROM material_versions_v10",
+            )
+            connection.execute("DROP TABLE material_versions_v10")
+            connection.execute("UPDATE meta SET value='9' WHERE key='schema_version'")
+
+        migrated = SqliteStore(path, owner_id="migrated")
+        try:
+            result = migrated.material_version(
+                tenant_id="tenant_demo", agent_id="expert-a", asset_id=saved["asset_id"],
+            )
+            self.assertEqual(result["version_display_name"], "Legacy guide")
+            self.assertEqual(result["version_authorization"], "licensed")
+            self.assertEqual(result["version_expires_at"], "2099-01-01T00:00:00+00:00")
+            self.assertEqual(
+                migrated._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                "10",
+            )
+        finally:
+            migrated.close()
 
     def test_store_is_not_jsonl(self) -> None:
         req, _ = self.new_run()

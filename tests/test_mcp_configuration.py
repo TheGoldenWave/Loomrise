@@ -86,6 +86,9 @@ class ConfigurationMcpCase(unittest.IsolatedAsyncioTestCase):
             self.assertIn("loomrise_draft_patch", tools)
             self.assertIn("loomrise_candidate_freeze", tools)
             self.assertIn("loomrise_stable_read", tools)
+            self.assertIn("loomrise_release_checklist", tools)
+            self.assertIn("loomrise_release_approve", tools)
+            self.assertIn("loomrise_release_publish", tools)
             for tool in tools.values():
                 properties = tool.inputSchema["properties"]
                 self.assertNotIn("tenant_id", properties)
@@ -140,6 +143,16 @@ class ConfigurationMcpCase(unittest.IsolatedAsyncioTestCase):
                 "idempotency_key": "mcp-freeze-r2",
             })
             self.assertEqual(repeat.structuredContent["result"]["candidate_id"], candidate["candidate_id"])
+            checklist = await client.call_tool("loomrise_release_checklist", {
+                "agent_id": "expert-a", "candidate_id": candidate["candidate_id"],
+            })
+            self.assertTrue(checklist.structuredContent["ok"])
+            self.assertFalse(checklist.structuredContent["result"]["publish_enabled"])
+            denied = await client.call_tool("loomrise_release_approve", {
+                "agent_id": "expert-a", "candidate_id": candidate["candidate_id"],
+                "entry_id": "entry-1", "version_id": "sandbox-v1",
+            })
+            self.assertEqual(denied.structuredContent["error"]["code"], "forbidden")
 
     async def test_tool_scope_and_field_restrictions_are_server_enforced(self):
         async with create_connected_server_and_client_session(self.server) as client:

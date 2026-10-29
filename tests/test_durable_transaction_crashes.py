@@ -823,17 +823,21 @@ SqliteStore(sys.argv[1], owner_id='p2')
         finally:
             replay.close()
 
-    def test_v5_to_v6_tool_intent_migration_rolls_back_and_retries(self) -> None:
-        path = os.path.join(self.tmp.name, "schema-v5-to-v6.db")
+    def test_v5_to_v7_r2_schema_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v5-to-v7.db")
         store = SqliteStore(path, owner_id="p1")
         store.close()
         with closing(sqlite3.connect(path)) as connection:
             connection.execute("UPDATE meta SET value='5' WHERE key='schema_version'")
             connection.execute("DROP INDEX idx_tool_attempts_run")
             connection.execute("DROP TABLE tool_attempts")
+            connection.execute("DROP INDEX idx_sandbox_release_candidate")
+            connection.execute("DROP TABLE sandbox_entries")
+            connection.execute("DROP TABLE sandbox_releases")
+            connection.execute("DROP TABLE release_approvals")
             connection.commit()
 
-        trigger = "crash_schema_v5_to_v6"
+        trigger = "crash_schema_v5_to_v7"
         _install_trigger(
             path, trigger, "meta", "UPDATE",
             f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
@@ -847,7 +851,7 @@ SqliteStore(sys.argv[1], owner_id='p2')
                 "SELECT value FROM meta WHERE key='schema_version'",
             ).fetchone()[0]
             table = connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tool_attempts'",
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='release_approvals'",
             ).fetchone()
         self.assertEqual(version, "5")
         self.assertIsNone(table)
@@ -862,7 +866,151 @@ SqliteStore(sys.argv[1], owner_id='p2')
                 str(SCHEMA_VERSION),
             )
             self.assertIsNotNone(replay._conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tool_attempts'",
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='release_approvals'",
+            ).fetchone())
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sandbox_entries'",
+            ).fetchone())
+        finally:
+            replay.close()
+
+    def test_v6_to_v7_release_schema_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v6-to-v7.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+            connection.execute("DROP INDEX idx_sandbox_release_candidate")
+            connection.execute("DROP TABLE sandbox_entries")
+            connection.execute("DROP TABLE sandbox_releases")
+            connection.execute("DROP TABLE release_approvals")
+            connection.commit()
+
+        trigger = "crash_schema_v6_to_v7"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sandbox_entries'",
+            ).fetchone()
+        self.assertEqual(version, "6")
+        self.assertIsNone(table)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sandbox_entries'",
+            ).fetchone())
+        finally:
+            replay.close()
+
+    def test_v7_to_current_knowledge_schema_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v7-to-current.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE meta SET value='7' WHERE key='schema_version'")
+            connection.execute("DROP INDEX idx_knowledge_index_text")
+            connection.execute("DROP INDEX idx_knowledge_sources_scope")
+            connection.execute("DROP TABLE knowledge_index")
+            connection.execute("DROP TABLE knowledge_documents")
+            connection.execute("DROP TABLE knowledge_sources")
+            connection.commit()
+
+        trigger = "crash_schema_v7_to_current"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_sources'",
+            ).fetchone()
+        self.assertEqual(version, "7")
+        self.assertIsNone(table)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_sources'",
+            ).fetchone())
+        finally:
+            replay.close()
+
+    def test_v8_to_v9_customer_schema_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v8-to-v9.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE meta SET value='8' WHERE key='schema_version'")
+            connection.execute("DROP INDEX idx_customer_conversations_inbox")
+            connection.execute("DROP INDEX idx_material_assets_scope")
+            connection.execute("DROP TABLE customer_messages")
+            connection.execute("DROP TABLE customer_conversations")
+            connection.execute("DROP TABLE material_versions")
+            connection.execute("DROP TABLE material_assets")
+            connection.commit()
+
+        trigger = "crash_schema_v8_to_v9"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='customer_conversations'",
+            ).fetchone()
+        self.assertEqual(version, "8")
+        self.assertIsNone(table)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='customer_conversations'",
             ).fetchone())
         finally:
             replay.close()

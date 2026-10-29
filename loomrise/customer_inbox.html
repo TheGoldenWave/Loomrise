@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>客服收件箱</title>
+  <style>
+    :root { color-scheme: light; font: 14px/1.5 system-ui, sans-serif; color: #243530; background: #f5f7f6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; display: grid; grid-template-columns: 310px 1fr; }
+    aside { min-width: 0; border-right: 1px solid #d7e0dc; background: white; display: flex; flex-direction: column; }
+    header { padding: 14px 16px; border-bottom: 1px solid #e1e8e5; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { font-size: 16px; margin: 0; }
+    button { min-height: 36px; padding: 0 12px; border: 0; border-radius: 5px; background: #176b55; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    button:focus-visible, textarea:focus-visible { outline: 3px solid #d79840; outline-offset: 2px; }
+    #list { overflow: auto; }
+    .conversation { width: 100%; min-height: 68px; padding: 10px 14px; text-align: left; border-radius: 0; border-bottom: 1px solid #edf0ee; background: white; color: #243530; }
+    .conversation[aria-current="true"] { background: #e8f2ee; box-shadow: inset 3px 0 #176b55; }
+    .conversation small { display: block; color: #657771; }
+    main { min-width: 0; display: flex; flex-direction: column; }
+    #detail { padding: 12px 18px; min-height: 54px; border-bottom: 1px solid #e1e8e5; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    #status { color: #586c66; }
+    #messages { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+    .message { max-width: min(680px, 90%); padding: 10px 12px; border: 1px solid #e0e6e3; border-radius: 7px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .visitor { background: #e4f0eb; align-self: flex-end; }
+    form { padding: 12px; background: white; border-top: 1px solid #e1e8e5; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    textarea { min-width: 0; min-height: 64px; resize: vertical; border: 1px solid #bac9c3; border-radius: 5px; padding: 9px; font: inherit; }
+    @media (max-width: 640px) { body { grid-template-columns: 130px minmax(0,1fr); } header { padding: 10px; align-items: flex-start; flex-direction: column; } .conversation { padding: 9px; } #detail { padding: 9px; align-items: flex-start; flex-direction: column; } form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body data-agent-id="__AGENT_ID__">
+  <aside>
+    <header><h1>客服收件箱</h1><button id="refresh" type="button">刷新</button></header>
+    <nav id="list" aria-label="会话列表"></nav>
+  </aside>
+  <main>
+    <div id="detail"><span id="status" role="status">选择一条会话</span><button id="claim" type="button" disabled>接管会话</button></div>
+    <section id="messages" aria-live="polite" aria-label="对话记录"></section>
+    <form id="form"><textarea id="text" maxlength="20000" placeholder="输入回复" aria-label="回复内容" required></textarea><button id="send" type="submit" disabled>发送</button></form>
+  </main>
+  <script>
+    const agentId = document.body.dataset.agentId;
+    const list = document.querySelector('#list');
+    const messages = document.querySelector('#messages');
+    const status = document.querySelector('#status');
+    let selected = null;
+    let listSignature = '';
+    async function call(action, payload) {
+      const response = await fetch('/api/customer-service', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload }), cache: 'no-store'
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error?.message || '请求失败');
+      return body.result;
+    }
+    async function loadList() {
+      try {
+        const result = await call('inbox.list', { agent_id: agentId });
+        const signature = JSON.stringify(result.items.map(item => [
+          item.conversation_id, item.state, item.assigned_to, item.occupancy_generation,
+          item.updated_at, item.is_assigned_to_me
+        ]));
+        if (signature === listSignature) return result.items;
+        listSignature = signature;
+        list.replaceChildren(...result.items.map(item => {
+          const button = document.createElement('button');
+          button.className = 'conversation'; button.type = 'button';
+          button.setAttribute('aria-current', String(selected?.conversation_id === item.conversation_id));
+          button.textContent = item.conversation_id;
+          const meta = document.createElement('small'); meta.textContent = `${item.state} · ${item.release_version}`;
+          button.append(meta); button.onclick = () => select(item);
+          return button;
+        }));
+        return result.items;
+      } catch (error) { status.textContent = error.message; }
+    }
+    async function select(item) {
+      const latest = await loadList();
+      selected = latest?.find(value => value.conversation_id === item.conversation_id) || item;
+      item = selected;
+      status.textContent = `${item.state} · 版本 ${item.release_version}`;
+      document.querySelector('#claim').disabled = item.state === 'human';
+      document.querySelector('#send').disabled = item.state !== 'human' || !item.is_assigned_to_me;
+      const result = await call('inbox.messages', { agent_id: agentId, conversation_id: item.conversation_id });
+      messages.replaceChildren(...result.items.map(message => {
+        const node = document.createElement('div'); node.className = `message ${message.sender}`;
+        node.textContent = `${message.sender === 'visitor' ? '访客' : message.actor_id || message.sender}：${message.text}`;
+        return node;
+      }));
+      messages.scrollTop = messages.scrollHeight;
+    }
+    document.querySelector('#refresh').onclick = loadList;
+    document.querySelector('#claim').onclick = async () => {
+      if (!selected) return;
+      try {
+        await call('inbox.claim', { agent_id: agentId, conversation_id: selected.conversation_id });
+        const latest = await loadList();
+        await select(latest.find(value => value.conversation_id === selected.conversation_id));
+      }
+      catch (error) { status.textContent = error.message; }
+    };
+    document.querySelector('#form').onsubmit = async event => {
+      event.preventDefault();
+      if (!selected) return;
+      const text = document.querySelector('#text').value.trim();
+      try {
+        await call('inbox.reply', { agent_id: agentId, conversation_id: selected.conversation_id,
+          generation: selected.occupancy_generation, text });
+        document.querySelector('#text').value = ''; await select(selected);
+      } catch (error) { status.textContent = error.message; }
+    };
+    loadList(); setInterval(loadList, 3000);
+  </script>
+</body>
+</html>

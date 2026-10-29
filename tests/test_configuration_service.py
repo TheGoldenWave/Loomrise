@@ -4,6 +4,7 @@ from copy import deepcopy
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from loomrise.configuration import (
     ConfigurationApplication,
@@ -247,7 +248,7 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         app = ConfigurationApplication(self.service)
         external = ConfigurationPrincipal(
             tenant_id="tenant-a", actor_id="agent", role="external_agent",
-            agent_ids=("expert-a",),
+            agent_ids=("expert-b",),
         )
 
         response = app.execute(
@@ -256,6 +257,174 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         )
 
         self.assertEqual(response["error"]["code"], "forbidden")
+
+    def test_release_approval_and_publish_are_owner_only_and_prechecks_block_them(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="release-owner-blocked",
+        )
+        app = ConfigurationApplication(self.service)
+        editor = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="editor", role="editor",
+            agent_ids=("expert-a",),
+        )
+        owner = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="owner", role="owner",
+            agent_ids=("expert-a",),
+        )
+        payload = {
+            "agent_id": "expert-a", "candidate_id": candidate["candidate_id"],
+            "entry_id": "visitor-entry", "version_id": "sandbox-v1",
+        }
+
+        denied = app.execute(principal=editor, action="release.approve", payload=payload)
+        self.assertEqual(denied["error"]["code"], "forbidden")
+        approval = app.execute(principal=owner, action="release.approve", payload=payload)
+        self.assertEqual(approval["error"]["code"], "release_blocked")
+        published = app.execute(principal=owner, action="release.publish", payload=payload)
+        self.assertEqual(published["error"]["code"], "release_blocked")
+        missing = app.execute(
+            principal=owner, action="release.entry.get",
+            payload={"agent_id": "expert-a", "entry_id": "visitor-entry"},
+        )
+        self.assertEqual(missing["error"]["code"], "not_found")
+
+    def test_sandbox_publish_binds_immutable_candidate_not_later_draft(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="release-storage-binding",
+        )
+        self.store.approve_release_candidate(
+            tenant_id="tenant-a", agent_id="expert-a",
+            candidate_id=candidate["candidate_id"], content_hash=candidate["content_hash"],
+            environment="sandbox", entry_id="visitor-entry", version_id="sandbox-v1",
+            approved_by="owner",
+        )
+
+        binding = self.store.publish_sandbox_candidate(
+            tenant_id="tenant-a", agent_id="expert-a",
+            candidate_id=candidate["candidate_id"], entry_id="visitor-entry",
+            version_id="sandbox-v1",
+        )
+        self.assertEqual(binding["version_id"], "sandbox-v1")
+        self.service.save_draft(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            config=spec("后续草稿"),
+        )
+        entry = self.service.get_sandbox_entry(
+            tenant_id="tenant-a", agent_id="expert-a", entry_id="visitor-entry",
+        )
+        self.assertEqual(entry["version_id"], "sandbox-v1")
+        self.assertEqual(entry["config"]["persona"]["goal"], "原始目标")
+
+    def test_faq_ingest_retry_revoke_and_cache_invalidation(self):
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="faq",
+            locator="退费规则：开课前可申请。\n\n改期规则：提前三天联系。",
+            display_name="FAQ", authorization="owned",
+        )
+        ready = self.service.ingest_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(ready["state"], "ready")
+        self.assertEqual(len(self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="退费规则",
+        )), 1)
+
+        revoked = self.service.revoke_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(revoked["state"], "revoked")
+        self.assertEqual(self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="退费规则",
+        ), [])
+
+    def test_knowledge_actions_enforce_roles_and_revoke_blocks_runtime_resolution(self):
+        app = ConfigurationApplication(self.service)
+        viewer = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="viewer", role="viewer", agent_ids=("expert-a",),
+        )
+        editor = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="editor", role="editor", agent_ids=("expert-a",),
+        )
+        external = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="agent", role="external_agent", agent_ids=("expert-a",),
+        )
+        created = app.execute(principal=viewer, action="knowledge.source.create", payload={
+            "agent_id": "expert-a", "kind": "faq", "locator": "退费规则：开课前可退。",
+            "display_name": "FAQ", "authorization": "owned",
+        })
+        self.assertEqual(created["error"]["code"], "forbidden")
+        created = app.execute(principal=editor, action="knowledge.source.create", payload={
+            "agent_id": "expert-a", "kind": "faq", "locator": "退费规则：开课前可退。",
+            "display_name": "FAQ", "authorization": "owned",
+        })["result"]
+        denied = app.execute(principal=external, action="knowledge.revoke", payload={
+            "agent_id": "expert-a", "source_id": created["source_id"],
+        })
+        self.assertEqual(denied["error"]["code"], "forbidden")
+        ingested = app.execute(principal=editor, action="knowledge.ingest", payload={
+            "agent_id": "expert-a", "source_id": created["source_id"],
+        })
+        self.assertTrue(ingested["ok"])
+
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="stale-runtime-check",
+        )
+        self.store.approve_release_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", candidate_id=candidate["candidate_id"],
+            content_hash=candidate["content_hash"], environment="sandbox",
+            entry_id="visitor-entry", version_id="sandbox-v1", approved_by="owner",
+        )
+        self.store.publish_sandbox_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", candidate_id=candidate["candidate_id"],
+            entry_id="visitor-entry", version_id="sandbox-v1",
+        )
+        revoked = app.execute(principal=editor, action="knowledge.revoke", payload={
+            "agent_id": "expert-a", "source_id": created["source_id"],
+        })
+        self.assertEqual(revoked["result"]["affected_versions"], ["sandbox-v1"])
+        audit_read = app.execute(principal=viewer, action="release.entry.get", payload={
+            "agent_id": "expert-a", "entry_id": "visitor-entry",
+        })
+        self.assertEqual(audit_read["result"]["knowledge_state"], "stale")
+        runtime = app.execute(principal=viewer, action="release.entry.resolve", payload={
+            "agent_id": "expert-a", "entry_id": "visitor-entry",
+        })
+        self.assertEqual(runtime["error"]["code"], "release_blocked")
+
+    def test_failed_file_ingest_is_distinct_and_retryable(self):
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="file",
+            locator=os.path.join(self.temp.name, "missing.txt"),
+            display_name="missing.txt", authorization="licensed",
+        )
+        failed = self.service.ingest_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(failed["state"], "failed")
+        retried = self.service.retry_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(retried["state"], "failed")
+        self.assertEqual(retried["attempt_count"], 2)
+
+    def test_url_ingest_records_network_failure_and_can_be_retried(self):
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="url",
+            locator="https://example.test/faq", display_name="FAQ URL",
+            authorization="licensed",
+        )
+        with patch("loomrise.configuration.fetch_https_text", side_effect=OSError("fixture DNS failure")):
+            result = self.service.ingest_knowledge_source(
+                tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+            )
+        self.assertEqual(result["state"], "failed")
+        self.assertEqual(result["error_code"], "parse_failed")
 
     def test_stable_version_cannot_be_modified_or_deleted(self):
         self.seed()

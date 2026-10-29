@@ -99,12 +99,57 @@ def build_parser() -> argparse.ArgumentParser:
     stable_import.add_argument("--config", required=True, help="JSON 对象文件路径")
     _add_json_flag(stable_import)
 
-    release = groups.add_parser("release", help="发布前检查（只读，不执行发布）")
+    release = groups.add_parser("release", help="批准并发布到指定沙盒入口")
     release_actions = release.add_subparsers(dest="action", required=True)
     checklist = release_actions.add_parser("checklist", help="运行十项发布预检")
     checklist.add_argument("--agent-id", required=True)
     checklist.add_argument("--candidate-id", required=True)
+    checklist.add_argument("--environment")
+    checklist.add_argument("--entry-id")
+    checklist.add_argument("--version-id")
     _add_json_flag(checklist)
+
+    approve = release_actions.add_parser("approve", help="批准通过预检的沙盒发布")
+    approve.add_argument("--agent-id", required=True)
+    approve.add_argument("--candidate-id", required=True)
+    approve.add_argument("--entry-id", required=True)
+    approve.add_argument("--version-id", required=True)
+    _add_json_flag(approve)
+
+    publish = release_actions.add_parser("publish", help="发布候选并绑定沙盒入口")
+    publish.add_argument("--agent-id", required=True)
+    publish.add_argument("--candidate-id", required=True)
+    publish.add_argument("--entry-id", required=True)
+    publish.add_argument("--version-id", required=True)
+    _add_json_flag(publish)
+
+    entry = release_actions.add_parser("entry", help="读取沙盒入口当前绑定版本")
+    entry.add_argument("--agent-id", required=True)
+    entry.add_argument("--entry-id", required=True)
+    _add_json_flag(entry)
+
+    knowledge = groups.add_parser("knowledge", help="查看或管理知识来源")
+    knowledge_actions = knowledge.add_subparsers(dest="action", required=True)
+    knowledge_list = knowledge_actions.add_parser("list", help="列出知识来源及状态")
+    knowledge_list.add_argument("--agent-id", required=True)
+    _add_json_flag(knowledge_list)
+    knowledge_search = knowledge_actions.add_parser("search", help="检索已摄入知识")
+    knowledge_search.add_argument("--agent-id", required=True)
+    knowledge_search.add_argument("--query", required=True)
+    knowledge_search.add_argument("--limit", type=int, default=10)
+    _add_json_flag(knowledge_search)
+    knowledge_create = knowledge_actions.add_parser("create", help="登记 FAQ、URL 或文件路径来源")
+    knowledge_create.add_argument("--agent-id", required=True)
+    knowledge_create.add_argument("--kind", choices=("faq", "url", "file"), required=True)
+    knowledge_create.add_argument("--locator", required=True)
+    knowledge_create.add_argument("--display-name", required=True)
+    knowledge_create.add_argument("--authorization", required=True)
+    _add_json_flag(knowledge_create)
+    for action in ("ingest", "retry", "revoke"):
+        command = knowledge_actions.add_parser(action)
+        command.add_argument("--agent-id", required=True)
+        command.add_argument("--source-id", required=True)
+        _add_json_flag(command)
 
     return parser
 
@@ -179,9 +224,39 @@ def _request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         if action == "read":
             return "stable.get", {"agent_id": agent_id, "version_id": args.version_id}
     if resource == "release" and action == "checklist":
-        return "release.checklist", {
+        payload = {
             "agent_id": agent_id, "candidate_id": args.candidate_id,
         }
+        target = (args.environment, args.entry_id, args.version_id)
+        if any(target):
+            if not all(target):
+                raise ValueError("environment、entry_id、version_id 必须同时提供")
+            payload.update(environment=args.environment, entry_id=args.entry_id,
+                           version_id=args.version_id)
+        return "release.checklist", payload
+    if resource == "release" and action in {"approve", "publish"}:
+        return f"release.{action}", {
+            "agent_id": agent_id, "candidate_id": args.candidate_id,
+            "entry_id": args.entry_id, "version_id": args.version_id,
+        }
+    if resource == "release" and action == "entry":
+        return "release.entry.get", {"agent_id": agent_id, "entry_id": args.entry_id}
+    if resource == "knowledge":
+        if action == "list":
+            return "knowledge.source.list", {"agent_id": agent_id}
+        if action == "search":
+            return "knowledge.search", {
+                "agent_id": agent_id, "query": args.query, "limit": args.limit,
+            }
+        if action == "create":
+            return "knowledge.source.create", {
+                "agent_id": agent_id, "kind": args.kind, "locator": args.locator,
+                "display_name": args.display_name, "authorization": args.authorization,
+            }
+        if action in {"ingest", "retry", "revoke"}:
+            return f"knowledge.{action}", {
+                "agent_id": agent_id, "source_id": args.source_id,
+            }
     raise ValueError("未知配置命令")
 
 

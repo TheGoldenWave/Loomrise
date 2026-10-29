@@ -170,7 +170,7 @@ pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺�
 | 阶段 | 采用范围 | 当前状态与硬边界 |
 |---|---|---|
 | S2-a / R1 | 先落 `Run`、可选 `TaskAttempt` 关联及请求/事件/幂等/outbox 存储合同；定义 `DurableRunAdapter` 接口，以无副作用步骤验证事务提交可见性、重启裁决、重复提交和旧 generation，不建设完整 Task 调度。Checkpoint 可作为实现机制，是否采用由 R1 选型/设计 Gate 决定 | **部分实现（2026-10-29）**。SQLite 耐久层、loopback 配置 HTTP、共用配置服务、CLI/MCP、版本/diff/校验及恢复/outbox 测试已落；配置工作面的本机 fixture 浏览器联调已验。schema v5 增加最小 TaskItem 身份/来源/状态/revision 持久化，M-A-04 撤销恢复切片有测试证据；完整 TaskItem/TaskAttempt、主体/用途隔离、M-A-03/17/18 签核与 R1 父 Gate 仍未关闭。逐项证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md) |
-| S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **部分实现（2026-10-29）**。schema v6 新增工具意图持久化；未决操作转为 `reconciling` 并阻止自动重放，证据见 [R2-EVIDENCE](reports/R2-EVIDENCE.md#wp5-副作用意图首片)。尚无结果查询/回执收敛、发布、摄入、物料、Widget/Inbox 或确认唤醒；R2 Gate 未关闭。不能把 durable task 成功当作业务成功 |
+| S2-a / R2 | 将 Adapter 接入最小沙盒发布、暂停/唤醒、取消确认、超时未知与对账；继续使用模拟或可回收副作用 | **部分实现（2026-10-29）**。schema v10 已持久化工具意图与物料逐版本元数据；未决操作转为 `reconciling` 并阻止自动重放。另有沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本、loopback Widget/Inbox 服务端切片。尚无结果查询/回执收敛、确认 suspend/wake 与只读运行状态服务；固定样例检查未接入，R2 Gate 未关闭。证据见 [R2-EVIDENCE](reports/R2-EVIDENCE.md)。不能把 durable task 成功当作业务成功 |
 | S2-b / R3 → S2-c / R4 | 在前两批验证后再接嵌套 task/phase、后台 worker、查看/重放/parking 和真实业务工具沙盒；真实写入仍由 Loomrise 幂等与结果合同保护 | **规划**。不因引入 Adapter 改变 `ServiceRequest`、`RunEvent`、`Outcome`、权限或发布权威 |
 | S3 / R5a | 首云部署时再验多进程/多 worker、备份恢复、升级迁移、存储替换和云端故障；可按需实现 SQLite/其他存储 Adapter | **未实现**。没有通过真实云恢复、迁移和升级 Gate 前，不宣称云端耐久执行或生产级恢复 |
 

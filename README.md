@@ -2,7 +2,7 @@
 
 **新会话入口**：[Agent 协作指南](AGENTS.md) · [文档总索引](docs/context/INDEX.md) · [开发路线与 Gate](docs/ROADMAP.md)。导航整理：2026-10-14；专题状态以文件正文和实际证据为准。
 
-> **状态（2026-10-27，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认，专家内任务与渐进披露方案已落文档；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 确定性回放、真实模型与离线依赖有历史验收记录，退出 Gate 仍未全部通过。真实模型走本机 Coding Plan 凭据；**仍缺声学级网页语音验收**，尚无公开服务。第二轮本地前端已完成交互；R1 配置后端已实现 SQLite 版本服务、loopback HTTP、MCP/CLI 与校验，服务端版本工作面已完成本机浏览器联调，但 R1 Gate 未通过，M-A-04 等事项仍缺合同或签核；见[配置化前后端迭代与 R1 证据](docs/FRONTEND-BACKEND-ITERATION-PLAN.md)及[前端交付与评审](docs/S2-FRONTEND-ROUND2.md)。S1 证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
+> **状态（2026-10-29，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本与人工发送重验、最小 Widget/Inbox，以及工具副作用意图持久化；固定样例执行、确认等待恢复、未知结果对账和只读运行状态服务尚未完成，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
 
 Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务 **AI 产品经理、解决方案人员、小团队开发者与策略运营**。规划提供配置与验收工作台、完整网页客服应用和统一业务执行服务，让团队从授权资料与流程出发，交付可办理业务、可验收、可持续改进的 Agent，并快捷部署到用户自己的云。
 
@@ -20,7 +20,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 
 **配置体验（已确认原则，具体交互待验证）**：用户可完整手动搭建，也可使用可关闭的初始化助手；先用自己的授权资料试用客服，再接业务工具。业务概览和详细配置共用同一版本，助手仅建议候选，不代替授权或发布。面向策略运营的模块说明见[后台配置指南](docs/OPERATOR-CONFIGURATION-GUIDE.md)；其中新增 Task/主动服务能力仍是规划。详细设计见[配置后台体验优化](docs/CONFIGURATION-UX-OPTIMIZATION.md)。
 
-**客服物料（方向已确认，后端未实现）**：独立物料库承载业务常发的图片、视频与文档，业务录入授权、有效期、范围和简介，审阅后的简介/标签供 Agent 检索定位。人工可选文件发送，Agent 自动发送默认关闭并由版本化策略与会话占用限制。本轮前端扩展原件本地缓存、选择与发送仿真，并在客服试用台和 Widget 预览提供访客索取、收件与查看体验；真实压缩、内容理解、检索与外部发送仍待建设，验证见[物料专题](docs/MATERIAL-LIBRARY-AND-DELIVERY.md)与对应前端报告。初始化不强制配置物料。
+**客服物料（方向已确认；R2 有限后端切片）**：R2 已提供 SQLite 原件/版本、逐版本授权和有效期快照、下载/备份恢复、撤回及人工发送前会话占用/版本重验；完整格式/并发失效矩阵仍缺。自动发送、真实渠道交付与媒体后处理不在 R2，见[物料专题](docs/MATERIAL-LIBRARY-AND-DELIVERY.md)与[R2 证据](docs/reports/R2-EVIDENCE.md)。初始化不强制配置物料。
 
 **第三方 Agent 接入（高优先级方向已确认，未实现）**：统一应用 API + MCP + 配套 Skills + 可选 CLI；S2-a 优先实现受限草稿／候选创建与首个客户端联调，随后建设诊断、受控改进与可选通用 harness Worker。外部 Agent 不取得生产写入或发布权，网页手动路径不依赖助手。见[开发计划](docs/AGENT-INTEGRATION-PLAN.md)。
 
@@ -31,7 +31,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 阶段 | 目标 | 当前状态 |
 |---|---|---|
 | S1 | 最小咨询/模拟预约切片及剩余音频、SSE Gate | 已有实现和限定验收证据，退出 Gate 未全通过 |
-| S2-a | 持久化、配置版本、知识摄入、独立物料资产与最小人工文件交付、沙盒发布和 Widget—Inbox 闭环 | 规划；现有 S2 仅为本地工作台原型 |
+| S2-a | 持久化、配置版本、知识摄入、独立物料资产与最小人工文件交付、沙盒发布和 Widget—Inbox 闭环 | R1/R2 后端已有部分实现；父 Gate 未通过，详见 R1/R2 证据 |
 | S2-b | 完整网页客服覆盖：联系页、渠道、通知、统计、移动接入及物料后处理/已审简介检索 | 规划 |
 | S2-c | 业务工具沙盒、策略化 Agent 文件发送、评测与改进、审批回滚及完整文字/语音应用验收 | 规划 |
 | S3 | 标准发行与首个用户自有云快捷交付，验证恢复与升级 | 规划 |
@@ -53,7 +53,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
-| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.11**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R0 执行状态（代码完成、Gate 未全绿） |
+| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.22**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R2 工作包实现状态与 Gate 证据 |
 | 马上要做的 R0 怎么做 | [R0 合同对齐开工清单](docs/superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检命令、证据两层约定、语音阈值登记表、WP0–WP6 复选框与 DoD；合同不合主干 |
 | 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.4**） | S1／S2-a／S2-c／S3-S4 父 Gate 与工件映射；耐久子项用于细化故障证据，不新增独立退出条件；**追溯表，不是 Gate 权威** |
 | 上一轮评审改了什么、还剩什么 | [评审处置台账](docs/RELEASE-PLAN-REVIEW-RESPONSE.md) | 15 条意见的采纳/部分采纳/不采纳与落点；5 项未关闭 |

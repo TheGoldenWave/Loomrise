@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import os
 from pathlib import Path
 import tempfile
@@ -149,6 +150,29 @@ class ConfigurationHttpTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get("/api/configuration/health")
         self.assertEqual(response.status, 200)
         self.assertEqual((await response.json())["schema_version"], "config-api-v1")
+
+    async def test_customer_service_http_uses_shared_authenticated_application(self):
+        same_origin = str(self.client.make_url("/").origin())
+        response = await self.client.post("/api/customer-service", headers={"Origin": same_origin}, json={
+            "action": "material.create",
+            "payload": {
+                "agent_id": "expert-a", "filename": "faq.txt", "display_name": "FAQ",
+                "authorization": "owned",
+                "content_base64": base64.b64encode("报名信息".encode()).decode(),
+            },
+        })
+        self.assertEqual(response.status, 200)
+        body = await response.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["schema_version"], "customer-service-v1")
+        self.assertEqual(body["result"]["version"], 1)
+
+        widget = await self.client.get("/widget/expert-a/visitor-entry")
+        self.assertEqual(widget.status, 200)
+        self.assertIn('data-agent-id="expert-a"', await widget.text())
+        inbox = await self.client.get("/inbox/expert-a")
+        self.assertEqual(inbox.status, 200)
+        self.assertIn("客服收件箱", await inbox.text())
 
 
 if __name__ == "__main__":

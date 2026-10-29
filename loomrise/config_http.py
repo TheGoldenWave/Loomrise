@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import html
 import os
+from pathlib import Path
 from urllib.parse import urlsplit
 from typing import Any, Iterable
 
@@ -14,6 +16,7 @@ from .configuration import (
     CONFIG_SCHEMA_VERSION, ConfigurationApplication, ConfigurationPrincipal,
     ConfigurationService,
 )
+from .customer_service import CustomerService, CustomerServiceApplication
 from .durable_store import SqliteStore
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -23,6 +26,7 @@ _DEFAULT_ALLOWED_ORIGINS = frozenset({
 STORE_KEY = web.AppKey("configuration_store", SqliteStore)
 APPLICATION_KEY = web.AppKey("configuration_application", ConfigurationApplication)
 PRINCIPAL_KEY = web.AppKey("configuration_principal", ConfigurationPrincipal)
+CUSTOMER_APPLICATION_KEY = web.AppKey("customer_service_application", CustomerServiceApplication)
 
 
 def _normalize_local_origin(origin: str) -> str | None:
@@ -74,6 +78,8 @@ def _http_status(response: dict[str, Any]) -> int:
         "not_found": 404,
         "revision_conflict": 409,
         "validation_failed": 422,
+        "state_conflict": 409,
+        "release_blocked": 409,
     }.get(code, 500)
 
 
@@ -89,11 +95,14 @@ def create_configuration_http_app(
     principal = load_configuration_principal(principal_path)
     origin_allowlist = _allowed_origins(allowed_origins)
     store = SqliteStore(str(database_path))
-    application = ConfigurationApplication(ConfigurationService(store))
-    app = web.Application(client_max_size=4 * 1024 * 1024)
+    configuration = ConfigurationService(store)
+    application = ConfigurationApplication(configuration)
+    customer_application = CustomerServiceApplication(CustomerService(store, configuration))
+    app = web.Application(client_max_size=14 * 1024 * 1024)
     app[STORE_KEY] = store
     app[APPLICATION_KEY] = application
     app[PRINCIPAL_KEY] = principal
+    app[CUSTOMER_APPLICATION_KEY] = customer_application
 
     async def local_only(request: web.Request, handler):
         host = request.headers.get("Host", "").split(":", 1)[0].strip("[]").lower()
@@ -101,7 +110,8 @@ def create_configuration_http_app(
             raise web.HTTPForbidden(text="configuration service is loopback-only")
         origin = request.headers.get("Origin")
         normalized_origin = _normalize_local_origin(origin) if origin else None
-        if origin and normalized_origin not in origin_allowlist:
+        same_origin = _normalize_local_origin(f"{request.scheme}://{request.host}")
+        if origin and normalized_origin != same_origin and normalized_origin not in origin_allowlist:
             raise web.HTTPForbidden(text="cross-origin access is limited to configured workbench origins")
         if request.method == "OPTIONS":
             response = web.Response(status=204)
@@ -154,9 +164,45 @@ def create_configuration_http_app(
     async def health(_: web.Request) -> web.Response:
         return web.json_response({"ok": True, "schema_version": CONFIG_SCHEMA_VERSION})
 
+    async def widget_page(request: web.Request) -> web.Response:
+        template = Path(__file__).with_name("customer_widget.html").read_text(encoding="utf-8")
+        page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
+        page = page.replace("__ENTRY_ID__", html.escape(request.match_info["entry_id"], quote=True))
+        return web.Response(text=page, content_type="text/html", charset="utf-8")
+
+    async def inbox_page(request: web.Request) -> web.Response:
+        template = Path(__file__).with_name("customer_inbox.html").read_text(encoding="utf-8")
+        page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
+        return web.Response(text=page, content_type="text/html", charset="utf-8")
+
+    async def customer_execute(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError, web.HTTPBadRequest):
+            body = None
+        if not isinstance(body, dict) or set(body) != {"action", "payload"} \
+                or not isinstance(body["action"], str) or not isinstance(body["payload"], dict):
+            return web.json_response({
+                "schema_version": "customer-service-v1", "ok": False,
+                "result": None,
+                "error": {"code": "invalid_request", "message": "请求必须包含 action 与 payload 对象"},
+            }, status=400)
+        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+            principal=request.app[PRINCIPAL_KEY],
+            action=body["action"], payload=body["payload"],
+        )
+        code = result.get("error", {}).get("code") if not result.get("ok") else None
+        status = {"invalid_request": 400, "forbidden": 403, "not_found": 404,
+                  "state_conflict": 409, "release_blocked": 409}.get(code, 200)
+        return web.json_response(result, status=status)
+
     app.router.add_get("/api/configuration/health", health)
     app.router.add_post("/api/configuration", execute)
     app.router.add_options("/api/configuration", execute)
+    app.router.add_post("/api/customer-service", customer_execute)
+    app.router.add_options("/api/customer-service", customer_execute)
+    app.router.add_get("/widget/{agent_id}/{entry_id}", widget_page)
+    app.router.add_get("/inbox/{agent_id}", inbox_page)
 
     async def close_store(_: web.Application) -> None:
         store.close()
@@ -180,5 +226,6 @@ def serve_configuration_http(
 
 
 __all__ = [
-    "APPLICATION_KEY", "create_configuration_http_app", "serve_configuration_http",
+    "APPLICATION_KEY", "CUSTOMER_APPLICATION_KEY", "create_configuration_http_app",
+    "serve_configuration_http",
 ]

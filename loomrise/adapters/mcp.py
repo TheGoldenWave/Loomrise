@@ -35,8 +35,8 @@ def create_configuration_mcp_server(
     server = FastMCP(
         "loomrise-configuration",
         instructions=(
-            "Read configuration and create constrained draft/candidate changes. "
-            "Candidates are not approved or published versions."
+            "Read configuration, create constrained drafts/candidates, and use the "
+            "release tools only when the trusted principal has owner authority and all checks pass."
         ),
     )
 
@@ -151,6 +151,120 @@ def create_configuration_mcp_server(
     )
     async def stable_read(agent_id: str, version_id: str) -> ConfigurationToolResponse:
         return execute("stable.get", {"agent_id": agent_id, "version_id": version_id})
+
+    @server.tool(
+        name="loomrise_release_checklist",
+        description="Check the candidate and optional target sandbox binding; pending checks block release.",
+        structured_output=True,
+    )
+    async def release_checklist(
+        agent_id: str, candidate_id: str, environment: str | None = None,
+        entry_id: str | None = None, version_id: str | None = None,
+    ) -> ConfigurationToolResponse:
+        payload: dict[str, Any] = {"agent_id": agent_id, "candidate_id": candidate_id}
+        target = {"environment": environment, "entry_id": entry_id, "version_id": version_id}
+        if any(value is not None for value in target.values()):
+            payload.update(target)
+        return execute("release.checklist", payload)
+
+    @server.tool(
+        name="loomrise_release_approve",
+        description="Approve an eligible frozen candidate for one sandbox entry and version; owner only.",
+        structured_output=True,
+    )
+    async def release_approve(
+        agent_id: str, candidate_id: str, entry_id: str, version_id: str,
+    ) -> ConfigurationToolResponse:
+        return execute("release.approve", {
+            "agent_id": agent_id, "candidate_id": candidate_id,
+            "entry_id": entry_id, "version_id": version_id,
+        })
+
+    @server.tool(
+        name="loomrise_release_publish",
+        description="Publish an approved frozen candidate and bind the selected sandbox entry; owner only.",
+        structured_output=True,
+    )
+    async def release_publish(
+        agent_id: str, candidate_id: str, entry_id: str, version_id: str,
+    ) -> ConfigurationToolResponse:
+        return execute("release.publish", {
+            "agent_id": agent_id, "candidate_id": candidate_id,
+            "entry_id": entry_id, "version_id": version_id,
+        })
+
+    @server.tool(
+        name="loomrise_sandbox_entry_read",
+        description="Read the exact immutable version currently bound to a sandbox entry.",
+        structured_output=True,
+    )
+    async def sandbox_entry_read(agent_id: str, entry_id: str) -> ConfigurationToolResponse:
+        return execute("release.entry.get", {"agent_id": agent_id, "entry_id": entry_id})
+
+    @server.tool(
+        name="loomrise_sandbox_entry_resolve",
+        description="Resolve the exact sandbox release for runtime; stale knowledge versions are blocked.",
+        structured_output=True,
+    )
+    async def sandbox_entry_resolve(agent_id: str, entry_id: str) -> ConfigurationToolResponse:
+        return execute("release.entry.resolve", {"agent_id": agent_id, "entry_id": entry_id})
+
+    @server.tool(
+        name="loomrise_knowledge_source_list",
+        description="List authorized knowledge sources and their ingestion states.",
+        structured_output=True,
+    )
+    async def knowledge_source_list(agent_id: str) -> ConfigurationToolResponse:
+        return execute("knowledge.source.list", {"agent_id": agent_id})
+
+    @server.tool(
+        name="loomrise_knowledge_search",
+        description="Search only successfully ingested, non-revoked knowledge.",
+        structured_output=True,
+    )
+    async def knowledge_search(
+        agent_id: str, query: str, limit: int = 10,
+    ) -> ConfigurationToolResponse:
+        return execute("knowledge.search", {
+            "agent_id": agent_id, "query": query, "limit": limit,
+        })
+
+    @server.tool(
+        name="loomrise_knowledge_source_create",
+        description="Register an FAQ, HTTPS URL, or text file source; editor/owner only.",
+        structured_output=True,
+    )
+    async def knowledge_source_create(
+        agent_id: str, kind: str, locator: str, display_name: str, authorization: str,
+    ) -> ConfigurationToolResponse:
+        return execute("knowledge.source.create", {
+            "agent_id": agent_id, "kind": kind, "locator": locator,
+            "display_name": display_name, "authorization": authorization,
+        })
+
+    @server.tool(
+        name="loomrise_knowledge_ingest",
+        description="Ingest a registered source; editor/owner only.",
+        structured_output=True,
+    )
+    async def knowledge_ingest(agent_id: str, source_id: str) -> ConfigurationToolResponse:
+        return execute("knowledge.ingest", {"agent_id": agent_id, "source_id": source_id})
+
+    @server.tool(
+        name="loomrise_knowledge_retry",
+        description="Retry a failed knowledge source; editor/owner only.",
+        structured_output=True,
+    )
+    async def knowledge_retry(agent_id: str, source_id: str) -> ConfigurationToolResponse:
+        return execute("knowledge.retry", {"agent_id": agent_id, "source_id": source_id})
+
+    @server.tool(
+        name="loomrise_knowledge_revoke",
+        description="Revoke a knowledge source and invalidate affected releases; editor/owner only.",
+        structured_output=True,
+    )
+    async def knowledge_revoke(agent_id: str, source_id: str) -> ConfigurationToolResponse:
+        return execute("knowledge.revoke", {"agent_id": agent_id, "source_id": source_id})
 
     @server.resource(
         "loomrise://agents/{agent_id}/draft",

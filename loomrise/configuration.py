@@ -6,10 +6,15 @@ from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import json
+import re
+from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
+from .contracts import new_id
 from .config_validation import validate_configuration
 from .durable_store import SqliteStore
+from .knowledge_fetch import fetch_https_text
 
 CONFIG_SCHEMA_VERSION = "config-api-v1"
 _WRITE_ROLES = frozenset({"editor", "owner"})
@@ -46,6 +51,10 @@ class ConfigurationValidationError(ValueError):
 
 
 class StableVersionError(RuntimeError):
+    pass
+
+
+class ReleaseBlocked(RuntimeError):
     pass
 
 
@@ -302,6 +311,8 @@ class ConfigurationService:
 
     def release_checklist(
         self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        environment: str | None = None, entry_id: str | None = None,
+        version_id: str | None = None,
     ) -> dict[str, Any]:
         candidate = self.get_candidate(
             tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
@@ -318,6 +329,68 @@ class ConfigurationService:
             elif key == "configuration_valid":
                 status = "failed" if issues else "passed"
                 detail = issues if issues else "服务端配置校验通过"
+            elif key == "sources_identified":
+                sources = [source for source in self.store.list_knowledge_sources(
+                    tenant_id=tenant_id, agent_id=agent_id,
+                ) if source["state"] != "revoked"]
+                status, detail = (
+                    ("passed", {"source_count": len(sources)})
+                    if sources else ("pending", "尚无知识来源")
+                )
+            elif key == "source_permissions":
+                sources = [source for source in self.store.list_knowledge_sources(
+                    tenant_id=tenant_id, agent_id=agent_id,
+                ) if source["state"] != "revoked"]
+                invalid = [source["source_id"] for source in sources if source["authorization"] not in {
+                    "owned", "licensed", "public_domain", "consented",
+                }]
+                status, detail = (
+                    ("failed", invalid) if invalid else
+                    (("passed", "来源授权范围已登记") if sources else ("pending", "尚无授权来源"))
+                )
+            elif key == "knowledge_ready":
+                ready_sources = [source for source in self.store.list_knowledge_sources(
+                    tenant_id=tenant_id, agent_id=agent_id,
+                ) if source["state"] == "ready"]
+                if environment == "sandbox" and version_id:
+                    release_state = self.store.sandbox_release_knowledge_state(
+                        tenant_id=tenant_id, agent_id=agent_id, version_id=version_id,
+                    )
+                    if release_state == "stale":
+                        status, detail = "failed", "该沙盒版本因知识来源撤回而待重新验收"
+                    elif ready_sources:
+                        status, detail = "passed", {"ready_source_count": len(ready_sources)}
+                    else:
+                        status, detail = "pending", "尚无成功摄入且授权有效的知识来源"
+                else:
+                    status, detail = (
+                        ("passed", {"ready_source_count": len(ready_sources)})
+                        if ready_sources else ("pending", "尚无成功摄入且授权有效的知识来源")
+                    )
+            elif key == "fixed_samples" or key == "fixed_samples_passed":
+                status, detail = "pending", "固定样例执行服务尚未接入"
+            elif key == "sandbox_selected":
+                status, detail = (
+                    ("passed", "目标环境为 sandbox")
+                    if environment == "sandbox" else ("pending", "尚未明确目标沙盒环境")
+                )
+            elif key == "entry_version_bound":
+                status, detail = (
+                    ("passed", {"entry_id": entry_id, "version_id": version_id})
+                    if environment == "sandbox" and entry_id and version_id
+                    else ("pending", "尚未明确沙盒入口与目标版本")
+                )
+            elif key == "human_approval":
+                approval = self.store.release_approval(
+                    tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+                    content_hash=candidate["content_hash"],
+                    environment=environment or "sandbox", entry_id=entry_id or "",
+                    version_id=version_id or "",
+                ) if environment and entry_id and version_id else None
+                status, detail = (
+                    ("passed", {"approved_by": approval["approved_by"], "created_at": approval["created_at"]})
+                    if approval else ("pending", "尚无绑定目标沙盒入口/版本的人工批准")
+                )
             else:
                 status, detail = "pending", "对应服务尚未提供可验证证据"
             checks.append({
@@ -331,8 +404,165 @@ class ConfigurationService:
             "checks": checks,
             "progress": {**counts, "total": len(checks)},
             "ready": counts["failed"] == 0 and counts["pending"] == 0,
-            "publish_enabled": False,
+            "publish_enabled": counts["failed"] == 0 and counts["pending"] == 0,
         }
+
+    def approve_sandbox_release(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        entry_id: str, version_id: str, approved_by: str,
+    ) -> dict[str, Any]:
+        if not all(isinstance(value, str) and value.strip() for value in
+                   (entry_id, version_id, approved_by)):
+            raise ValueError("entry_id、version_id、approved_by 必须是非空字符串")
+        candidate = self.get_candidate(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+        )
+        checklist = self.release_checklist(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+            environment="sandbox", entry_id=entry_id, version_id=version_id,
+        )
+        blockers = [check for check in checklist["checks"]
+                    if check["key"] != "human_approval" and check["status"] != "passed"]
+        if blockers:
+            raise ReleaseBlocked("发布预检尚未通过，不能批准")
+        return self.store.approve_release_candidate(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+            content_hash=candidate["content_hash"], environment="sandbox",
+            entry_id=entry_id, version_id=version_id, approved_by=approved_by,
+        )
+
+    def publish_sandbox_candidate(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+        entry_id: str, version_id: str,
+    ) -> dict[str, Any]:
+        checklist = self.release_checklist(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+            environment="sandbox", entry_id=entry_id, version_id=version_id,
+        )
+        if not checklist["ready"]:
+            raise ReleaseBlocked("发布预检未全部通过，不能发布")
+        return self.store.publish_sandbox_candidate(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+            entry_id=entry_id, version_id=version_id,
+        )
+
+    def get_sandbox_entry(
+        self, *, tenant_id: str, agent_id: str, entry_id: str,
+    ) -> dict[str, Any]:
+        self._scope(tenant_id, agent_id)
+        value = self.store.sandbox_entry(
+            tenant_id=tenant_id, agent_id=agent_id, entry_id=entry_id,
+        )
+        if value is None:
+            raise KeyError("未知沙盒入口")
+        return value
+
+    def resolve_sandbox_entry(
+        self, *, tenant_id: str, agent_id: str, entry_id: str,
+    ) -> dict[str, Any]:
+        value = self.get_sandbox_entry(
+            tenant_id=tenant_id, agent_id=agent_id, entry_id=entry_id,
+        )
+        if value.get("knowledge_state") != "ready":
+            raise ReleaseBlocked("沙盒入口所绑版本待重新验收，不能运行")
+        return value
+
+    def create_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, kind: str, locator: str,
+        display_name: str, authorization: str,
+    ) -> dict[str, Any]:
+        self._scope(tenant_id, agent_id)
+        if authorization not in {"owned", "licensed", "public_domain", "consented"}:
+            raise ValueError("必须明确来源授权范围")
+        if kind == "url":
+            parsed = urlparse(locator)
+            if parsed.scheme != "https" or not parsed.hostname:
+                raise ValueError("正式摄入 URL 仅接受有效 HTTPS 地址")
+        elif kind == "faq":
+            if not locator.strip():
+                raise ValueError("FAQ 内容不能为空")
+        elif kind == "file":
+            if Path(locator).suffix.lower() not in {".txt", ".md", ".csv", ".json"}:
+                raise ValueError("仅支持 TXT、MD、CSV、JSON 文本文件")
+        else:
+            raise ValueError("知识来源类型仅支持 FAQ、URL、文件")
+        return self.store.create_knowledge_source(
+            tenant_id=tenant_id, agent_id=agent_id,
+            source_id=new_id("src"), kind=kind, locator=locator,
+            display_name=display_name, authorization=authorization,
+        )
+
+    def ingest_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any]:
+        source = self.store.start_knowledge_ingestion(
+            tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+        )
+        content = None
+        try:
+            if source["kind"] == "faq":
+                content = source["locator"]
+            elif source["kind"] == "file":
+                path = Path(source["locator"]).expanduser().resolve(strict=True)
+                if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
+                    raise ValueError("文件不存在、不是普通文件或超过 5 MB")
+                content = path.read_text(encoding="utf-8")
+            else:
+                content = fetch_https_text(source["locator"])
+            if not content.strip():
+                raise ValueError("来源内容为空")
+            chunks = [piece.strip() for piece in re.split(r"\n\s*\n", content) if piece.strip()]
+            return self.store.finish_knowledge_ingestion(
+                tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+                content=content, chunks=chunks,
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            return self.store.finish_knowledge_ingestion(
+                tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+                error_code="parse_failed", error_message=str(exc),
+            )
+
+    def retry_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any]:
+        source = self.store.knowledge_source(
+            tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+        )
+        if source is None:
+            raise KeyError("未知知识来源")
+        if source["state"] not in {"failed", "queued"}:
+            raise ValueError("仅失败或排队中的来源可以重试")
+        return self.ingest_knowledge_source(
+            tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+        )
+
+    def list_knowledge_sources(
+        self, *, tenant_id: str, agent_id: str,
+    ) -> list[dict[str, Any]]:
+        self._scope(tenant_id, agent_id)
+        return self.store.list_knowledge_sources(tenant_id=tenant_id, agent_id=agent_id)
+
+    def revoke_knowledge_source(
+        self, *, tenant_id: str, agent_id: str, source_id: str,
+    ) -> dict[str, Any]:
+        self._scope(tenant_id, agent_id)
+        result = self.store.revoke_knowledge_source(
+            tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+        )
+        result["affected_versions"] = self.store.mark_sandbox_versions_for_revalidation(
+            tenant_id=tenant_id, agent_id=agent_id,
+        )
+        return result
+
+    def search_ingested_knowledge(
+        self, *, tenant_id: str, agent_id: str, query: str, limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        self._scope(tenant_id, agent_id)
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
+            raise ValueError("limit 必须在 1 到 50 之间")
+        return self.store.search_knowledge_index(
+            tenant_id=tenant_id, agent_id=agent_id, query=query, limit=limit,
+        )
 
     @staticmethod
     def _scope(tenant_id: str, agent_id: str) -> None:
@@ -448,6 +678,9 @@ class ConfigurationApplication:
         except KeyError as exc:
             return {"schema_version": CONFIG_SCHEMA_VERSION, "ok": False,
                     "error": {"code": "not_found", "message": str(exc)}}
+        except ReleaseBlocked as exc:
+            return {"schema_version": CONFIG_SCHEMA_VERSION, "ok": False,
+                    "error": {"code": "release_blocked", "message": str(exc)}}
         except (TypeError, ValueError) as exc:
             return {"schema_version": CONFIG_SCHEMA_VERSION, "ok": False,
                     "error": {"code": "invalid_request", "message": str(exc)}}
@@ -469,10 +702,17 @@ class ConfigurationApplication:
         if action in {"draft.create", "draft.save", "draft.patch", "candidate.freeze"}:
             if principal.role not in _WRITE_ROLES | {"external_agent"}:
                 raise PermissionError("角色无草稿写入权限")
+        if action in {"release.approve", "release.publish"} and principal.role != "owner":
+            raise PermissionError("批准和发布仅限授权 owner")
+        knowledge_write_actions = {
+            "knowledge.source.create", "knowledge.ingest", "knowledge.retry", "knowledge.revoke",
+        }
+        if action in knowledge_write_actions and principal.role not in _WRITE_ROLES:
+            raise PermissionError("知识来源变更仅限 editor 或 owner")
         if principal.role == "external_agent" and action not in {
             "draft.get", "draft.create", "draft.patch", "candidate.freeze",
             "candidate.get", "candidate.list", "draft.validate", "stable.list",
-            "stable.get",
+            "stable.get", "release.checklist", "knowledge.source.list", "knowledge.search",
         }:
             raise PermissionError("外部 Agent 只能读取或创建受限草稿/候选")
 
@@ -535,11 +775,75 @@ class ConfigurationApplication:
                 tenant_id=tenant_id, agent_id=agent_id, candidate_id=payload["candidate_id"],
             )
         if action == "release.checklist":
-            _keys(payload, {"agent_id", "candidate_id"})
+            allowed = {"agent_id", "candidate_id", "environment", "entry_id", "version_id"}
+            unknown = set(payload) - allowed
+            missing = {"agent_id", "candidate_id"} - set(payload)
+            if unknown or missing:
+                raise ValueError("release.checklist 请求字段不完整或包含未知字段")
+            target = {key: payload[key] for key in ("environment", "entry_id", "version_id")
+                      if payload.get(key) is not None}
+            if target and set(target) != {"environment", "entry_id", "version_id"}:
+                raise ValueError("environment、entry_id、version_id 必须同时提供")
             return self.service.release_checklist(
                 tenant_id=tenant_id, agent_id=agent_id,
                 candidate_id=payload["candidate_id"],
+                **target,
             )
+        if action == "release.approve":
+            _keys(payload, {"agent_id", "candidate_id", "entry_id", "version_id"})
+            return self.service.approve_sandbox_release(
+                tenant_id=tenant_id, agent_id=agent_id,
+                candidate_id=payload["candidate_id"], entry_id=payload["entry_id"],
+                version_id=payload["version_id"], approved_by=principal.actor_id,
+            )
+        if action == "release.publish":
+            _keys(payload, {"agent_id", "candidate_id", "entry_id", "version_id"})
+            return self.service.publish_sandbox_candidate(
+                tenant_id=tenant_id, agent_id=agent_id,
+                candidate_id=payload["candidate_id"], entry_id=payload["entry_id"],
+                version_id=payload["version_id"],
+            )
+        if action == "release.entry.get":
+            _keys(payload, {"agent_id", "entry_id"})
+            return self.service.get_sandbox_entry(
+                tenant_id=tenant_id, agent_id=agent_id, entry_id=payload["entry_id"],
+            )
+        if action == "release.entry.resolve":
+            _keys(payload, {"agent_id", "entry_id"})
+            return self.service.resolve_sandbox_entry(
+                tenant_id=tenant_id, agent_id=agent_id, entry_id=payload["entry_id"],
+            )
+        if action == "knowledge.source.create":
+            _keys(payload, {"agent_id", "kind", "locator", "display_name", "authorization"})
+            return self.service.create_knowledge_source(
+                tenant_id=tenant_id, agent_id=agent_id, kind=payload["kind"],
+                locator=payload["locator"], display_name=payload["display_name"],
+                authorization=payload["authorization"],
+            )
+        if action == "knowledge.source.list":
+            _keys(payload, {"agent_id"})
+            return {"items": self.service.list_knowledge_sources(
+                tenant_id=tenant_id, agent_id=agent_id,
+            )}
+        if action in {"knowledge.ingest", "knowledge.retry", "knowledge.revoke"}:
+            _keys(payload, {"agent_id", "source_id"})
+            method = {
+                "knowledge.ingest": self.service.ingest_knowledge_source,
+                "knowledge.retry": self.service.retry_knowledge_source,
+                "knowledge.revoke": self.service.revoke_knowledge_source,
+            }[action]
+            return method(
+                tenant_id=tenant_id, agent_id=agent_id, source_id=payload["source_id"],
+            )
+        if action == "knowledge.search":
+            unknown = set(payload) - {"agent_id", "query", "limit"}
+            missing = {"agent_id", "query"} - set(payload)
+            if unknown or missing:
+                raise ValueError("knowledge.search 请求字段不完整或包含未知字段")
+            return {"items": self.service.search_ingested_knowledge(
+                tenant_id=tenant_id, agent_id=agent_id,
+                query=payload["query"], limit=payload.get("limit", 10),
+            )}
         raise ValueError("未知配置用例")
 
 
@@ -554,6 +858,6 @@ def _keys(payload: dict[str, Any], allowed: set[str]) -> None:
 
 __all__ = [
     "CONFIG_SCHEMA_VERSION", "ConfigurationApplication", "ConfigurationPrincipal",
-    "ConfigurationService", "ConfigurationValidationError", "RevisionConflict",
+    "ConfigurationService", "ConfigurationValidationError", "ReleaseBlocked", "RevisionConflict",
     "StableVersionError", "field_diff",
 ]
