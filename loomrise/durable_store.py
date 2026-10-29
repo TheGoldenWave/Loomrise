@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -24,7 +25,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -95,6 +96,21 @@ CREATE TABLE IF NOT EXISTS outbox (
   created_at    TEXT NOT NULL,
   delivered_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS task_items (
+  task_id              TEXT PRIMARY KEY,
+  tenant_id            TEXT NOT NULL,
+  agent_id             TEXT NOT NULL,
+  subject_id           TEXT NOT NULL,
+  service_cycle_id     TEXT NOT NULL,
+  purpose              TEXT NOT NULL,
+  source_agent_version TEXT NOT NULL,
+  state                TEXT NOT NULL,
+  revision             INTEGER NOT NULL,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_items_recovery
+  ON task_items(tenant_id, state, created_at);
 CREATE TABLE IF NOT EXISTS event_receipts (
   tenant_id TEXT NOT NULL,
   scenario_pack_id TEXT NOT NULL,
@@ -238,10 +254,61 @@ class SqliteStore:
         with self._lock:
             self._conn.close()
 
+    def backup_to(self, path: str) -> None:
+        """Create a transactionally consistent SQLite backup at ``path``."""
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("backup path must be a non-empty string")
+        if os.path.realpath(path) == os.path.realpath(self.path):
+            raise ValueError("backup path must differ from the live database")
+        if os.path.exists(path):
+            raise FileExistsError(f"backup path already exists: {path}")
+        with self._lock:
+            target = sqlite3.connect(path)
+            try:
+                self._conn.backup(target)
+            finally:
+                target.close()
+
     # -- 运行开始 ----------------------------------------------------------
     def begin_run(self, request: ServiceRequest, run: Run, events: list[RunEvent]) -> None:
         """请求行 + 运行行 + 首条事件同一事务。"""
         with self._tx() as cur:
+            self._begin_run(cur, request, run, events)
+
+    def begin_recovered_run(
+        self,
+        request: ServiceRequest,
+        run: Run,
+        events: list[RunEvent],
+        *,
+        previous_run_id: str,
+        expected_request_state: str,
+    ) -> None:
+        """Fence concurrent recovery attempts and create the new Run atomically."""
+        with self._tx() as cur:
+            current = cur.execute(
+                "SELECT q.state, (SELECT r.run_id FROM runs r WHERE r.request_id=q.request_id "
+                "ORDER BY r.started_at DESC,r.run_id DESC LIMIT 1) AS latest_run_id "
+                "FROM requests q WHERE q.request_id=? AND q.tenant_id=?",
+                (request.request_id, request.tenant_id),
+            ).fetchone()
+            if current is None:
+                raise KeyError("未知请求")
+            if current["state"] != expected_request_state or current["latest_run_id"] != previous_run_id:
+                raise RuntimeError("请求已被其他恢复调用接管或状态已变化")
+            previous = cur.execute(
+                "SELECT status,finish_reason FROM runs WHERE run_id=? AND request_id=?",
+                (previous_run_id, request.request_id),
+            ).fetchone()
+            if previous is None or previous["status"] != RunStatus.FAILED.value or previous["finish_reason"] != "restart_interrupted":
+                raise RuntimeError("请求旧运行不是可恢复的重启中断")
+            has_write = cur.execute(
+                "SELECT 1 FROM idempotency i JOIN runs r ON r.run_id=i.run_id "
+                "WHERE r.request_id=? LIMIT 1",
+                (request.request_id,),
+            ).fetchone()
+            if has_write is not None:
+                raise RuntimeError("请求已有持久副作用，不能自动恢复")
             self._begin_run(cur, request, run, events)
 
     def _begin_run(
@@ -581,6 +648,89 @@ class SqliteStore:
                 query += " AND q.tenant_id=?"
                 params = (tenant_id,)
             query += " ORDER BY q.created_at,q.request_id"
+            rows = self._conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def request_has_committed_write(self, request_id: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM idempotency i JOIN runs r ON r.run_id=i.run_id "
+                "WHERE r.request_id=? LIMIT 1",
+                (request_id,),
+            ).fetchone()
+        return row is not None
+
+    def create_task_item(
+        self,
+        *,
+        task_id: str,
+        tenant_id: str,
+        agent_id: str,
+        subject_id: str,
+        service_cycle_id: str,
+        purpose: str,
+        source_agent_version: str,
+    ) -> dict[str, Any]:
+        values = {
+            "task_id": task_id,
+            "tenant_id": tenant_id,
+            "agent_id": agent_id,
+            "subject_id": subject_id,
+            "service_cycle_id": service_cycle_id,
+            "purpose": purpose,
+            "source_agent_version": source_agent_version,
+        }
+        if any(not isinstance(value, str) or not value.strip() for value in values.values()):
+            raise ValueError("TaskItem 身份、主体、周期、目的和来源版本必须非空")
+        timestamp = now_iso()
+        with self._tx() as cur:
+            cur.execute(
+                "INSERT INTO task_items(task_id,tenant_id,agent_id,subject_id,service_cycle_id,"
+                "purpose,source_agent_version,state,revision,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,'scheduled',1,?,?)",
+                (*values.values(), timestamp, timestamp),
+            )
+            row = cur.execute("SELECT * FROM task_items WHERE task_id=?", (task_id,)).fetchone()
+        return dict(row)
+
+    def cancel_task_item(self, task_id: str) -> dict[str, Any]:
+        """Cancel an unclaimed item; terminal cancellation is durable and idempotent."""
+        with self._tx() as cur:
+            row = cur.execute("SELECT * FROM task_items WHERE task_id=?", (task_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"未知 TaskItem {task_id}")
+            if row["state"] == "cancelled":
+                return dict(row)
+            if row["state"] not in {"waiting_condition", "scheduled", "ready"}:
+                raise RuntimeError(f"TaskItem {task_id} 需先完成执行停止裁决")
+            cur.execute(
+                "UPDATE task_items SET state='cancelled',revision=revision+1,updated_at=? "
+                "WHERE task_id=? AND state=?",
+                (now_iso(), task_id, row["state"]),
+            )
+            updated = cur.execute(
+                "SELECT * FROM task_items WHERE task_id=?", (task_id,),
+            ).fetchone()
+        return dict(updated)
+
+    def task_item(self, task_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM task_items WHERE task_id=?", (task_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def recoverable_task_items(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            query = (
+                "SELECT * FROM task_items WHERE state IN "
+                "('waiting_condition','scheduled','ready')"
+            )
+            params: tuple[str, ...] = ()
+            if tenant_id is not None:
+                query += " AND tenant_id=?"
+                params = (tenant_id,)
+            query += " ORDER BY created_at,task_id"
             rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 

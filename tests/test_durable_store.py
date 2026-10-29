@@ -103,6 +103,36 @@ class TestSchema(StoreCase):
                                      (req.request_id,)).fetchone(),
         )
 
+    def test_online_backup_reopens_with_records_and_valid_event_chain(self) -> None:
+        req, run = self.new_run()
+        event = make_event(run, 0, "run.started")
+        self.store.append_events([event])
+        backup_path = os.path.join(self.tmp.name, "backup.db")
+
+        self.store.backup_to(backup_path)
+        backup = SqliteStore(backup_path, owner_id="backup-check")
+        try:
+            self.assertIsNotNone(backup.request_row(req.request_id))
+            self.assertIsNotNone(backup.run_row(run.run_id))
+            self.assertEqual(len(backup.load_events(run.run_id)), 1)
+            self.assertTrue(backup.verify_chain(run.run_id))
+        finally:
+            backup.close()
+
+    def test_backup_rejects_live_database_path(self) -> None:
+        with self.assertRaisesRegex(ValueError, "differ from the live database"):
+            self.store.backup_to(self.path)
+
+    def test_backup_does_not_overwrite_existing_file(self) -> None:
+        backup_path = os.path.join(self.tmp.name, "existing-backup.db")
+        with open(backup_path, "wb") as handle:
+            handle.write(b"preserve me")
+
+        with self.assertRaisesRegex(FileExistsError, "already exists"):
+            self.store.backup_to(backup_path)
+        with open(backup_path, "rb") as handle:
+            self.assertEqual(handle.read(), b"preserve me")
+
 
 class TestAtomicCommit(StoreCase):
     def test_partial_commit_is_rolled_back(self) -> None:

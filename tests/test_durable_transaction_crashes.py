@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loomrise.contracts import Channel, RequestState, Run, RunEvent, ServiceRequest
 from loomrise.durable_adapter import DurableRunAdapter, action_key
-from loomrise.durable_store import SqliteStore
+from loomrise.durable_store import SCHEMA_VERSION, SqliteStore
 
 
 _CRASH_CODE = 29
@@ -70,7 +70,7 @@ def _install_trigger(path: str, name: str, table: str, operation: str, condition
     allowed = {
         "requests", "runs", "events", "event_receipts", "outbox",
         "event_admission_conflicts", "meta", "configuration_stable_versions",
-        "configuration_drafts", "change_proposals",
+        "configuration_drafts", "change_proposals", "task_items",
     }
     if table not in allowed or operation not in {"INSERT", "UPDATE"}:
         raise ValueError("unsupported crash point")
@@ -107,6 +107,74 @@ class DurableTransactionCrashTests(unittest.TestCase):
             store._conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in tables
         )
+
+    def test_task_item_cancel_crash_rolls_back_and_can_be_retried(self) -> None:
+        store = SqliteStore(self.path)
+        store.create_task_item(
+            task_id="task-matrix", tenant_id="tenant_demo", agent_id="agent-demo",
+            subject_id="subject-demo", service_cycle_id="cycle-1",
+            purpose="follow_up", source_agent_version="av_test",
+        )
+        store.close()
+        trigger = "crash_task_item_cancel"
+        _install_trigger(
+            self.path, trigger, "task_items", "UPDATE", "NEW.state='cancelled'",
+        )
+        _run_crashing_child(self.path, """
+from loomrise.durable_store import SqliteStore
+store = SqliteStore(sys.argv[1], owner_id='p1')
+store.cancel_task_item('task-matrix')
+""")
+        recovered = SqliteStore(self.path)
+        try:
+            task = recovered.task_item("task-matrix")
+            self.assertEqual((task["state"], task["revision"]), ("scheduled", 1))
+        finally:
+            recovered.close()
+        _drop_trigger(self.path, trigger)
+
+        replay = SqliteStore(self.path)
+        try:
+            task = replay.cancel_task_item("task-matrix")
+            self.assertEqual((task["state"], task["revision"]), ("cancelled", 2))
+            replay.recover(owner_id="p2")
+            self.assertEqual(replay.recoverable_task_items(), [])
+        finally:
+            replay.close()
+
+    def test_task_item_create_crash_rolls_back_and_can_be_retried(self) -> None:
+        trigger = "crash_task_item_create"
+        _install_trigger(
+            self.path, trigger, "task_items", "INSERT", "NEW.task_id='task-matrix'",
+        )
+        _run_crashing_child(self.path, """
+from loomrise.durable_store import SqliteStore
+store = SqliteStore(sys.argv[1], owner_id='p1')
+store.create_task_item(
+    task_id='task-matrix', tenant_id='tenant_demo', agent_id='agent-demo',
+    subject_id='subject-demo', service_cycle_id='cycle-1',
+    purpose='follow_up', source_agent_version='av_test',
+)
+""")
+
+        recovered = SqliteStore(self.path)
+        try:
+            self.assertIsNone(recovered.task_item("task-matrix"))
+        finally:
+            recovered.close()
+
+        _drop_trigger(self.path, trigger)
+        replay = SqliteStore(self.path)
+        try:
+            created = replay.create_task_item(
+                task_id="task-matrix", tenant_id="tenant_demo", agent_id="agent-demo",
+                subject_id="subject-demo", service_cycle_id="cycle-1",
+                purpose="follow_up", source_agent_version="av_test",
+            )
+            self.assertEqual((created["state"], created["revision"]), ("scheduled", 1))
+            self.assertEqual(replay.recoverable_task_items(), [created])
+        finally:
+            replay.close()
 
     def test_begin_run_crashes_at_each_insert_and_can_be_replayed(self) -> None:
         points = (
@@ -676,7 +744,10 @@ store.freeze_config_candidate(
 
         points = (
             ("legacy_subject", "requests", "NEW.request_id='req-matrix' AND NEW.subject_id IS NULL"),
-            ("schema_version", "meta", "NEW.key='schema_version' AND NEW.value='4'"),
+            (
+                "schema_version", "meta",
+                f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+            ),
         )
         for stage, table, condition in points:
             trigger = f"crash_schema_migration_{stage}"
@@ -702,9 +773,53 @@ SqliteStore(sys.argv[1], owner_id='p2')
                 replay._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()[0],
-                "4",
+                str(SCHEMA_VERSION),
             )
             self.assertIsNone(replay.request_row("req-matrix")["subject_id"])
+        finally:
+            replay.close()
+
+    def test_v4_to_v5_schema_crash_rolls_back_task_table_and_can_be_retried(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v4-to-v5.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("UPDATE meta SET value='4' WHERE key='schema_version'")
+            connection.execute("DROP TABLE task_items")
+            connection.commit()
+
+        trigger = "crash_schema_v4_to_v5"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            task_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_items'",
+            ).fetchone()
+        self.assertEqual(version, "4")
+        self.assertIsNone(task_table)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+            self.assertIsNotNone(replay._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_items'",
+            ).fetchone())
         finally:
             replay.close()
 
@@ -743,7 +858,7 @@ SqliteStore(sys.argv[1], owner_id='p2')
                 replay._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()[0],
-                "4",
+                str(SCHEMA_VERSION),
             )
             self.assertEqual(
                 replay._conn.execute(
@@ -814,7 +929,7 @@ SqliteStore(sys.argv[1], owner_id='p2')
                 replay._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()[0],
-                "4",
+                    str(SCHEMA_VERSION),
             )
             self.assertIn("trigger_event_id", columns)
             self.assertIn("subject_scope", columns)

@@ -22,6 +22,7 @@ from .contracts import (
     RunStatus,
     ScenarioPack,
     ServiceRequest,
+    SubjectScope,
     ToolOutcome,
     new_id,
     now_iso,
@@ -170,6 +171,69 @@ class ExecutionService:
             trigger_kind=trigger_kind,
         )
 
+    async def resume_recoverable_request(
+        self,
+        request_id: str,
+        *,
+        script: list[dict[str, Any]] | None = None,
+        ask_confirm: Callable[[list[Any]], list[bool]] | None = None,
+    ) -> RunResult:
+        """Explicitly start a new Run for a safely recoverable queued request.
+
+        A recovered confirmation is asked again in this R1 path. R2's durable
+        suspend/wake keeps the original pending confirmation instead.
+        """
+        if self.durable is None:
+            raise RuntimeError("恢复请求需要持久 store")
+        row = self.durable.store.request_row(request_id)
+        if row is None or row["tenant_id"] != self.tenant_id:
+            raise KeyError("未知请求")
+        if row["state"] not in (RequestState.QUEUED.value, RequestState.WAITING_CONFIRM.value):
+            raise RuntimeError("请求当前不可恢复")
+        if row["latest_run_status"] != RunStatus.FAILED.value:
+            raise RuntimeError("请求没有已中断的旧运行")
+        previous_run_id = row["latest_run_id"]
+        previous_run = self.durable.store.run_row(previous_run_id)
+        if previous_run is None or previous_run["finish_reason"] != "restart_interrupted":
+            raise RuntimeError("请求不是由重启中断")
+        if row["agent_version"] != self.pack.agent_version.version_id:
+            raise RuntimeError("配置版本已变化，请按新版本重新发起请求")
+        events = self.durable.store.load_events(previous_run_id)
+        if any(
+            event.event_type == "permission.confirm_answered"
+            or (event.event_type == "tool.outcome" and event.payload.get("tool") != "search_knowledge")
+            for event in events
+        ) or self.durable.store.request_has_committed_write(request_id):
+            raise RuntimeError("请求已有副作用或确认事实，须先人工核对，不能自动恢复")
+        start = next((event for event in events if event.event_type == "run.started"), None)
+        text = start.payload.get("input") if start is not None else None
+        if not isinstance(text, str) or not text:
+            raise RuntimeError("原始请求输入缺失，不能恢复")
+        request = ServiceRequest(
+            request_id=request_id,
+            tenant_id=row["tenant_id"],
+            agent_version=row["agent_version"],
+            channel=Channel(row["channel"]),
+            state=RequestState(row["state"]),
+            trigger_kind=row.get("trigger_kind") or "inbound_message",
+            trigger_ref=row.get("trigger_ref"),
+            subject_id=row.get("subject_id") if row.get("subject_scope") == SubjectScope.MAPPED.value else None,
+            subject_scope=SubjectScope.MAPPED if row.get("subject_scope") == SubjectScope.MAPPED.value else SubjectScope.EPHEMERAL,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            result_id=row.get("result_id"),
+        )
+        return await self._handle(
+            text,
+            channel=request.channel,
+            request=request,
+            script=script,
+            ask_confirm=ask_confirm,
+            resume_lineage_parent=previous_run_id,
+            resume_generation=int(row["latest_generation"] or 0) + 1,
+            resume_expected_request_state=row["state"],
+        )
+
     def cancel(self, request_id: str, *, run_id: str, reason: str = "user_cancel") -> bool:
         """取消请求已发送 ≠ 业务动作已撤销：两件事分别记账。"""
         started = next((e for e in self.ledger.find("run.started") if e.run_id == run_id and e.request_id == request_id), None)
@@ -209,6 +273,9 @@ class ExecutionService:
         media_session_id: str | None = None,
         trigger_event_id: str | None = None,
         trigger_kind: str | None = None,
+        resume_lineage_parent: str | None = None,
+        resume_generation: int = 1,
+        resume_expected_request_state: str | None = None,
     ) -> RunResult:
         av = self.pack.agent_version
         req = request or self._new_request(channel, text)
@@ -233,6 +300,10 @@ class ExecutionService:
                 input_text=text,
                 event_seq=len(self.ledger.events),
                 media_session_id=media_session_id,
+                lineage_parent=resume_lineage_parent,
+                generation=resume_generation,
+                recovery_previous_run_id=resume_lineage_parent,
+                recovery_expected_request_state=resume_expected_request_state,
             )
             run = admission.run
             if admission.status != "created":

@@ -34,14 +34,14 @@ S1 进度沿用 Git 基线 `2f0633a`（S0 文档 Gate）及其后已留证的 S1
 |---|---|---|
 | S0 产品与文档边界 | 已完成 | 基线提交 `2f0633a`；私有目录保持忽略 |
 | S1 合同与执行内核 | 已实现最小切片 | 业务请求、事件账本、三段式上下文、模型外规则、模拟预约和事件投影；无 B 端界面 |
-| 执行耐久与恢复层 | 机制参照已登记，Adapter 未实现 | `pi durable` 的原子提交、checkpoint、恢复、sleep/wake、retry、abort、parking 进入架构边界；当前请求、活动任务、幂等与 Agent 状态仍为进程内，JSONL 不是完整业务持久化 |
+| 执行耐久与恢复层 | 部分实现（R1 最小切片） | `Run`/事件/幂等/outbox/中断裁决与 lineage 已落 SQLite（`DurableRunAdapter`，零新依赖，证据见 [R1 证据摘要](reports/R1-EVIDENCE.md)）；`pi durable` 只作机制参照。活动任务、Agent 上下文与 resume 驱动仍为进程内，R2 的挂起/唤醒、确认持久化与未知结果对账未实现，跨进程 Worker/parking 归 R3/R4 |
 | S1 固定案例 | 干净环境回放 11/11 | 精确 AgentScope commit 安装、完整自检、取消专项案例均通过；仍使用脚本模型 |
 | 语音与取消 | 部分实现（真实模型已验取消，媒体未验） | 执行中取消、确认和文字/语音跨渠道断言通过（脚本模型 + 真实模型双覆盖）；Web Speech 网页入口已就绪，固定 STT/TTS 组合及浏览器音频未验，中文可懂度、语音首响与打断恢复未测，重启恢复未验 |
 | S1 网页 / HTTP-SSE 入口 | 已实现，自检通过（脚本模型） | 回环监听的 `web.py`：文字/语音输入、AG-UI 事件经 SSE 投送、页面人工确认/拒绝/取消；音视频走浏览器 Web Speech，非云端 ASR/TTS。真实模型下已起服务（`/api/status` 为 `configured: true`），页面实测待人工 |
 | 真实模型接入方式 | 已实跑通过（Coding Plan Responses API） | `scripts/live_model_check.py` 六路径 11/11（咨询/确认/拒绝/失败/取消/文字→语音）；**验收默认 `gpt-6-sol`**（两次运行：首响 2.4–4.8 s、单轮 7–23 s，全部场景 `attempts=1`），`gpt-6-luna` 降级为成本对照（首响 10.8–14.8 s、单轮 22–57 s，偶发不发起写入工具需重试兜底）；密钥存 `~/.config/loomrise` 在仓库外 |
 | 离线依赖锁定 | 已执行通过 | `scripts/build_offline.py` 生成 macOS arm64/Py3.13 wheelhouse（92 wheel）与 SHA-256 锁；`scripts/verify_offline.sh` 干净环境离线安装 → 11/11 回放 → 自检 → `--offline` 导出 → 第二个干净环境离线恢复 11/11 |
 | 导出与可复现安装 | 恢复已验证（联网 + 离线） | 导出包在独立目录和新虚拟环境安装、加载场景并 11/11 回放；`--offline` 导出的 wheelhouse 也在第二个干净环境离线恢复 11/11；语音依赖单列且未安装验收 |
-| S2 本地工作台与 R1 配置后端 | 第二轮交互前端已验证；R1 配置主链已实现，服务端版本工作面的 WP9 本机浏览器联调已验，R1 Gate 未通过 | [第二轮前端交付与评审](S2-FRONTEND-ROUND2.md)记录本地 UI；[R1 证据摘要](reports/R1-EVIDENCE.md)记录 SQLite 配置草稿/版本/候选、校验、loopback HTTP、MCP/CLI、主要耐久崩溃矩阵与浏览器联调。知识/物料/客服/治理/部署仍以本地模拟为主；M-A-04、M-A-03/17/18 签核及父 Gate 未关闭，页面验收不能替代 S2/R1 Gate |
+| S2 本地工作台与 R1 配置后端 | 第二轮交互前端已验证；R1 配置主链已实现，服务端版本工作面的 WP9 本机浏览器联调已验，R1 Gate 未通过 | [第二轮前端交付与评审](S2-FRONTEND-ROUND2.md)记录本地 UI；[R1 证据摘要](reports/R1-EVIDENCE.md)记录 SQLite 配置草稿/版本/候选、可运行的 M-A-12 十项预检、loopback HTTP、MCP/CLI、主要耐久崩溃矩阵与浏览器联调。知识/物料/客服/治理/部署仍待真实服务；M-A-12 完整检查及发布阻断、M-A-03/17/18 签核和 R1 父 Gate 未关闭，页面验收不能替代 S2/R1 Gate |
 | 物料库与文件发送 | 产品方向已确认；本地前端扩展，后端未实现 | [物料专题](MATERIAL-LIBRARY-AND-DELIVERY.md)：IndexedDB 原件和元数据分别管理；压缩/理解/自动发送仅明确仿真。真实存储、处理、索引、渠道发送及回执须后端 Gate |
 | S2-a、S2-b、S2-c | 范围已确认；R1 配置后端与 WP9 页面服务联调已验，完整后端与新增客服应用能力仍待验收 | 单租户持久化、完整网页客服与人工 Inbox、Telegram/Email 授权沙盒、业务工具与持续改进、完整文字与语音应用，逐项验收；TaskItem 撤销合同、M-A-03/17/18 签核及 R1 父 Gate 未通过；R2 再验挂起/唤醒、取消确认、未知对账和沙盒副作用；已有本地原型不能替代这些能力 |
 | S3、S4 | 范围已确认，规划未实现 | 标准 Linux/容器发行、首云快捷部署，再扩其他云；其他 IM、电话与多租户各自独立 Gate |

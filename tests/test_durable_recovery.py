@@ -121,6 +121,58 @@ class TestPersistedRun(Base):
 
 
 class TestRecovery(Base):
+    def interrupted_request(
+        self,
+        *,
+        request_state: RequestState = RequestState.QUEUED,
+        agent_version: str | None = None,
+        extra_event_type: str | None = None,
+        committed_write: bool = False,
+    ) -> tuple[ServiceRequest, str]:
+        store = SqliteStore(self.path, owner_id="p1")
+        adapter = DurableRunAdapter(store, owner_id="p1")
+        version = agent_version or self.pack.agent_version.version_id
+        request = queued_request(version)
+        request.state = request_state
+        run = adapter.begin(
+            request, agent_version=version,
+            input_text=self.case.turns[0]["text"],
+        ).run
+        adapter.persist(RunEvent(
+            seq=store.next_seq(run.run_id), event_type="run.started",
+            request_id=request.request_id, run_id=run.run_id,
+            tenant_id=request.tenant_id, agent_version=version,
+            channel="text", payload={"input": self.case.turns[0]["text"]},
+        ).seal(""))
+        if extra_event_type is not None:
+            extra_event = RunEvent(
+                seq=store.next_seq(run.run_id), event_type=extra_event_type,
+                request_id=request.request_id, run_id=run.run_id,
+                tenant_id=request.tenant_id, agent_version=version,
+                channel="text",
+            ).seal(store.last_event(run.run_id).hash)
+            store.append_events([extra_event])
+        if committed_write:
+            write_event = RunEvent(
+                seq=store.next_seq(run.run_id), event_type="tool.outcome",
+                request_id=request.request_id, run_id=run.run_id,
+                tenant_id=request.tenant_id, agent_version=version,
+                channel="text", payload={"tool": "create_booking", "result_id": "res_existing"},
+            ).seal(store.last_event(run.run_id).hash)
+            store.commit_write(
+                run.run_id, key=action_key("create_booking", "already-written"),
+                bare_key="already-written", action="create_booking",
+                result_id="res_existing", event=write_event,
+            )
+        if request_state is not RequestState.QUEUED:
+            store.set_request_state(request.request_id, request_state.value)
+        run_id = run.run_id
+        store.close()
+        recovery = SqliteStore(self.path, owner_id="p2")
+        recovery.recover(owner_id="p2")
+        recovery.close()
+        return request, run_id
+
     async def test_subject_scope_controls_subject_id_durability(self) -> None:
         store1 = SqliteStore(self.path, owner_id="p1")
         adapter = DurableRunAdapter(store1, owner_id="p1")
@@ -205,6 +257,114 @@ class TestRecovery(Base):
             self.assertFalse(store2.is_running(run.run_id))
         finally:
             store2.close()
+
+    async def test_explicit_recovery_starts_new_run_and_rechecks_confirmation(self) -> None:
+        store1 = SqliteStore(self.path, owner_id="p1")
+        adapter1 = DurableRunAdapter(store1, owner_id="p1")
+        request = queued_request(self.pack.agent_version.version_id)
+        request.state = RequestState.WAITING_CONFIRM
+        text = self.case.turns[0]["text"]
+        run1 = adapter1.begin(
+            request, agent_version=self.pack.agent_version.version_id, input_text=text,
+        ).run
+        adapter1.persist(RunEvent(
+            seq=store1.next_seq(run1.run_id), event_type="run.started",
+            request_id=request.request_id, run_id=run1.run_id,
+            tenant_id=request.tenant_id, agent_version=run1.agent_version,
+            channel="text", payload={"input": text},
+        ).seal(""))
+        store1.set_request_state(request.request_id, RequestState.WAITING_CONFIRM.value)
+        store1.close()
+
+        store2 = SqliteStore(self.path, owner_id="p2")
+        confirmations: list[int] = []
+        try:
+            svc = ExecutionService(self.pack, store=store2, owner_id="p2")
+
+            def confirm(calls):
+                confirmations.append(len(calls))
+                return [True] * len(calls)
+
+            result = await svc.resume_recoverable_request(
+                request.request_id, script=self.case.script, ask_confirm=confirm,
+            )
+            row = store2.run_row(result.run_id)
+            self.assertNotEqual(result.run_id, run1.run_id)
+            self.assertEqual(row["lineage_parent"], run1.run_id)
+            self.assertEqual(row["occupancy_generation"], 2)
+            self.assertEqual(confirmations, [1])
+            self.assertEqual(result.write_count, 1)
+            self.assertEqual(store2.request_row(request.request_id)["state"], RequestState.SUCCESS.value)
+            self.assertTrue(store2.verify_chain())
+        finally:
+            store2.close()
+
+    async def test_recovery_rejects_confirmed_or_written_old_run(self) -> None:
+        for name, event, committed_write in (
+            ("confirmation", "permission.confirm_answered", False),
+            ("write", None, True),
+        ):
+            with self.subTest(name=name):
+                self.path = os.path.join(self.tmp.name, f"{name}.db")
+                request, _ = self.interrupted_request(
+                    request_state=RequestState.WAITING_CONFIRM,
+                    extra_event_type=event,
+                    committed_write=committed_write,
+                )
+                store = SqliteStore(self.path, owner_id="p2")
+                try:
+                    svc = ExecutionService(self.pack, store=store, owner_id="p2")
+                    with self.assertRaisesRegex(RuntimeError, "副作用或确认事实"):
+                        await svc.resume_recoverable_request(
+                            request.request_id, script=self.case.script,
+                            ask_confirm=confirm_all,
+                        )
+                    self.assertEqual(store.request_row(request.request_id)["latest_run_status"], "failed")
+                finally:
+                    store.close()
+
+    async def test_recovery_rejects_changed_version_and_ineligible_state(self) -> None:
+        request, _ = self.interrupted_request(agent_version="older-version")
+        store = SqliteStore(self.path, owner_id="p2")
+        try:
+            svc = ExecutionService(self.pack, store=store, owner_id="p2")
+            with self.assertRaisesRegex(RuntimeError, "配置版本已变化"):
+                await svc.resume_recoverable_request(request.request_id, script=self.case.script)
+            store.set_request_state(request.request_id, RequestState.CANCELLED.value)
+            with self.assertRaisesRegex(RuntimeError, "当前不可恢复"):
+                await svc.resume_recoverable_request(request.request_id, script=self.case.script)
+        finally:
+            store.close()
+
+    async def test_recovery_fences_a_second_attempt_after_first_claim(self) -> None:
+        request, previous_run_id = self.interrupted_request()
+        store = SqliteStore(self.path, owner_id="p2")
+        adapter = DurableRunAdapter(store, owner_id="p2")
+        try:
+            recovered_request = queued_request(self.pack.agent_version.version_id)
+            recovered_request.request_id = request.request_id
+            first = adapter.begin(
+                recovered_request, agent_version=self.pack.agent_version.version_id,
+                lineage_parent=previous_run_id, generation=2,
+                recovery_previous_run_id=previous_run_id,
+                recovery_expected_request_state=RequestState.QUEUED.value,
+            )
+            self.assertEqual(first.status, "created")
+            competing_request = queued_request(self.pack.agent_version.version_id)
+            competing_request.request_id = request.request_id
+            with self.assertRaisesRegex(RuntimeError, "其他恢复调用接管"):
+                adapter.begin(
+                    competing_request, agent_version=self.pack.agent_version.version_id,
+                    lineage_parent=previous_run_id, generation=2,
+                    recovery_previous_run_id=previous_run_id,
+                    recovery_expected_request_state=RequestState.QUEUED.value,
+                )
+            rows = store._conn.execute(
+                "SELECT COUNT(*) AS n FROM runs WHERE request_id=?", (request.request_id,),
+            ).fetchone()
+            self.assertEqual(rows["n"], 2)
+        finally:
+            store.close()
 
     async def test_cancelled_request_state_does_not_reenter_recovery_list(self) -> None:
         store1 = SqliteStore(self.path, owner_id="p1")

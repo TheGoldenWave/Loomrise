@@ -6,6 +6,8 @@ import tempfile
 import unittest
 
 from loomrise.configuration import (
+    ConfigurationApplication,
+    ConfigurationPrincipal,
     ConfigurationService,
     ConfigurationValidationError,
     RevisionConflict,
@@ -208,6 +210,52 @@ class TestDraftLifecycle(ConfigurationServiceCase):
                 idempotency_key="freeze-once",
             )
         self.assertEqual(len(self.service.list_candidates(tenant_id="tenant-a", agent_id="expert-a")), 1)
+
+    def test_release_checklist_runs_and_keeps_unimplemented_evidence_pending(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="release-checklist",
+        )
+
+        checklist = self.service.release_checklist(
+            tenant_id="tenant-a", agent_id="expert-a",
+            candidate_id=candidate["candidate_id"],
+        )
+
+        self.assertEqual(checklist["progress"], {
+            "passed": 2, "failed": 0, "pending": 8, "total": 10,
+        })
+        self.assertFalse(checklist["ready"])
+        self.assertFalse(checklist["publish_enabled"])
+        self.assertEqual(
+            [item["key"] for item in checklist["checks"]],
+            [
+                "candidate_frozen", "configuration_valid", "sources_identified",
+                "source_permissions", "knowledge_ready", "fixed_samples",
+                "fixed_samples_passed", "sandbox_selected", "entry_version_bound",
+                "human_approval",
+            ],
+        )
+
+    def test_release_checklist_requires_authorized_candidate_scope(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="release-scope",
+        )
+        app = ConfigurationApplication(self.service)
+        external = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="agent", role="external_agent",
+            agent_ids=("expert-a",),
+        )
+
+        response = app.execute(
+            principal=external, action="release.checklist",
+            payload={"agent_id": "expert-a", "candidate_id": candidate["candidate_id"]},
+        )
+
+        self.assertEqual(response["error"]["code"], "forbidden")
 
     def test_stable_version_cannot_be_modified_or_deleted(self):
         self.seed()

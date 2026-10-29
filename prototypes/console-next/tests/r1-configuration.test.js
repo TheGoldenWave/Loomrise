@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createConfigurationClient, createR1ConfigurationWorkspace, ConfigurationApiError } from '../r1-configuration.js';
+import { renderR1Configuration } from '../views/r1-configuration.js';
 
 const configuration = () => ({
   persona: { name: '课程客服', goal: '答疑', audience: '访客', greeting: '你好', scope: '授权资料', fallback: '转人工', fields: {} },
@@ -45,6 +46,16 @@ function harness() {
         return structuredClone(candidate);
       }
       if (action === 'candidate.get') return structuredClone(candidates[0]);
+      if (action === 'release.checklist') return {
+        candidate_id: payload.candidate_id,
+        checks: [
+          { key: 'candidate_frozen', label: '候选已冻结', status: 'passed', detail: '候选状态为 frozen' },
+          { key: 'authorization', label: '授权检查', status: 'pending', detail: '授权服务尚未提供可验证证据' },
+        ],
+        progress: { passed: 1, failed: 0, pending: 1, total: 2 },
+        ready: false,
+        publish_enabled: false,
+      };
       throw new Error(`unhandled action ${action}`);
     },
   };
@@ -108,14 +119,22 @@ test('validation errors and frozen candidate history remain server-derived and r
   h.setValidationIssues([]);
   await workspace.freezeCandidate();
   assert.equal(workspace.state.selectedCandidate.candidate_id, 'cp_1');
+  assert.equal(workspace.state.releaseChecklist.progress.pending, 1);
+  assert.equal(workspace.state.releaseChecklist.publish_enabled, false);
   assert.equal(workspace.state.activeTab, 'history');
   assert.equal(workspace.state.candidates.length, 1);
+  const html = renderR1Configuration({ r1Configuration: workspace, agent: { name: '测试专家' } });
+  assert.match(html, /发布前检查/);
+  assert.match(html, /授权检查/);
+  assert.match(html, /待验证/);
+  assert.match(html, /当前不能批准或发布/);
   await workspace.openCandidate('cp_1');
   const before = structuredClone(workspace.state.selectedCandidate.config);
   workspace.updateField('persona.goal', '不能写');
   assert.deepEqual(workspace.state.selectedCandidate.config, before);
   await workspace.openStable('v1');
   assert.equal(workspace.state.readOnlySnapshot.version_id, 'v1');
+  assert.equal(workspace.state.releaseChecklist, null);
 });
 
 test('syntax errors in JSON blocks saving until repaired', async () => {

@@ -18,6 +18,18 @@ _EXTERNAL_SAFE_PATHS = frozenset({
     "persona.name", "persona.goal", "persona.audience", "persona.greeting",
     "persona.scope", "persona.fallback",
 })
+_RELEASE_CHECKS = (
+    ("candidate_frozen", "配置已冻结为候选", "automatic"),
+    ("configuration_valid", "配置结构与规则校验通过", "automatic"),
+    ("sources_identified", "知识来源已登记", "knowledge"),
+    ("source_permissions", "知识来源授权范围有效", "knowledge"),
+    ("knowledge_ready", "知识摄入已完成", "knowledge"),
+    ("fixed_samples", "固定验收样例已准备", "evaluation"),
+    ("fixed_samples_passed", "固定验收样例全部通过", "evaluation"),
+    ("sandbox_selected", "沙盒环境已明确", "release"),
+    ("entry_version_bound", "入口绑定目标版本", "release"),
+    ("human_approval", "责任人已批准", "approval"),
+)
 _MISSING = object()
 
 
@@ -288,6 +300,40 @@ class ConfigurationService:
         self._scope(tenant_id, agent_id)
         return self.store.list_config_candidates(tenant_id=tenant_id, agent_id=agent_id)
 
+    def release_checklist(
+        self, *, tenant_id: str, agent_id: str, candidate_id: str,
+    ) -> dict[str, Any]:
+        candidate = self.get_candidate(
+            tenant_id=tenant_id, agent_id=agent_id, candidate_id=candidate_id,
+        )
+        issues = _issues(candidate["config"], submitting=True)
+        checks = []
+        for key, label, source in _RELEASE_CHECKS:
+            if key == "candidate_frozen":
+                status, detail = (
+                    ("passed", "候选状态为 frozen")
+                    if candidate["status"] == "frozen"
+                    else ("failed", f"候选状态为 {candidate['status']}")
+                )
+            elif key == "configuration_valid":
+                status = "failed" if issues else "passed"
+                detail = issues if issues else "服务端配置校验通过"
+            else:
+                status, detail = "pending", "对应服务尚未提供可验证证据"
+            checks.append({
+                "key": key, "label": label, "source": source,
+                "status": status, "detail": detail,
+            })
+        counts = {status: sum(check["status"] == status for check in checks)
+                  for status in ("passed", "failed", "pending")}
+        return {
+            "candidate_id": candidate_id,
+            "checks": checks,
+            "progress": {**counts, "total": len(checks)},
+            "ready": counts["failed"] == 0 and counts["pending"] == 0,
+            "publish_enabled": False,
+        }
+
     @staticmethod
     def _scope(tenant_id: str, agent_id: str) -> None:
         if not all(isinstance(value, str) and value.strip() for value in (tenant_id, agent_id)):
@@ -487,6 +533,12 @@ class ConfigurationApplication:
             _keys(payload, {"agent_id", "candidate_id"})
             return self.service.get_candidate(
                 tenant_id=tenant_id, agent_id=agent_id, candidate_id=payload["candidate_id"],
+            )
+        if action == "release.checklist":
+            _keys(payload, {"agent_id", "candidate_id"})
+            return self.service.release_checklist(
+                tenant_id=tenant_id, agent_id=agent_id,
+                candidate_id=payload["candidate_id"],
             )
         raise ValueError("未知配置用例")
 

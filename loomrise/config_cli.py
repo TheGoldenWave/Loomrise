@@ -99,6 +99,13 @@ def build_parser() -> argparse.ArgumentParser:
     stable_import.add_argument("--config", required=True, help="JSON 对象文件路径")
     _add_json_flag(stable_import)
 
+    release = groups.add_parser("release", help="发布前检查（只读，不执行发布）")
+    release_actions = release.add_subparsers(dest="action", required=True)
+    checklist = release_actions.add_parser("checklist", help="运行十项发布预检")
+    checklist.add_argument("--agent-id", required=True)
+    checklist.add_argument("--candidate-id", required=True)
+    _add_json_flag(checklist)
+
     return parser
 
 
@@ -171,6 +178,10 @@ def _request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             return "stable.list", {"agent_id": agent_id}
         if action == "read":
             return "stable.get", {"agent_id": agent_id, "version_id": args.version_id}
+    if resource == "release" and action == "checklist":
+        return "release.checklist", {
+            "agent_id": agent_id, "candidate_id": args.candidate_id,
+        }
     raise ValueError("未知配置命令")
 
 

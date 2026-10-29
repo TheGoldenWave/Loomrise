@@ -70,6 +70,8 @@ class DurableRunAdapter:
         input_text: str = "",
         event_seq: int = 0,
         media_session_id: str | None = None,
+        recovery_previous_run_id: str | None = None,
+        recovery_expected_request_state: str | None = None,
     ) -> RunAdmission:
         if request.tenant_id != self.tenant_id:
             raise ValueError("请求租户与执行服务不一致")
@@ -101,7 +103,15 @@ class DurableRunAdapter:
                 request, run, scenario_pack_id=scenario_pack_id,
                 payload_hash=payload_hash, first_event=first,
             )
-        self.store.begin_run(request, run, [])
+        if recovery_previous_run_id is not None:
+            if recovery_expected_request_state is None:
+                raise ValueError("恢复运行必须提供预期请求状态")
+            self.store.begin_recovered_run(
+                request, run, [], previous_run_id=recovery_previous_run_id,
+                expected_request_state=recovery_expected_request_state,
+            )
+        else:
+            self.store.begin_run(request, run, [])
         return RunAdmission("created", request, run)
 
     def persist(self, evt: RunEvent) -> None:

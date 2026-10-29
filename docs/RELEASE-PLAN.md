@@ -1,4 +1,5 @@
-# 版本切分与核心交付 v0.11
+# 版本切分与核心交付 v0.18
+
 
 > 2026-10-22。**这是一份"切分视图 + 执行计划"，不是新的 Gate 权威。** 阶段范围与退出 Gate 仍以 [验证路线](ROADMAP.md) 与 [客服应用交付建设方案](CUSTOMER-SERVICE-DELIVERY-PLAN.md) §3 为准；本文只回答四件它们不回答的事：**同一阶段内先做什么、每一版的核心实现与工作包、今天新定的设计落在哪一版、每条退出判据由哪件工件证明**。
 >
@@ -15,6 +16,20 @@
 > **v0.10 变更（2026-10-27）**：SQLite schema 升至 v4，落实 mapped-only 主体持久化并在迁移时清理旧版 ephemeral/未知 scope 的主体 ID；后端全量测试更新为 100/100。不改变领域合同；M-A-04 仍待 TaskItem 合同。
 >
 > **v0.11 变更（2026-10-27）**：补齐 R1 SQLite 写事务硬退出矩阵，新增配置稳定版本/草稿/revision/候选、事件冲突诊断、schema 首次创建及 v2/v3 迁移覆盖；后端全量回归更新为 108/108；将 WP9 描述校正为已实现并评审过的工作区/专家两平面导航，不改变 Gate、领域合同或侧栏候选范围。
+>
+> **v0.12 变更（2026-10-29）**：R1 新增最小 TaskItem 持久记录与未领取事项幂等取消；schema 升至 v5，补取消后恢复、重复取消、v4→v5 迁移及取消事务硬退出测试。M-A-04 有测试证据；不代表完整 TaskItem/TaskAttempt 合同、调度或主动触达已实现，R1 其余 Gate 状态不变。
+>
+> **v0.13 变更（2026-10-29）**：增加 SQLite Online Backup API 和备份重开往返测试，M-A-16 转通过；不代表云备份、异机灾备或介质故障恢复。后端全量回归基数更新为 114 项。
+>
+> **v0.14 变更（2026-10-29）**：完成 `SqliteStore` 事务写入口审计，补齐 TaskItem 创建崩溃与真实 v4→v5 DDL 回滚测试；M-A-03 崩溃证据矩阵扩至 18/18、后端全量回归为 117/117。M-A-03 签核及 R1 退出状态不因此自动改变。
+>
+> **v0.15 变更（2026-10-29）**：新增只读 `release.checklist` 服务用例与 CLI，冻结候选的十项预检可执行并返回逐项进度；当前只有候选冻结/配置校验可自动验证，其余八项待后续服务证据，发布动作保持关闭。该实现满足 M-A-12 的 R1 前半，不改变完整 Gate 状态。
+>
+> **v0.16 变更（2026-10-29）**：十项预检服务/CLI 单测通过，含授权范围与不可发布断言；全量后端测试更新为 119/119。M-A-12 仍是进行中，八项后续证据和发布阻断未实现。
+>
+> **v0.17 变更（2026-10-29）**：补 R1 显式安全恢复的拒绝路径与并发接管 fencing 测试；后端全量回归更新为 123/123，S1/合同/语音自检及固定案例 11/11 回放通过。R1 Gate 状态不自动改变；R2 仍以 R1 完成作为入口条件。
+>
+> **v0.18 变更（2026-10-29）**：复跑配置工作台 `npm test` 218/218 与桌面/手机侧栏浏览器回归；后者覆盖两平面偏好、刷新、手机抽屉、焦点和无横向溢出。只更新 R1 前端回归证据，不改变 Gate 或 R2 入口条件。
 >
 > **v0.4 变更（2026-10-23）**：补执行耐久层的版本落点，但不改变阶段范围或 Gate：R1 先做 `Run`/`TaskAttempt`/checkpoint 与无副作用恢复，R2 接 suspend/wake、取消确认、未知对账和沙盒副作用，R3/R4 才接 worker 接管、parking 与真实工具；新增文件级[实施计划](superpowers/plans/2026-10-23-durable-run-adapter.md)。`pi durable` 仍是机制参照，不进入默认依赖。
 >
@@ -200,17 +215,17 @@ WP 的四个字段固定：**做什么 / 依赖 / 证据位 / 签核角色**。�
 
 | WP | 状态 | 说明 |
 |---|---|---|
-| WP1 持久化底座 | **已实现，Gate 在跑** | SQLite schema v4：运行态账本、事件接纳表及配置草稿/稳定快照/候选表；mapped 主体 ID 才持久化，旧版 ephemeral/未知 scope ID 在迁移时清理；单写者；请求/运行/事件/幂等/outbox 提交边界原子。进程退出与提交后重开见 [R1-EVIDENCE](reports/R1-EVIDENCE.md) |
-| WP2 恢复与故障 | **部分** | 旧 Run 中断、lineage、旧代拒写、待确认事实保留、取消 ServiceRequest 不进入恢复列表；当前已识别的 SQLiteStore 写点均有硬退出/重试覆盖，含配置事务及 schema 首建/迁移；outbox 消费副作用后/ack 前重放也已测。TaskItem 撤销合同与恢复 Gate 仍缺，M-A-04 未关闭；R2 `M-A-20` 仍负责确认唤醒/重验 |
+| WP1 持久化底座 | **已实现，Gate 在跑** | SQLite schema v5：运行态账本、事件接纳表、配置草稿/稳定快照/候选及最小 TaskItem 表；mapped 主体 ID 才持久化，旧版 ephemeral/未知 scope ID 在迁移时清理；单写者；请求/运行/事件/幂等/outbox 提交边界原子，并支持 SQLite Online Backup 与备份重开校验。M-A-16 已通过，其他父 Gate 与 M-A-19 仍待核定/签核。 |
+| WP2 恢复与故障 | **部分** | 旧 Run 中断、lineage、旧代拒写、待确认事实保留；schema v5 新增最小 TaskItem 持久记录，未领取事项撤销后不在恢复查询复活（M-A-04）。显式安全恢复仅为兼容版本、无已确认事实/已提交写入的请求创建新 Run，并重问确认；拒绝路径与并发接管 fencing 已测。当前已识别 SQLiteStore 写点含 TaskItem 取消均有硬退出/重试测试；outbox 消费副作用后/ack 前重放也已测。R2 `M-A-20` 仍负责原关联确认等待的 suspend/wake 与授权上下文重验 |
 | WP7 幂等键语义 | **后端行为已测，Gate 待签核** | `action::key` 绑定具体业务操作；文字写入后重启并从语音入口以同一操作键重试，复用原 `result_id`；outbox 至少一次投递且要求消费者按稳定 ID 去重。业务动作并发重复与未知对账属 R2 |
-| WP3 版本与 diff | **后端与本机浏览器联调已验，Gate 待签核** | `ConfigurationService`/SQLite 支持稳定快照只读、草稿 revision CAS、字段级 diff、幂等冻结候选；浏览器已验共享读取/保存、409 冲突与历史候选展示 |
+| WP3 版本与 diff | **后端与本机浏览器联调已验，Gate 待签核** | `ConfigurationService`/SQLite 支持稳定快照只读、草稿 revision CAS、字段级 diff、幂等冻结候选；浏览器已验共享读取/保存、409 冲突与历史候选展示。M-A-12 的十项只读预检可通过共享应用服务/CLI 运行，完整来源/样例/审批与发布仍待 R2 |
 | WP4 清单与规则 | **后端已实现，页面字段路径已联调** | R1 Unit 清单/G0/HardRule v0.2 与字段路径校验已实现；`Unit.body` 保持空对象，不解析或执行图。九字段/规则正反例覆盖；本机 fixture 中页面和 CLI 同显 `$.units` 校验错误 |
-| WP5 Task 基础 | **部分** | `AgentVersion.task_blueprints` 与专家内唯一 `blueprint_key` 校验、严格时间、ContextFragment 过期/撤销 fail-closed 和可选 `subject_id/subject_scope` 精确匹配已实现；请求仅持久化 mapped subject，schema v4 会清理旧版非 mapped/未知 scope ID；Task blueprint 用途隔离、TaskItem 持久合同与撤销事项恢复仍未定/未实现 |
+| WP5 Task 基础 | **部分** | `AgentVersion.task_blueprints` 与专家内唯一 `blueprint_key` 校验、严格时间、ContextFragment 过期/撤销 fail-closed 和可选 `subject_id/subject_scope` 精确匹配已实现；请求仅持久化 mapped subject。schema v5 加入 M-A-04 所需的最小 TaskItem 身份/来源/状态/revision 持久化；完整用途隔离、Proposal/Attempt、调度与任务合同仍未实现 |
 | WP6 MCP 受限创建 | **后端已实现** | 共享应用服务上的 stdio MCP tools/resources；principal 固定租户/角色/专家范围，外部 Agent 仅可读及受限草稿/候选操作；入口 adapter 测试通过 |
 | WP8 CLI 同合同 | **后端已实现** | `loomrise config` JSON envelope 与共用 `ConfigurationApplication`；`loomrise config mcp` 与 `config serve` 启动入口已接入；CLI 行为测试通过 |
 | WP9 配置后台同步升级与联调 | **本机 fixture 浏览器序列已验；整体 Gate 待签核** | Loopback HTTP、CLI、MCP 共用 schema/app service；同库集成测试与本机浏览器已验证真实服务读写、字段路径、409 保留本地输入/显式重载、候选 diff/只读状态及同目录服务重启后刷新。范围按当前两平面导航和已交付配置工作面记录；平台设置聚合等侧栏候选不在本次范围。多用户与生产身份不在本次证据范围 |
 
-证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。后端回归 `unittest discover` 108/108（全量 `ResourceWarning` 视为错误及分配追踪），固定案例 11/11 回放通过。**不传 `store` 时耐久层空转**；不能据此宣称 M-A-04、M-A-03/17/18、WP9 整体或 R1 退出已通过。
+证据见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。2026-10-29 `unittest discover` **123/123**（含 `ResourceWarning` 视为错误及分配追踪）；S1/合同/语音脚本自检与固定案例 11/11 回放通过。**不传 `store` 时耐久层空转**；不能据此宣称 M-A-01/02/03/06/12/17/18、WP9 整体或 R1 退出已通过。
 
 #### WP9 页面与共享服务验收方案（进行中，2026-10-24）
 
@@ -228,7 +243,7 @@ WP9 是本次 R1 的明确交付范围，不是另一个原型轮次或新产品
 4. 字段非法时，页面显示与 MCP/CLI 相同的字段路径与错误；候选冻结时校验通过才生成不可变候选，并在页面查看源版本、候选状态和字段级 diff。
 5. 确认候选冻结不等于审批、发布或稳定版本变化；对应控件明确未开放。
 
-**当前状态（2026-10-27）**：loopback 配置 HTTP adapter 与共用应用服务已实现；新增同库 HTTP/CLI/MCP API 集成测试，并完成当前服务端版本工作面的本机浏览器验收：非法字段路径一致、过期 revision 的 409 与本地输入保留/显式重载、冻结候选差异和同一数据目录服务重启后读取一致。步骤、限制与截图哈希见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。WP9 导航范围已按两平面实现基线对齐；M-A-04 与 R1 父 Gate 未通过，M-A-17/18 待签核；本次页面联调不等于 WP9 整体或 R1 退出。
+**当前状态（2026-10-29）**：loopback 配置 HTTP adapter 与共用应用服务已实现；同库 HTTP/CLI/MCP 集成测试和本机浏览器验收证明 revision、冲突、候选差异与重启后读取一致。WP9 导航范围按两平面实现基线对齐；M-A-04 的最小 TaskItem 撤销恢复切片已通过测试，M-A-03/17/18 与 R1 父 Gate 仍未关闭。浏览器联调不等于 WP9 整体或 R1 退出。详见 [R1-EVIDENCE](reports/R1-EVIDENCE.md)。
 
 ---
 

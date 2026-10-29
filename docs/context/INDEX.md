@@ -1,6 +1,6 @@
-# Loomrise 文档总索引 v0.14
+# Loomrise 文档总索引 v0.16
 
-日期：2026-10-23（执行耐久恢复裁决对齐；明确矩阵子项不新增独立 Gate）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-10-29（新增[持久可恢复执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md)登记并同步耐久切片状态）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -21,7 +21,7 @@
 | Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
-| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [R1 证据摘要](../reports/R1-EVIDENCE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) | SQLite `DurableRunAdapter` 已部分实现；旧本地 running 尝试失败、待确认事实保留但不自动续跑；TaskItem 撤销与完整恢复 Gate 未通过；R3/R4 才做 Worker/parking，未引入默认依赖 |
+| 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [R1 证据摘要](../reports/R1-EVIDENCE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) · [持久执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md) | SQLite `DurableRunAdapter` 已部分实现；旧本地 running 尝试失败、待确认事实保留但不自动续跑；TaskItem 撤销与完整恢复 Gate 未通过；R3/R4 才做 Worker/parking，未引入默认依赖；评审列出 DC-01–08 缺口，属意见不构成 Gate |
 | 到底已经跑通哪些功能 | [S1 交付与验收](../S1-BUILD-REPORT.md)、对应原型报告 | 运行证据与局限；不能用规划或原型代替服务验收 |
 | 实际安装的是哪个构件 | [VERSION-PINS](../../VERSION-PINS.md) | 实测版本、commit、许可证与安装复现 |
 | 什么材料可以公开 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、脱敏、公开晋升、许可与提交红线 |
@@ -61,11 +61,12 @@
 | [ARCHITECTURE](../ARCHITECTURE.md) | 领域权威、数据与适配边界 | 区分 S1 最小实现与目标合同 |
 | [六层配置合同](../CONFIGURATION-LAYERS.md) | Context／Routing／Skill／Rule／Tool／Outcome | S1 部分实现，完整配置规划 |
 | [ROADMAP](../ROADMAP.md) | 阶段总表、优先顺序、Gate | 不承诺日期；实现状态要有验收依据 |
-| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.11**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；只引用父 Gate 行号，耐久细化行不独立阻断退出 |
-| [R1 证据摘要](../reports/R1-EVIDENCE.md) | R1 后端代码、测试样本与限制：SQLite、恢复/outbox、配置服务/HTTP/MCP/CLI、校验及 WP9 本机浏览器联调 | **进行中 v0.8**；WP3/WP4/WP6/WP8 后端已实现，WP2/WP5/WP7 部分；当前已识别 SQLite 写点有硬退出证据；WP9 页面联调已验，M-A-03/17/18 待签核，M-A-04 与父 Gate 未全绿 |
-| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.4**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；条文变更先改权威文件再改本表；R0 行已回填状态，08/10 带偏离、13/14 挂账 |
+| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.16**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和执行耐久 Adapter 落版本；**R0 执行状态**（代码完成、Gate 未全绿） | **不改阶段范围与 Gate**（权威在 ROADMAP 与客服交付方案）；只引用父 Gate 行号，耐久细化行不独立阻断退出 |
+| [R1 证据摘要](../reports/R1-EVIDENCE.md) | R1 后端代码、测试样本与限制：SQLite（含在线备份）、恢复/outbox、配置服务/HTTP/MCP/CLI、校验、可运行发布预检及 WP9 本机浏览器联调 | **进行中**；M-A-04 与 M-A-16 已通过；M-A-12 R1 前半可运行但完整检查仍缺 R2 证据；M-A-03/17/18 待签核，R1 父 Gate 未退出 |
+| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.7**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；M-A-04 与 M-A-16 已通过，M-A-12 部分证据已登记，R1 仍有父 Gate 未全绿 |
 | [RELEASE-PLAN 与当前产品方向评审记录](../RELEASE-PLAN-REVIEW.md)（**v0.1**） | 产品、市场、架构、平台、交付管理与设计六个视角的综合评审；记录优势、风险优先级、知识库启发和待决事项 | 评审意见，不是产品/架构决策或实现证据；不替代 ROADMAP 与客服交付方案 Gate |
 | [评审处置台账](../RELEASE-PLAN-REVIEW-RESPONSE.md)（**v0.1**） | 15 条评审意见的采纳/部分采纳/不采纳、改动落点、被修正的事实前提、5 项未关闭 | 只记处置，不重复原文；未关闭项是下轮评审入口 |
+| [持久可恢复执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md)（**v0.1**） | 对照 Durable Agent 四项能力的现状盘查、四条方向裁定、DC-01–08 缺口（意图先于执行/确认持久化/resume 驱动/阶段边界/replay 策略）、不照搬清单与 R2 增项建议 | **评审意见**；不改 Gate、阶段范围或实现状态；建议落点只引用既有 M-A-* 与 R2-WP5 |
 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、公开晋升、许可与红线 | 核心 Apache-2.0；[LICENSE](../../LICENSE)、[NOTICE](../../NOTICE)为许可工件 |
 | [命名决策](../NAMING.md) | 项目名和与上游同名对象的裁决 | 已确认；合同名称不要按页面旧称改写 |
 | [参考项目与采用边界](../REFERENCE-PROJECTS.md) | 各类上游的候选角色及采用条件 | 技术选择入口；参照不代表已支持 |

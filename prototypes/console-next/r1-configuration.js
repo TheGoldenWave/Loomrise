@@ -84,6 +84,7 @@ export function createR1ConfigurationWorkspace({
     conflict: null,
     readOnlySnapshot: null,
     selectedCandidate: null,
+    releaseChecklist: null,
     busy: false,
   };
   let generation = 0;
@@ -115,6 +116,7 @@ export function createR1ConfigurationWorkspace({
     state.conflict = null;
     state.readOnlySnapshot = null;
     state.selectedCandidate = null;
+    state.releaseChecklist = null;
     state.validation = null;
     changed();
     try {
@@ -250,6 +252,9 @@ export function createR1ConfigurationWorkspace({
       });
       state.selectedCandidate = candidate;
       state.validation = { revision: state.draft.revision, valid: true, issues: [] };
+      state.releaseChecklist = await client.request('release.checklist', {
+        agent_id: state.agentId, candidate_id: candidate.candidate_id,
+      });
       const listed = await client.request('candidate.list', { agent_id: state.agentId });
       state.candidates = listed.items || [];
       state.activeTab = 'history';
@@ -300,6 +305,7 @@ export function createR1ConfigurationWorkspace({
         agent_id: state.agentId, version_id: versionId,
       });
       state.selectedCandidate = null;
+      state.releaseChecklist = null;
       state.editorConfig = structuredClone(state.readOnlySnapshot.config);
       state.activeTab = 'history';
       state.status = state.draft ? 'ready' : 'no-draft';
@@ -320,6 +326,9 @@ export function createR1ConfigurationWorkspace({
       state.selectedCandidate = await client.request('candidate.get', {
         agent_id: state.agentId, candidate_id: candidateId,
       });
+      state.releaseChecklist = await client.request('release.checklist', {
+        agent_id: state.agentId, candidate_id: candidateId,
+      });
       state.readOnlySnapshot = null;
       state.editorConfig = structuredClone(state.selectedCandidate.config);
       state.activeTab = 'history';
@@ -335,6 +344,7 @@ export function createR1ConfigurationWorkspace({
   function closeSnapshot() {
     state.readOnlySnapshot = null;
     state.selectedCandidate = null;
+    state.releaseChecklist = null;
     if (state.draft) state.editorConfig = structuredClone(state.draft.config);
     state.activeTab = 'persona';
     changed();

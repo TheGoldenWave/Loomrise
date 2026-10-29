@@ -139,6 +139,17 @@ class ConfigurationCliCase(unittest.TestCase):
         self.assertEqual(set(detail), {"schema_version", "ok", "result", "error"})
         self.assertIsNone(detail["error"])
 
+        code, checklist = self.invoke(
+            "release", "checklist", "--agent-id", "expert-a",
+            "--candidate-id", candidate["candidate_id"], "--json",
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(checklist["result"]["progress"], {
+            "passed": 2, "failed": 0, "pending": 8, "total": 10,
+        })
+        self.assertFalse(checklist["result"]["ready"])
+        self.assertFalse(checklist["result"]["publish_enabled"])
+
     def test_revision_conflict_is_mcp_compatible_and_nonzero(self):
         self.invoke("draft", "create", "--agent-id", "expert-a", "--base-version-id", "v1")
         self.invoke(

@@ -1,10 +1,10 @@
-# R1 证据摘要 v0.8（进行中）
+# R1 证据摘要 v0.13（进行中）
 
-> 2026-10-27 更新 R1 配置后端、耐久故障、主体持久化边界与 WP9 浏览器联调证据。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
+> 2026-10-29 更新 TaskItem 最小持久化、SQLite Online Backup、可运行的十项发布预检、故障注入及显式安全恢复拒绝路径证据；另复跑配置工作台单测与桌面/手机侧栏浏览器回归。**规则同 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) §0**：原始件留本地 `runs/R1/`，本文件只记结论、样本量与环境；矩阵"证据位置"列指向本文锚点。
 >
 > **本文件在 R1 未完成时就已经存在，这是故意的**——先把已验证部分与未验证部分分开写清，比事后一次性补写更不容易把"想做的"写成"做过的"。
 >
-> R1 进度：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调。** M-A-03 当前已识别 SQLite 写点均有硬退出证据，M-A-03/17/18 均待 Gate 签核；M-A-04 与 R1 父 Gate 未通过。
+> R1 进度：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调。** 2026-10-29 新增最小 TaskItem 持久化与撤销恢复测试，M-A-04/M-A-16 已通过；M-A-12 的 R1 清单预检可运行，R2 发布阻断证据未齐。矩阵中 M-A-01/02/03/06/17/18 仍为“在跑”，待对应验收责任角色复核/签核；R1 父 Gate 未退出，R2 正式开发入口尚未满足。
 
 ## 环境
 
@@ -17,18 +17,18 @@
 
 ## WP1 持久化底座 — 已落
 
-`loomrise/durable_store.py`：请求/运行/事件/幂等/outbox、事件接纳回执与冲突诊断、配置草稿/稳定快照/候选等表由 schema v4 管理；请求含可选 `trigger_event_id`。空库和既有请求迁移可重复执行。v4 只落 mapped `subject_id`，并在旧库迁移时清理 ephemeral、空 scope 或未知 scope 的主体 ID。
+`loomrise/durable_store.py`：请求/运行/事件/幂等/outbox、事件接纳回执与冲突诊断、配置草稿/稳定快照/候选及 TaskItem 等表由 schema v5 管理；请求含可选 `trigger_event_id`。空库和既有请求迁移可重复执行。v4 只落 mapped `subject_id`，并在旧库迁移时清理 ephemeral、空 scope 或未知 scope 的主体 ID。`backup_to(path)` 使用 SQLite Online Backup API，在存储锁内创建一致性数据库副本，并拒绝覆盖活动数据库本身或任何已存在目标文件。
 
 | 承诺 | 怎么验的 | 结论 |
 |---|---|---|
-| 不是"仅事件文件落盘"（`M-A-16`） | `test_migration_from_empty` 断言五张表都在、路径是 `.db` | 通过 |
+| 不是"仅事件文件落盘"（`M-A-16`） | `test_migration_from_empty` 断言结构化表存在；`test_online_backup_reopens_with_records_and_valid_event_chain` 在线备份后重开数据库，核对请求/运行/事件和哈希链；`test_backup_rejects_live_database_path` 与 `test_backup_does_not_overwrite_existing_file` 验证不覆盖源库或现存文件 | 通过；不覆盖云端备份、异机灾备或介质损坏 |
 | 提交点原子：请求/运行/事件要么一起可见要么都不可见（`M-A-19`） | `test_partial_commit_is_rolled_back` 在 COMMIT 前注入异常，断言三张表都为空 | 通过 |
 | 事件哈希链可验证（`M-A-19`） | `test_event_hash_chain_verifies`、`test_tampered_event_fails_verification`（改 `event_json` 后校验必须失败） | 通过 |
 | 落库链按**运行**封链 | `test_store_owns_the_persisted_chain`：故意传错 `prev_hash`，存储层重封 | 通过 |
 
 **一个实现决定（不是文档承诺）**：内存账本的哈希链是"进程内一条链"，落库链是"每个 run 一条链"。进程重启后账本从 GENESIS 重开，若照抄账本的 `prev_hash`，库里的链必然断。**链尾归存储层持有**，`_append` 用同一 run 的上一条事件重封。
 
-**局限**：`test_durable_transaction_crashes.py` 以子进程 `os._exit` 覆盖当前已识别的 SQLite 写事务点，包括运行/事件/outbox、配置快照/草稿/revision/候选、事件冲突诊断、schema 首建和 v2/v3 迁移；`test_durable_outbox.py` 另覆盖 `commit_write` 提交前/后退出。系统信号/断电、介质故障、多进程 worker 所有权和真实外部副作用 exactly-once 仍未测；M-A-03 等待矩阵签核。
+**局限**：`test_durable_transaction_crashes.py` 以子进程 `os._exit` 覆盖当前已识别的 SQLite 写事务点，包括运行/事件/outbox、配置草稿/版本/revision/候选、TaskItem 创建/取消、事件冲突诊断、schema 首建及 v2/v3/v4 迁移；`test_durable_outbox.py` 另覆盖 `commit_write` 提交前/后退出。系统信号/断电、介质故障、多进程 worker 所有权和真实外部副作用 exactly-once 仍未测。
 
 ## WP2 恢复与故障 — 部分
 
@@ -38,11 +38,13 @@
 | 恢复可重复执行，不重复判中断 | `test_recover_is_idempotent` | 通过 |
 | 旧代迟到写入被拒（`M-A-21` 的 R1 部分） | `test_old_run_rejects_late_write`：恢复后 `commit_write` 抛 `RuntimeError` | 通过 |
 | 新尝试是新 Run，有自己的链并指向旧运行（lineage） | `test_new_attempt_keeps_lineage_and_own_chain`：`run_id` 不同、`lineage_parent` 指向旧 run、`occupancy_generation=2`、新链从 seq 0 开始 | 通过 |
+| 显式安全恢复仅接受兼容版本、可恢复状态且无确认事实/已提交写入的中断请求 | `tests/test_durable_recovery.py`：成功恢复后重问确认；拒绝已有 `permission.confirm_answered`、已提交写入、配置版本变化和取消状态 | 通过（R1 受限新尝试） |
+| 两次恢复竞争只允许一次接管 | `test_recovery_fences_a_second_attempt_after_first_claim`：第一次原子创建新 Run 后，第二次以旧状态/旧 Run 申请被拒；运行总数仍为 2 | 通过（单 SQLite 写者） |
 | 同进程内运行被"接管"而非判中断 | `test_adopted_run_keeps_running` | 通过 |
 
 **未做（不冒充）**：
 1. `waiting_confirm` 在恢复后仍持久、可枚举，旧 Run 会失败并留中断事实；不自动唤醒、不沿旧 Run 续执行。实际 suspend/wake 与确认上下文重验属 R2 `M-A-20`。
-2. 取消状态测试证明 `ServiceRequest` 不进入可恢复列表；没有 `TaskItem`/`TaskAttempt` 合同，不能据此关闭 M-A-04 的事项撤销恢复 Gate。
+2. R1 的最小 `TaskItem` 持久化只覆盖已采用事项的身份、主体、服务周期、目的、来源版本、状态与 revision；未实现完整 Proposal/Attempt、调度、触达授权或执行生命周期。M-A-04 的取消×恢复用例见下文。
 3. 多进程/多 worker 所有权不安全，这是 R5a 的 Gate；本层只承诺单写者。
 
 ## WP7 幂等键语义 — 部分
@@ -97,21 +99,56 @@
 - HTTP API 只绑定 `127.0.0.1` 并校验 loopback Host；浏览器 Origin 使用精确 allowlist，默认只允许 `http://127.0.0.1:8765` 与 `http://localhost:8765`，其他本地预览源须通过 `LOOMRISE_CONFIG_ALLOWED_ORIGINS` 或 fixture 的 `--allowed-origin` 显式配置。CLI 与 stdio MCP 使用同一 schema envelope。身份来自权限为 `0600` 的本机 principal 文件；HTTP/MCP 工具参数不能覆盖租户、角色或专家授权范围。
 - 外部 Agent 只可读、建受限草稿/候选和 patch 允许的人设字段；没有稳定版本写、审批、发布或生产业务写权限。MCP 可由 `loomrise config mcp` 启动；CLI 也支持配置 API 和仅本机 HTTP 服务。
 - R1 配置校验覆盖 Unit 清单字段与接口、G0、HardRule v0.2、确定性条件/字段路径、G1 隔离、严格时区时间及 `task_blueprints` 的专家内唯一 `blueprint_key`；`Unit.body` 仍为空，不解析或执行 route graph。
-- `AgentVersion.task_blueprints` 字段已加入。Task blueprint 的主体/用途对象形状尚未定版；`ContextFragment` 现支持可选 `subject_id/subject_scope`，主体或作用域不匹配会 fail-closed 并记录跳过原因。`ServiceRequest.persistent_subject` 确保只有 mapped 主体落库，ephemeral/未知 scope 不写主体 ID；v4 迁移同步清理旧版非 mapped/未知 scope 值。用途隔离与 TaskItem 撤销恢复仍没有已定持久合同，WP5 仍部分。
+- `AgentVersion.task_blueprints` 字段已加入。Task blueprint 的主体/用途对象形状尚未定版；`ContextFragment` 现支持可选 `subject_id/subject_scope`，主体或作用域不匹配会 fail-closed 并记录跳过原因。`ServiceRequest.persistent_subject` 确保只有 mapped 主体落库，ephemeral/未知 scope 不写主体 ID；v4 迁移同步清理旧版非 mapped/未知 scope 值。schema v5 新增 M-A-04 所需最小 TaskItem 身份/来源/状态/revision；用途隔离与完整任务合同仍未实现，WP5 仍部分。
 
 新增 `tests/test_config_cross_entry.py`：以同一 SQLite 文件分别打开 HTTP app、CLI 入口和 MCP tool adapter，验证跨入口读写相同 revision/config；包括数组索引与带点字段名的 JSON path patch、字段 diff 往返、相同字段路径校验错误、非法草稿冻结被拒、过期 revision CAS 冲突，以及关闭并重建 HTTP app 后草稿/稳定快照保持不变。该测试使用 MCP 内存 client session，不是 stdio 进程验收。
 
 HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：`invalid_request=400`、`forbidden=403`、`not_found=404`、`revision_conflict=409`、`validation_failed=422`。
 
-2026-10-27 最新验证：`unittest discover` **108/108**，全量测试在 `ResourceWarning` 视为错误及分配追踪下通过；前端 `npm test` **218/218**，`npm run test:sidebar` 桌面/手机浏览器回归通过；`tests/test_s1.py`、`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py`、固定案例回放 **11/11** 与 `compileall` 均通过。配置相关测试 **35/35**、主体/有效期上下文测试 **6/6** 是较早的子集统计；最新全量结果包含字段路径与 JSON 边界回归、Origin allowlist、mapped-only 主体持久化/迁移，以及配置写事务、schema DDL 与事件冲突诊断硬退出回滚测试。本轮仍未关闭 M-A-04、M-A-03 签核、M-A-17/18 签核及 R1 父 Gate。
+2026-10-29 回归：`PYTHONTRACEMALLOC=5 PYTHONWARNINGS=error::ResourceWarning` 下 `unittest discover` **123/123**；其中 `test_durable_recovery.py` **14/14**（含确认/副作用/版本/状态拒绝及重复恢复 fencing），`test_durable_transaction_crashes.py` **18/18**（含 TaskItem 创建/取消、真实 v4→v5 DDL 回滚），`test_durable_store.py` **18/18**（含 SQLite Online Backup 往返及拒绝覆盖），配置清单服务与 CLI 测试均通过。`tests/test_s1.py`、`tests/test_contract_semantics.py`、`tests/test_voice_ws.py`、`tests/test_voice_config.py` 均通过；固定案例回放 **11/11**（输出到 `/tmp/loomrise-r1-validation-20261029.json`，事件输出到 `/tmp/events/`）。`prototypes/console-next` 前端 `npm test` **218/218**；`npm run test:sidebar` 桌面展开/收起、刷新持久、390px 手机抽屉、焦点与无横向溢出回归通过（6 张本地截图，`.playwright-cli` 浏览器记录）。配置相关与上下文测试的历史子集统计不代表当前全量回归。
+
+<a id="ma-04-task-item-cancel-recovery"></a>
+
+## M-A-04 TaskItem 撤销与恢复 — 通过
+
+2026-10-29，SQLite schema v5 新增最小 `task_items` 持久表，记录事项 ID、租户/专家/主体/服务周期、目的、来源 AgentVersion、状态与 revision。尚未领取的 `waiting_condition/scheduled/ready` 事项可取消；取消状态与 revision 在同一事务中提交，重复取消不增加 revision。运行中或需先裁决执行停止的状态不能被直接标成已取消。恢复查询只返回待检查/排期/就绪事项，已取消事项不会复活。
+
+| 验证 | 工件 | 结论 |
+|---|---|---|
+| 取消后重开数据库并执行恢复，状态仍为 `cancelled`、revision 保持 2，恢复查询为空 | `tests/test_task_items.py::test_cancelled_task_is_not_reactivated_or_recoverable_after_restart` | 通过 |
+| 重复取消保持同一 revision | `tests/test_task_items.py::test_repeated_cancel_is_idempotent` | 通过 |
+| v4 数据库升级后创建 TaskItem 表 | `tests/test_task_items.py::test_v4_database_migrates_task_items` | 通过 |
+| 取消事务中硬退出回滚；重试后状态与 revision 一致且不进入恢复列表 | `tests/test_durable_transaction_crashes.py::test_task_item_cancel_crash_rolls_back_and_can_be_retried` | 通过 |
+
+边界：这关闭的是 M-A-04 的已采用、未领取事项撤销恢复切片；不代表完整 TaskItem/TaskAttempt 合同、初始化去重、用途授权、人工确认的执行中取消、调度或主动触达已经实现。完整产品合同仍按 Task 设计后续评审和验收。
 
 <a id="ma-03-crash-matrix"></a>
 
 ## M-A-03 SQLite 写事务崩溃矩阵 — 覆盖当前已识别写点，Gate 待签核
 
-`tests/test_durable_transaction_crashes.py` **15/15 个测试方法**：覆盖运行创建各插入点、事件接纳记录与冲突诊断、事件批量追加、运行收尾各更新点、恢复写入、独立 `set_request_state`、outbox attempt/ack、稳定配置登记、草稿创建与 CAS 保存、候选冻结幂等重放、空库 schema 首建、旧列 ALTER、v3→v4 主体清理与 schema 版本更新。各点均在子进程硬退出后重开，断言事务原子性、状态不前移、重试可行及不重复。与 `test_durable_outbox.py` **3/3**、`test_outbox_dispatch.py` **4/4** 合计另有 outbox 提交/消费者副作用后 ack 前重放证据。
+`tests/test_durable_transaction_crashes.py` **18/18 个测试方法**：覆盖运行创建各插入点、事件接纳记录与冲突诊断、事件批量追加、运行收尾各更新点、恢复写入、独立 `set_request_state`、outbox attempt/ack、稳定配置登记、草稿创建与 CAS 保存、候选冻结幂等重放、TaskItem 创建/取消、空库 schema 首建、旧列 ALTER、v3→v5 与 v4→v5 schema 迁移。各点均在子进程硬退出后重开，断言事务原子性、状态不前移、重试可行及不重复。与 `test_durable_outbox.py` **3/3**、`test_outbox_dispatch.py` **4/4** 合计另有 outbox 提交/消费者副作用后 ack 前重放证据。
 
-当前已识别的 `SqliteStore` 写路径已逐类覆盖；这不证明系统断电/存储故障、多进程所有权或真实外部副作用 exactly-once。上述边界和 outbox 消费者去重前提留给对应 Gate；M-A-03 状态仍为“在跑”，等待 Gate 矩阵签核。TaskItem 义务没有定版持久合同，本测试的取消恢复结论仅适用于现有 `ServiceRequest` 状态。
+完整性复核：`SqliteStore` 的每个事务写入口均已映射到故障测试：`migrate`、`begin_run`、`admit_event`（首次接纳与冲突诊断）、`append_events`、`commit_write`、`finish_run`、`set_request_state`、`recover`、TaskItem 创建/取消、outbox attempt/ack、稳定配置登记、草稿创建/保存、候选冻结；`backup_to` 是在线一致性快照，不修改源库。硬退出矩阵与遵守稳定 outbox ID 去重的模拟消费者证据可复现。剩余不覆盖：系统断电/介质损坏、多进程所有权及真实外部副作用 exactly-once；M-A-03 技术证据已完整，签核按矩阵责任角色确认。
+
+<a id="ma-12-release-checklist"></a>
+
+## M-A-12 发布前检查清单 — R1 前半可运行，完整 Gate 进行中
+
+`ConfigurationService.release_checklist` 与 `loomrise config release checklist --agent-id … --candidate-id …` 对冻结候选运行十项预检。当前自动检查“候选已冻结”和“配置结构/规则有效”；来源登记、来源授权、知识摄入、固定样例准备/通过、沙盒选择、入口版本绑定和人工批准共八项明确为 `pending`，不会被客户端勾选伪装成通过。
+
+结果提供逐项 `passed/failed/pending`、计数进度与 `ready`。当前 R1 只提供只读预检，`publish_enabled` 始终为 `false`；清单本身可运行不等于发布可用，也不替代 R2 的状态持久化、检查阻断、批准和沙盒入口绑定。
+
+| 验证 | 工件 | 结果 |
+|---|---|---|
+| 十项清单结构及 2 通过/8 待验证；缺少后续服务证据时 `ready=false` 且发布关闭 | `tests/test_configuration_service.py::test_release_checklist_runs_and_keeps_unimplemented_evidence_pending` | 通过 |
+| 越权外部 Agent 无法读取发布清单 | `tests/test_configuration_service.py::test_release_checklist_requires_authorized_candidate_scope` | 通过 |
+| 配置 CLI 对冻结候选输出同一 JSON envelope 与 10 项进度，不启用发布 | `tests/test_config_cli.py::test_read_create_patch_validate_and_freeze_use_common_envelope` | 通过 |
+
+样本为合成的 `expert-a` 配置候选，本机 Python 3.13.12、SQLite；未连接知识摄入、样例执行、沙盒、入口绑定或审批服务。M-A-12 完整通过仍需 R2 将每项检查接到权威状态并证明任一阻断项未通过时不能发布。
+
+### 配置工作台清单呈现 — 已验本机浏览器，Gate 待签核
+
+2026-10-29 使用本机 Python 3.13.12、SQLite fixture，页面 `127.0.0.1:8765`、配置服务 `127.0.0.1:8766`，合成专家 `course-demo`。真实浏览器从 R1 配置页冻结候选，随即读取同一 `release.checklist` 服务结果：候选状态 `frozen`，清单显示 2/10 通过、0 未通过、8 待验证；页面明确当前不能批准或发布。该序列未创建 stable 版本或发布入口，也未接入来源/摄入/样例/审批服务。前端单测另验证清单渲染与关闭发布状态。浏览器结果补强 WP9 页面证据，但 M-A-12 完整 Gate 仍由 R2 阻断发布测试关闭，R1 状态不因本次呈现而转为通过。
 
 <a id="wp9-console-browser-acceptance"></a>
 
