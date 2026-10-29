@@ -18,6 +18,7 @@
     .visitor { align-self: flex-end; background: #dcefe8; }
     .operator { align-self: flex-start; border: 1px solid #e0e6e3; background: white; }
     .assistant { align-self: flex-start; background: #f2eee1; }
+    .attachment { margin-top: 8px; padding: 6px 9px; border: 1px solid #9eb9af; border-radius: 4px; background: white; color: #176b55; font: inherit; cursor: pointer; }
     form { border-top: 1px solid #e1e8e5; padding: 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
     textarea { grid-column: 1 / -1; width: 100%; min-height: 78px; resize: vertical; border: 1px solid #bac9c3; border-radius: 5px; padding: 10px; font: inherit; }
     label { align-self: center; color: #435b55; font-size: 13px; }
@@ -60,6 +61,28 @@
         const node = document.createElement('div');
         node.className = `message ${item.sender}`;
         node.textContent = item.text;
+        if (item.asset_id && item.asset_version_id) {
+          const attachment = document.createElement('button');
+          attachment.className = 'attachment'; attachment.type = 'button';
+          attachment.textContent = '下载附件';
+          attachment.onclick = async () => {
+            attachment.disabled = true;
+            try {
+              const file = await call('widget.material.download', {
+                conversation_id: session.conversation_id, visitor_token: session.visitor_token,
+                asset_id: item.asset_id, version_id: item.asset_version_id
+              });
+              const binary = atob(file.content_base64);
+              const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+              const objectUrl = URL.createObjectURL(new Blob([bytes], { type: file.media_type }));
+              const link = document.createElement('a');
+              link.href = objectUrl; link.download = file.filename; link.click();
+              setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+            } catch (error) { status.textContent = error.message; }
+            finally { attachment.disabled = false; }
+          };
+          node.append(document.createElement('br'), attachment);
+        }
         return node;
       }));
       messages.scrollTop = messages.scrollHeight;

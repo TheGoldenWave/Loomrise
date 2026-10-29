@@ -1015,6 +1015,66 @@ SqliteStore(sys.argv[1], owner_id='p2')
         finally:
             replay.close()
 
+    def test_v9_to_v10_material_snapshot_migration_rolls_back_and_retries(self) -> None:
+        path = os.path.join(self.tmp.name, "schema-v9-to-v10.db")
+        store = SqliteStore(path, owner_id="p1")
+        store.save_material(
+            tenant_id="tenant_demo", agent_id="expert-a", asset_id="asset-1",
+            version_id="material-v1", display_name="Licensed guide", filename="guide.txt",
+            media_type="text/plain", authorization="licensed",
+            expires_at="2099-01-01T00:00:00+00:00", content=b"guide",
+        )
+        store.close()
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("ALTER TABLE material_versions RENAME TO material_versions_v10")
+            connection.execute(
+                "CREATE TABLE material_versions (version_id TEXT PRIMARY KEY,"
+                "asset_id TEXT NOT NULL REFERENCES material_assets(asset_id),"
+                "version INTEGER NOT NULL,content_hash TEXT NOT NULL,content BLOB NOT NULL,"
+                "created_at TEXT NOT NULL,UNIQUE(asset_id,version))",
+            )
+            connection.execute(
+                "INSERT INTO material_versions SELECT version_id,asset_id,version,content_hash,content,created_at "
+                "FROM material_versions_v10",
+            )
+            connection.execute("DROP TABLE material_versions_v10")
+            connection.execute("UPDATE meta SET value='9' WHERE key='schema_version'")
+            connection.commit()
+
+        trigger = "crash_schema_v9_to_v10"
+        _install_trigger(
+            path, trigger, "meta", "UPDATE",
+            f"NEW.key='schema_version' AND NEW.value='{SCHEMA_VERSION}'",
+        )
+        _run_crashing_child(path, """
+from loomrise.durable_store import SqliteStore
+SqliteStore(sys.argv[1], owner_id='p2')
+""")
+        with closing(sqlite3.connect(path)) as connection:
+            version = connection.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(material_versions)")}
+        self.assertEqual(version, "9")
+        self.assertNotIn("authorization", columns)
+
+        _drop_trigger(path, trigger)
+        replay = SqliteStore(path, owner_id="p2")
+        try:
+            record = replay.material_version(
+                tenant_id="tenant_demo", agent_id="expert-a", asset_id="asset-1",
+            )
+            self.assertEqual(record["version_authorization"], "licensed")
+            self.assertEqual(record["version_expires_at"], "2099-01-01T00:00:00+00:00")
+            self.assertEqual(
+                replay._conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_version'",
+                ).fetchone()[0],
+                str(SCHEMA_VERSION),
+            )
+        finally:
+            replay.close()
+
     def test_schema_bootstrap_crash_rolls_back_ddl_and_can_be_retried(self) -> None:
         path = os.path.join(self.tmp.name, "schema-bootstrap.db")
         with closing(sqlite3.connect(path)) as connection:

@@ -159,6 +159,147 @@ class CustomerServiceCase(unittest.TestCase):
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"]["code"], "invalid_request")
 
+    def test_every_supported_material_format_round_trips_through_backup(self):
+        samples = {
+            "png": ("guide.png", b"\x89PNG\r\n\x1a\n"),
+            "jpg": ("guide.jpg", b"\xff\xd8\xff\xe0"),
+            "jpeg": ("guide.jpeg", b"\xff\xd8\xff\xe0"),
+            "webp": ("guide.webp", b"RIFF\x04\x00\x00\x00WEBPVP8 "),
+            "mp4": ("guide.mp4", b"\x00\x00\x00\x18ftypisom"),
+            "webm": ("guide.webm", b"\x1a\x45\xdf\xa3"),
+            "pdf": ("guide.pdf", b"%PDF-1.7\n"),
+            "txt": ("guide.txt", "报名指南".encode()),
+            "md": ("guide.md", "# 报名指南".encode()),
+        }
+        assets = {}
+        for label, (filename, content) in samples.items():
+            with self.subTest(format=label):
+                created = self.execute("material.create", {
+                    "agent_id": "expert-a", "filename": filename, "display_name": label,
+                    "authorization": "owned",
+                    "content_base64": base64.b64encode(content).decode(),
+                })
+                self.assertTrue(created["ok"], created)
+                asset_id = created["result"]["asset_id"]
+                assets[label] = asset_id
+                downloaded = self.execute("material.download", {
+                    "agent_id": "expert-a", "asset_id": asset_id,
+                })
+                self.assertEqual(base64.b64decode(downloaded["result"]["content_base64"]), content)
+
+        backup = os.path.join(self.tmp.name, "formats-backup.db")
+        self.store.backup_to(backup)
+        restored = SqliteStore(backup)
+        try:
+            for label, (filename, expected) in samples.items():
+                with self.subTest(restored_format=label):
+                    record = restored.material_version(
+                        tenant_id="tenant-a", agent_id="expert-a", asset_id=assets[label],
+                    )
+                    self.assertEqual(record["version_filename"], filename)
+                    self.assertEqual(bytes(record["content"]), expected)
+        finally:
+            restored.close()
+
+    def test_expired_material_is_rejected_when_operator_sends_it(self):
+        created = self.execute("material.create", {
+            "agent_id": "expert-a", "filename": "expired.txt", "display_name": "过期资料",
+            "authorization": "licensed", "expires_at": "2000-01-01T00:00:00Z",
+            "content_base64": base64.b64encode(b"expired").decode(),
+        })["result"]
+        opened = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
+        self.execute("widget.send", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "text": "需要人工查看资料。", "request_human": True,
+        })
+        self.execute("inbox.claim", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+        })
+
+        response = self.execute("inbox.send_material", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+            "generation": 1, "asset_id": created["asset_id"],
+            "version_id": created["current_version_id"],
+        })
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "release_blocked")
+
+    def test_attachment_send_rejects_an_old_occupancy_generation(self):
+        created = self.execute("material.create", {
+            "agent_id": "expert-a", "filename": "guide.txt", "display_name": "指南",
+            "authorization": "owned", "content_base64": base64.b64encode(b"guide").decode(),
+        })["result"]
+        opened = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
+        self.execute("widget.send", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "text": "需要人工协助。", "request_human": True,
+        })
+        self.execute("inbox.claim", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+        })
+        self.execute("widget.send", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "text": "请另一位客服接手。", "request_human": True,
+        })
+        editor = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="editor", role="editor", agent_ids=("expert-a",),
+        )
+        claimed = self.execute("inbox.claim", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+        }, principal=editor)
+        self.assertEqual(claimed["result"]["occupancy_generation"], 2)
+
+        stale = self.execute("inbox.send_material", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+            "generation": 1, "asset_id": created["asset_id"],
+            "version_id": created["current_version_id"],
+        })
+
+        self.assertFalse(stale["ok"])
+        self.assertEqual(stale["error"]["code"], "state_conflict")
+
+    def test_visitor_can_download_only_active_material_sent_to_own_conversation(self):
+        content = b"visitor handout"
+        created = self.execute("material.create", {
+            "agent_id": "expert-a", "filename": "handout.txt", "display_name": "资料",
+            "authorization": "owned", "content_base64": base64.b64encode(content).decode(),
+        })["result"]
+        opened = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
+        self.execute("widget.send", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "text": "请人工发送资料。", "request_human": True,
+        })
+        self.execute("inbox.claim", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+        })
+        self.execute("inbox.send_material", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+            "generation": 1, "asset_id": created["asset_id"],
+            "version_id": created["current_version_id"],
+        })
+
+        downloaded = self.execute("widget.material.download", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "asset_id": created["asset_id"], "version_id": created["current_version_id"],
+        })
+        self.assertTrue(downloaded["ok"])
+        self.assertEqual(base64.b64decode(downloaded["result"]["content_base64"]), content)
+
+        other = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
+        denied = self.execute("widget.material.download", {
+            "conversation_id": other["conversation_id"], "visitor_token": other["visitor_token"],
+            "asset_id": created["asset_id"], "version_id": created["current_version_id"],
+        })
+        self.assertEqual(denied["error"]["code"], "not_found")
+
+        self.execute("material.revoke", {"agent_id": "expert-a", "asset_id": created["asset_id"]})
+        revoked = self.execute("widget.material.download", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "asset_id": created["asset_id"], "version_id": created["current_version_id"],
+        })
+        self.assertEqual(revoked["error"]["code"], "not_found")
+
 
 if __name__ == "__main__":
     unittest.main()

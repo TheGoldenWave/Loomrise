@@ -63,6 +63,25 @@ class CustomerService:
             visitor_token_hash=hashlib.sha256(visitor_token.encode()).hexdigest(),
         )
 
+    def visitor_download_material(
+        self, *, conversation_id: str, visitor_token: str,
+        asset_id: str, version_id: str,
+    ) -> dict[str, Any]:
+        material = self.store.customer_attachment(
+            conversation_id=conversation_id,
+            visitor_token_hash=hashlib.sha256(visitor_token.encode()).hexdigest(),
+            asset_id=asset_id, asset_version_id=version_id,
+        )
+        if material is None:
+            raise KeyError("附件不存在、未发送给当前访客、已撤回或已过期")
+        return {
+            "version_id": material["version_id"],
+            "filename": material["filename"],
+            "media_type": material["media_type"],
+            "content_hash": material["content_hash"],
+            "content_base64": base64.b64encode(material["content"]).decode("ascii"),
+        }
+
     def inbox_list(
         self, *, principal: ConfigurationPrincipal, agent_id: str,
     ) -> list[dict[str, Any]]:
@@ -253,6 +272,12 @@ class CustomerServiceApplication:
             return {"items": self.service.visitor_messages(
                 conversation_id=p["conversation_id"], visitor_token=p["visitor_token"],
             )}
+        if action == "widget.material.download":
+            _keys(p, {"conversation_id", "visitor_token", "asset_id", "version_id"})
+            return self.service.visitor_download_material(
+                conversation_id=p["conversation_id"], visitor_token=p["visitor_token"],
+                asset_id=p["asset_id"], version_id=p["version_id"],
+            )
         if action == "inbox.list":
             _keys(p, {"agent_id"})
             return {"items": self.service.inbox_list(principal=principal, agent_id=p["agent_id"])}

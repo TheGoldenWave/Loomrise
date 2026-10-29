@@ -1803,6 +1803,25 @@ class SqliteStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def customer_attachment(
+        self, *, conversation_id: str, visitor_token_hash: str,
+        asset_id: str, asset_version_id: str,
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT v.version_id,v.display_name,v.filename,v.media_type,v.authorization,"
+                "v.expires_at,v.content_hash,v.content FROM customer_conversations c "
+                "JOIN customer_messages m ON m.conversation_id=c.conversation_id "
+                "JOIN material_assets a ON a.asset_id=m.asset_id "
+                "JOIN material_versions v ON v.asset_id=a.asset_id AND v.version_id=m.asset_version_id "
+                "WHERE c.conversation_id=? AND c.visitor_token_hash=? "
+                "AND m.asset_id=? AND m.asset_version_id=? AND a.state='active' "
+                "AND (v.expires_at IS NULL OR v.expires_at>?) "
+                "ORDER BY m.sequence DESC LIMIT 1",
+                (conversation_id, visitor_token_hash, asset_id, asset_version_id, now_iso()),
+            ).fetchone()
+        return dict(row) if row else None
+
     def mark_outbox(self, outbox_id: str, *, state: str = "delivered") -> None:
         if state != "delivered":
             raise ValueError("outbox 只允许在消费者成功后标记 delivered")
