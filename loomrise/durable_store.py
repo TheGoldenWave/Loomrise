@@ -907,6 +907,24 @@ class SqliteStore:
             if not updated:
                 raise KeyError(f"未知 request {request_id}")
 
+    def transition_request_state(
+        self, request_id: str, *, expected: tuple[str, ...], target: str,
+    ) -> bool:
+        """Conditionally change request state so stale callbacks cannot undo cancellation."""
+        if not expected:
+            raise ValueError("expected 状态不能为空")
+        marks = ",".join("?" for _ in expected)
+        with self._tx() as cur:
+            updated = cur.execute(
+                f"UPDATE requests SET state=?,updated_at=? WHERE request_id=? AND state IN ({marks})",
+                (target, now_iso(), request_id, *expected),
+            ).rowcount
+            if not updated and cur.execute(
+                "SELECT 1 FROM requests WHERE request_id=?", (request_id,),
+            ).fetchone() is None:
+                raise KeyError(f"未知 request {request_id}")
+            return bool(updated)
+
     # -- 恢复 --------------------------------------------------------------
     def recover(
         self, *, reason: str = "restart_interrupted", owner_id: str | None = None,
@@ -953,7 +971,7 @@ class SqliteStore:
                 )
                 cur.execute(
                     "UPDATE requests SET state='failed',updated_at=?"
-                    " WHERE request_id=? AND state='running'",
+                    " WHERE request_id=? AND state IN ('running','cancelling')",
                     (now_iso(), row["request_id"]),
                 )
                 cur.execute(

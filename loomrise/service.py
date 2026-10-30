@@ -256,6 +256,19 @@ class ExecutionService:
                 channel=started.channel, reason="run_already_finished",
             )
             return False
+        if self.durable is not None:
+            changed = self.durable.store.transition_request_state(
+                request_id,
+                expected=(RequestState.RUNNING.value, RequestState.WAITING_CONFIRM.value),
+                target=RequestState.CANCELLING.value,
+            )
+            if not changed:
+                self.ledger.emit(
+                    "run.cancel_not_revoked", request_id=request_id, run_id=run_id,
+                    tenant_id=self.tenant_id, agent_version=self.pack.agent_version.version_id,
+                    channel=started.channel, reason="request_state_changed",
+                )
+                return False
         self.requests[request_id].state = RequestState.CANCELLING
         task.cancel()
         return True
@@ -464,7 +477,11 @@ class ExecutionService:
             if self.durable is not None:
                 req.state = RequestState.WAITING_CONFIRM
                 req.updated_at = now_iso()
-                self.durable.update_request_state(req.request_id, req.state.value)
+                self.durable.store.transition_request_state(
+                    req.request_id,
+                    expected=(RequestState.RUNNING.value,),
+                    target=RequestState.WAITING_CONFIRM.value,
+                )
             try:
                 answers = (ask_confirm or self.ask_confirm)(calls)
                 if inspect.isawaitable(answers):
@@ -472,9 +489,14 @@ class ExecutionService:
                 return answers
             finally:
                 if self.durable is not None and req.state is RequestState.WAITING_CONFIRM:
-                    req.state = RequestState.RUNNING
-                    req.updated_at = now_iso()
-                    self.durable.update_request_state(req.request_id, req.state.value)
+                    resumed = self.durable.store.transition_request_state(
+                        req.request_id,
+                        expected=(RequestState.WAITING_CONFIRM.value,),
+                        target=RequestState.RUNNING.value,
+                    )
+                    if resumed:
+                        req.state = RequestState.RUNNING
+                        req.updated_at = now_iso()
 
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""

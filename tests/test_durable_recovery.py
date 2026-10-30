@@ -111,6 +111,44 @@ class TestPersistedRun(Base):
         finally:
             store.close()
 
+    async def test_cancel_during_confirmation_is_durable_and_not_overwritten_by_callback(self) -> None:
+        svc, store = self.service("p1")
+        callback_entered = asyncio.Event()
+        callback_release = asyncio.Event()
+        result_holder = []
+
+        async def confirm(calls):
+            request = next(iter(svc.requests.values()))
+            callback_entered.set()
+            await callback_release.wait()
+            return [True] * len(calls)
+
+        async def run():
+            result_holder.append(await svc.handle_text(
+                self.case.turns[0]["text"], script=self.case.script, ask_confirm=confirm,
+            ))
+
+        task = asyncio.create_task(run())
+        try:
+            await asyncio.wait_for(callback_entered.wait(), timeout=5)
+            request = next(iter(svc.requests.values()))
+            self.assertEqual(store.request_row(request.request_id)["state"], RequestState.WAITING_CONFIRM.value)
+            run_id = store.request_row(request.request_id)["latest_run_id"]
+            self.assertTrue(svc.cancel(request.request_id, run_id=run_id))
+            self.assertEqual(store.request_row(request.request_id)["state"], RequestState.CANCELLING.value)
+            callback_release.set()
+            await asyncio.wait_for(task, timeout=5)
+            self.assertEqual(result_holder[0].request.state, RequestState.CANCELLED)
+            self.assertEqual(store.request_row(request.request_id)["state"], RequestState.CANCELLED.value)
+            self.assertEqual(store.recoverable_requests(tenant_id="tenant_demo"), [])
+            self.assertEqual(store.request_has_committed_write(request.request_id), False)
+        finally:
+            callback_release.set()
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            store.close()
+
     async def test_no_store_means_no_behavior_change(self) -> None:
         svc = ExecutionService(self.pack)
         r = await svc.handle_text(
@@ -257,6 +295,18 @@ class TestRecovery(Base):
             self.assertFalse(store2.is_running(run.run_id))
         finally:
             store2.close()
+
+    async def test_interrupted_cancellation_fails_closed_instead_of_reentering_recovery(self) -> None:
+        request, run_id = self.interrupted_request(request_state=RequestState.CANCELLING)
+        store = SqliteStore(self.path, owner_id="p2")
+        try:
+            recovered = store.request_row(request.request_id)
+            self.assertEqual(recovered["latest_run_id"], run_id)
+            self.assertEqual(recovered["state"], RequestState.FAILED.value)
+            self.assertEqual(recovered["latest_run_status"], "failed")
+            self.assertEqual(store.recoverable_requests(tenant_id="tenant_demo"), [])
+        finally:
+            store.close()
 
     async def test_explicit_recovery_starts_new_run_and_rechecks_confirmation(self) -> None:
         store1 = SqliteStore(self.path, owner_id="p1")

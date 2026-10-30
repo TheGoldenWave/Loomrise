@@ -61,7 +61,7 @@
 | M-A-06 | 幂等键绑定**具体业务操作**，跨渠道/跨重启重试不重复 | R1 | 幂等键登记表 + 重试测试 | 同操作换渠道仍命中 | 键只绑请求不绑操作 | 键与操作的映射表齐全 | `R1-EVIDENCE.md#wp7-幂等键语义--部分` | 在跑 |
 | M-A-07 | 工具已受理但调用超时 / 迟到回执 / 未知状态可区分并进入对账 | R2 | 超时与迟到场景测试 | 未知→`reconciling`→对账收敛 | 超时直接当失败 | 三类均可区分且有对账出口 | `R2-EVIDENCE.md#wp5-副作用意图首片`（账本有原子收敛 API；provider 查询器/迟到回执调用尚缺） | 在跑 |
 | M-A-20 | **父 Gate 细化：M-A-02**。人工确认等待可 suspend/wake，重启后重验确认上下文 | R2 | 确认前/后崩溃与唤醒测试 | 持久等待态沿原关联恢复，不重复询问或写入 | 本地 running 旧尝试被误复活，或等待状态复用过期授权 | 等待态、确认、版本、权限、预算和代次均按 Task §7.1/执行规则裁决 | 待登记 | 未开始 |
-| M-A-21 | **父 Gate 细化：M-A-03/04/07**。取消竞争与旧 generation/执行者迟到输出拒绝 | R2 | 取消 race + stale execution test | 旧代迟到输出被拒，未知结果进入对账，取消事实可区分 | 旧代继续写入、未知状态自动重试或把 abort 当业务撤销 | `cancel_requested`/`cancel_confirmed`/`business_action_revoked` 分离，旧代无副作用；不代表跨进程 Worker handoff 已通过 | 待登记 | 未开始 |
+| M-A-21 | **父 Gate 细化：M-A-03/04/07**。取消竞争与旧 generation/执行者迟到输出拒绝 | R2 | 取消 race + stale execution test | 旧代迟到输出被拒，未知结果进入对账，取消事实可区分 | 旧代继续写入、未知状态自动重试或把 abort 当业务撤销 | `cancel_requested`/`cancel_confirmed`/`business_action_revoked` 分离，旧代无副作用；不代表跨进程 Worker handoff 已通过 | `R2-EVIDENCE.md#取消状态竞争2026-10-30`（确认中取消持久化、迟到回调不可覆盖、重启取消 fail-closed；父项其余证据仍需复核） | 在跑 |
 | M-A-08 | 摄入：FAQ/URL/文件解析状态、失败、重试、撤回 | R2 | 摄入状态机测试 | 失败不冒充已索引 | 解析失败标 Indexed | 状态互斥且失败可重试 | `R2-EVIDENCE.md#wp1wp4-服务端切片`（未做外网内容验收；文件走服务端路径） | 在跑 |
 | M-A-09 | **撤回后索引与缓存停止提供旧内容**，受影响版本/评测转待重验 | R2 | 撤回后检索测试 | 撤回后检索 0 命中 | 缓存仍返回旧段 | 检索与缓存双清且版本标待重验 | `R2-EVIDENCE.md#wp1wp4-服务端切片`（数据库检索归零；无独立缓存服务） | 在跑 |
 | M-A-10 | 访客↔人工文本往返可复核（最小 Widget + Inbox） | R2 | 往返记录 | 双向消息可检索 | 只有单向 | 双向且顺序可核 | `R2-EVIDENCE.md#wp1wp4-服务端切片`、`tests/test_customer_service.py` | 在跑 |

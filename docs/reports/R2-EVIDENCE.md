@@ -1,4 +1,4 @@
-# R2 证据摘要 v0.8（实施中）
+# R2 证据摘要 v0.9（实施中）
 
 日期：2026-10-30。性质：R2 实施与验收交接记录，不替代 [ROADMAP](../ROADMAP.md) 的阶段 Gate 或 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) 的父 Gate 状态。
 
@@ -7,6 +7,8 @@
 > v0.7 更新：副作用账本新增外部查询结果的原子收敛写入；已执行结果保存原 `result_id`、幂等记录、审计事件与 outbox，确定未执行才开放显式重试，未知仍阻断。对账事务崩溃、重启后收敛和 100 个独立连接并发竞争均有测试。后端全量 156/156、S1 自检和固定回放 11/11 通过；仍未接入 provider 查询器/迟到回执服务，M-A-07 不通过。
 
 > v0.8 更新：配置 HTTP 支持 Base64 上传不超过 5 MiB 的 TXT/MD/CSV/JSON 知识文件；SQLite schema 升至 v11。上传原件仅供内部摄入/失败重试使用，普通来源读取不返回 BLOB；成功摄入或撤回后清除暂存原件。HTTP 摄入、失败重试保留、撤回清理、超限拒绝和 v10→v11 迁移测试通过；后端全量 162/162。尚未完成浏览器文件上传与公网 URL 内容验收，WP2/M-A-08/09 仍未通过。
+
+> v0.9 更新：SQLite 请求状态新增条件迁移；人工确认期间取消会持久化为 `cancelling`，确认回调退出不得将其覆盖回 `running`。进程在取消收尾前中断时，恢复将请求 fail-closed 收敛为 `failed`，不重新进入可恢复队列，也不声称取消已确认。新增确认中取消和重启中断取消测试；后端全量回归 164/164，S1 自检通过，固定案例 11/11。此证据只覆盖取消状态竞争，不等于持久确认 suspend/wake 或外部副作用撤销。
 
 ## 开工授权
 
@@ -26,7 +28,7 @@ R1 代码与证据整理提交：`36fd3a5`（`完成 R1 配置与耐久恢复补
 | WP2 知识摄入与撤回 | 部分实现 | FAQ、HTTPS URL 与 UTF-8 文本文件支持状态/失败/重试/撤回；配置 HTTP 已支持最多 5 MiB 的 TXT/MD/CSV/JSON 上传，SQLite schema v11 暂存原件，普通读取不返回 BLOB，成功摄入/撤回后清除。撤回删除旧索引、搜索归零并标记沙盒版本待重验。URL 抓取固定公网 DNS 并限制跳转/体积；浏览器上传交互与公网 URL 内容验收仍缺。 |
 | WP3 物料与人工发送 | 部分实现 | SQLite 原件 BLOB、校验和及版本；schema v10 将显示名、文件名、格式、授权和有效期固化到每个物料版本，并为 v9 数据提供事务迁移回填；支持上传/下载/备份恢复、撤回，Inbox 附件发送前校验当前客服占用代次、物料版本与该版本有效期。浏览器完成 README 上传、人工发送、访客下载往返。支持格式/授权类型和并发失效矩阵仍未全覆盖。 |
 | WP4 最小 Widget/Inbox | 部分实现 | loopback Widget/Inbox 页面和 API 支持访客文本、请求人工、客服接管/回复、物料发送及顺序记录；访客令牌仅存哈希，客服操作按可信 principal 限制。浏览器 console 0 errors；尚非公开部署，也没有 AI 自动接待回复。 |
-| WP5 运行时可信 | 部分实现 | 工具意图与外部查询结果收敛首片见下文；`run.status` 是受限只读摘要，不暴露事件或工具参数。仍缺 provider 查询器/迟到回执服务、持久确认 suspend/wake 与取消竞争确认。 |
+| WP5 运行时可信 | 部分实现 | 工具意图与外部查询结果收敛首片见下文；`run.status` 是受限只读摘要，不暴露事件或工具参数。取消状态已持久化并覆盖确认中取消与重启中断取消；仍缺 provider 查询器/迟到回执服务及持久确认 suspend/wake。 |
 | WP6 证据归档与关闭 | 未开始 | 父 Gate 仍有不通过/未开始项；流程例外不替代签核或技术验收。 |
 
 <a id="wp1wp4-服务端切片"></a>
@@ -49,8 +51,14 @@ Widget 与 Inbox 由同一个 loopback HTTP 服务提供。访客凭 256-bit 随
 
 证据：`tests/test_durable_side_effects.py` 覆盖 100 个独立连接竞争（恰有一个执行资格）、重复意图拒绝、参数重绑定拒绝、重启后进入 `reconciling` 并在原操作外部结果查询后收敛、确定未执行后的显式重试、仍未知时阻断、对账事务崩溃回滚及事件链完整。未接真实外部系统，模拟账本结果不等同于 provider 联调。当前全量后端 **162/162**。
 
+### 取消状态竞争（2026-10-30）
+
+耐久请求状态现支持条件迁移。取消仅在请求仍为 `running` 或 `waiting_confirm` 时写入 `cancelling`；确认回调的收尾只允许 `waiting_confirm → running`，因此迟到回调不能覆盖已接受的取消。若进程在取消确认事件提交前退出，启动恢复把 `cancelling` 请求与旧 Run 一起收敛为 `failed`，不会再次列入自动恢复；这不伪称外部业务动作已撤销或取消已确认。
+
+证据：`tests/test_durable_recovery.py::TestPersistedRun.test_cancel_during_confirmation_is_durable_and_not_overwritten_by_callback` 与 `TestRecovery.test_interrupted_cancellation_fails_closed_instead_of_reentering_recovery`。这两项证明本地状态竞争与重启 fail-closed，不覆盖 provider 侧取消/撤销，也不覆盖确认等待的原 Run suspend/wake。
+
 ## 验证与限制
 
 开工前基线：R1 证据报告记录 123/123。该历史结果不证明任一 R2 Gate 通过。
 
-本轮浏览器 fixture 与状态数据库写在系统临时目录，不属于项目交付工件，也不提交仓库。测试下载件写在 `.playwright-mcp/README.md`。本地页面只作为服务端集成证据的一部分，不替代公开渠道或生产验收。固定样例发布检查、浏览器知识文件摄入/公网 URL 内容验收、WP5 确认等待恢复、provider 查询/迟到回执调用和取消竞争仍待实现或验证；`run.status` 仅为只读摘要切片，不能替代上述耐久性证据。R2 Gate 继续保持未关闭。
+本轮浏览器 fixture 与状态数据库写在系统临时目录，不属于项目交付工件，也不提交仓库。测试下载件写在 `.playwright-mcp/README.md`。本地页面只作为服务端集成证据的一部分，不替代公开渠道或生产验收。固定样例发布检查、浏览器知识文件摄入/公网 URL 内容验收、WP5 确认等待恢复、provider 查询/迟到回执调用仍待实现或验证；取消状态竞争已有本地故障/恢复测试，但不等于完整取消 Gate。`run.status` 仅为只读摘要切片，不能替代上述耐久性证据。R2 Gate 继续保持未关闭。
