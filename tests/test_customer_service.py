@@ -161,18 +161,18 @@ class CustomerServiceCase(unittest.TestCase):
 
     def test_every_supported_material_format_round_trips_through_backup(self):
         samples = {
-            "png": ("guide.png", b"\x89PNG\r\n\x1a\n"),
-            "jpg": ("guide.jpg", b"\xff\xd8\xff\xe0"),
-            "jpeg": ("guide.jpeg", b"\xff\xd8\xff\xe0"),
-            "webp": ("guide.webp", b"RIFF\x04\x00\x00\x00WEBPVP8 "),
-            "mp4": ("guide.mp4", b"\x00\x00\x00\x18ftypisom"),
-            "webm": ("guide.webm", b"\x1a\x45\xdf\xa3"),
-            "pdf": ("guide.pdf", b"%PDF-1.7\n"),
-            "txt": ("guide.txt", "报名指南".encode()),
-            "md": ("guide.md", "# 报名指南".encode()),
+            "png": ("guide.png", "image/png", b"\x89PNG\r\n\x1a\n"),
+            "jpg": ("guide.jpg", "image/jpeg", b"\xff\xd8\xff\xe0"),
+            "jpeg": ("guide.jpeg", "image/jpeg", b"\xff\xd8\xff\xe0"),
+            "webp": ("guide.webp", "image/webp", b"RIFF\x04\x00\x00\x00WEBPVP8 "),
+            "mp4": ("guide.mp4", "video/mp4", b"\x00\x00\x00\x18ftypisom"),
+            "webm": ("guide.webm", "video/webm", b"\x1a\x45\xdf\xa3"),
+            "pdf": ("guide.pdf", "application/pdf", b"%PDF-1.7\n"),
+            "txt": ("guide.txt", "text/plain", "报名指南".encode()),
+            "md": ("guide.md", "text/markdown", "# 报名指南".encode()),
         }
         assets = {}
-        for label, (filename, content) in samples.items():
+        for label, (filename, media_type, content) in samples.items():
             with self.subTest(format=label):
                 created = self.execute("material.create", {
                     "agent_id": "expert-a", "filename": filename, "display_name": label,
@@ -186,17 +186,19 @@ class CustomerServiceCase(unittest.TestCase):
                     "agent_id": "expert-a", "asset_id": asset_id,
                 })
                 self.assertEqual(base64.b64decode(downloaded["result"]["content_base64"]), content)
+                self.assertEqual(downloaded["result"]["media_type"], media_type)
 
         backup = os.path.join(self.tmp.name, "formats-backup.db")
         self.store.backup_to(backup)
         restored = SqliteStore(backup)
         try:
-            for label, (filename, expected) in samples.items():
+            for label, (filename, media_type, expected) in samples.items():
                 with self.subTest(restored_format=label):
                     record = restored.material_version(
                         tenant_id="tenant-a", agent_id="expert-a", asset_id=assets[label],
                     )
                     self.assertEqual(record["version_filename"], filename)
+                    self.assertEqual(record["version_media_type"], media_type)
                     self.assertEqual(bytes(record["content"]), expected)
         finally:
             restored.close()
@@ -224,6 +226,83 @@ class CustomerServiceCase(unittest.TestCase):
 
         self.assertFalse(response["ok"])
         self.assertEqual(response["error"]["code"], "release_blocked")
+
+    def test_authorization_is_validated_and_snapshotted_per_material_version(self):
+        authorizations = ("owned", "licensed", "public_domain", "consented")
+        versions = []
+        asset_id = None
+        for index, authorization in enumerate(authorizations):
+            created = self.execute("material.create", {
+                "agent_id": "expert-a", "asset_id": asset_id,
+                "filename": "rights.txt", "display_name": "授权样例",
+                "authorization": authorization,
+                "expires_at": f"2099-0{index + 1}-01T00:00:00Z",
+                "content_base64": base64.b64encode(f"version-{index + 1}".encode()).decode(),
+            })
+            self.assertTrue(created["ok"], created)
+            asset_id = created["result"]["asset_id"]
+            versions.append((created["result"]["current_version_id"], authorization))
+
+        for version_id, expected in versions:
+            downloaded = self.execute("material.download", {
+                "agent_id": "expert-a", "asset_id": asset_id, "version_id": version_id,
+            })
+            self.assertTrue(downloaded["ok"], downloaded)
+            self.assertEqual(downloaded["result"]["authorization"], expected)
+
+        invalid = self.execute("material.create", {
+            "agent_id": "expert-a", "filename": "rights.txt", "display_name": "无效授权",
+            "authorization": "implied", "content_base64": base64.b64encode(b"text").decode(),
+        })
+        self.assertFalse(invalid["ok"])
+        self.assertEqual(invalid["error"]["code"], "invalid_request")
+
+    def test_version_change_between_precheck_and_send_rejects_stale_attachment(self):
+        content = base64.b64encode(b"authorized version one").decode()
+        created = self.execute("material.create", {
+            "agent_id": "expert-a", "filename": "guide.txt", "display_name": "指南",
+            "authorization": "licensed", "expires_at": "2099-01-01T00:00:00Z",
+            "content_base64": content,
+        })["result"]
+        opened = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
+        self.execute("widget.send", {
+            "conversation_id": opened["conversation_id"], "visitor_token": opened["visitor_token"],
+            "text": "请人工发送资料。", "request_human": True,
+        })
+        self.execute("inbox.claim", {
+            "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+        })
+
+        second_store = SqliteStore(self.path)
+        second_service = CustomerService(second_store, ConfigurationService(second_store))
+        original_send = self.store.add_operator_message
+
+        def update_before_transaction(**kwargs):
+            second_service.create_material(
+                principal=self.owner, agent_id="expert-a", asset_id=created["asset_id"],
+                filename="guide.txt", display_name="指南", authorization="owned",
+                content_base64=base64.b64encode(b"authorized version two").decode(),
+            )
+            return original_send(**kwargs)
+
+        self.store.add_operator_message = update_before_transaction
+        try:
+            response = self.execute("inbox.send_material", {
+                "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
+                "generation": 1, "asset_id": created["asset_id"],
+                "version_id": created["current_version_id"],
+            })
+        finally:
+            self.store.add_operator_message = original_send
+            second_store.close()
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error"]["code"], "state_conflict")
+        messages = self.store.customer_messages(
+            conversation_id=opened["conversation_id"], tenant_id="tenant-a", agent_id="expert-a",
+        )
+        self.assertEqual(len(messages), 1)
+        self.assertIsNone(messages[0]["asset_id"])
 
     def test_attachment_send_rejects_an_old_occupancy_generation(self):
         created = self.execute("material.create", {

@@ -739,6 +739,15 @@ class SqliteStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def reconciling_tool_attempts(self) -> list[dict[str, Any]]:
+        """Return the minimum stable identity needed by a read-only provider lookup."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT attempt_key,action,run_id,state FROM tool_attempts "
+                "WHERE state='reconciling' ORDER BY created_at,attempt_key",
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def reconcile_tool_attempt(
         self, attempt_key: str, *, outcome: str, result_id: str | None = None,
     ) -> dict[str, Any]:

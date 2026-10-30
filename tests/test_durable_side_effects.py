@@ -10,6 +10,9 @@ import unittest
 
 from loomrise.contracts import Channel, RequestState, Run, ServiceRequest, new_id
 from loomrise.durable_store import SqliteStore
+from loomrise.reconciliation import (
+    DurableToolReconciliation, ProviderOperationResult,
+)
 
 
 class DurableToolIntentTests(unittest.TestCase):
@@ -121,6 +124,68 @@ class DurableToolIntentTests(unittest.TestCase):
             arguments={"course_id": "c1"},
         )
         self.assertTrue(retry["created"])
+
+    def test_provider_reconciliation_queries_only_stable_identity_and_keeps_unknown_blocked(self) -> None:
+        key = "create_booking::provider-query"
+        self.store.begin_tool_attempt(
+            self.run.run_id, attempt_key=key, action="create_booking",
+            arguments={"course_id": "c1", "learner_name": "A", "slot": "morning"},
+        )
+        self.store.mark_tool_attempt_unknown(key, run_id=self.run.run_id)
+        queries = []
+
+        class UnknownProvider:
+            def lookup_operation(inner_self, *, attempt_key, action):
+                queries.append((attempt_key, action))
+                return ProviderOperationResult("unknown")
+
+        results = DurableToolReconciliation(self.store).reconcile_pending(UnknownProvider())
+
+        self.assertEqual(queries, [(key, "create_booking")])
+        self.assertEqual(results[0]["state"], "reconciling")
+        with self.assertRaisesRegex(RuntimeError, "必须先对账"):
+            self.store.begin_tool_attempt(
+                self.run.run_id, attempt_key=key, action="create_booking",
+                arguments={"course_id": "c1", "learner_name": "A", "slot": "morning"},
+            )
+
+    def test_provider_applied_lookup_and_late_receipt_share_idempotent_settlement(self) -> None:
+        key = "create_booking::late-provider-receipt"
+        self.store.begin_tool_attempt(
+            self.run.run_id, attempt_key=key, action="create_booking",
+            arguments={"course_id": "c1"},
+        )
+        self.store.mark_tool_attempt_unknown(key, run_id=self.run.run_id)
+        coordinator = DurableToolReconciliation(self.store)
+
+        class AppliedProvider:
+            def lookup_operation(inner_self, *, attempt_key, action):
+                return ProviderOperationResult("applied", "booking-provider-77")
+
+        settled = coordinator.reconcile_pending(AppliedProvider())[0]
+        repeated = coordinator.accept_late_receipt(
+            attempt_key=key, result_id="booking-provider-77",
+        )
+
+        self.assertEqual(settled["state"], "succeeded")
+        self.assertEqual(repeated["result_id"], "booking-provider-77")
+        self.assertEqual(len(self.store.pending_outbox()), 1)
+        self.assertTrue(self.store.verify_chain(self.run.run_id))
+
+    def test_provider_lookup_failure_does_not_authorize_reexecution(self) -> None:
+        key = "create_booking::provider-error"
+        self.store.begin_tool_attempt(
+            self.run.run_id, attempt_key=key, action="create_booking", arguments={"course_id": "c1"},
+        )
+        self.store.mark_tool_attempt_unknown(key, run_id=self.run.run_id)
+
+        class FailedProvider:
+            def lookup_operation(inner_self, *, attempt_key, action):
+                raise TimeoutError("provider lookup timed out")
+
+        result = DurableToolReconciliation(self.store).reconcile_pending(FailedProvider())[0]
+        self.assertEqual(result["state"], "reconciling")
+        self.assertEqual(self.store.reconciling_tool_attempts()[0]["attempt_key"], key)
 
     def test_reconciliation_rejects_inconsistent_external_result(self) -> None:
         key = "create_booking::settle-invalid"

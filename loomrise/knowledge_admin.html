@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN" data-agent-id="__AGENT_ID__">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <title>Loomrise · 知识资料</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #20282a; background: #f5f7f6; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    header { background: #fff; border-bottom: 1px solid #dce3e0; }
+    .topbar, main { width: min(1080px, calc(100% - 32px)); margin: 0 auto; }
+    .topbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { font-weight: 700; color: #205f58; }
+    .agent { color: #667371; font-size: 13px; }
+    main { padding: 28px 0 48px; }
+    h1 { font-size: 24px; line-height: 1.25; margin: 0; }
+    h2 { font-size: 16px; line-height: 1.35; margin: 0 0 16px; }
+    .intro { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+    .intro p { margin: 6px 0 0; color: #62706d; font-size: 14px; }
+    .workspace { display: grid; grid-template-columns: minmax(280px, 0.8fr) minmax(380px, 1.2fr); gap: 20px; align-items: start; }
+    section { background: #fff; border: 1px solid #dce3e0; border-radius: 6px; padding: 20px; }
+    .field { display: grid; gap: 6px; margin: 0 0 14px; }
+    label, legend { font-size: 13px; font-weight: 600; }
+    input, select, textarea { width: 100%; border: 1px solid #cbd5d1; border-radius: 4px; padding: 9px 10px; font: inherit; background: #fff; color: inherit; }
+    input[type=file] { padding: 7px; }
+    textarea { min-height: 92px; resize: vertical; }
+    .helper { color: #6c7976; font-size: 12px; line-height: 1.5; margin: 0; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { min-height: 36px; border: 1px solid #bdcbc6; border-radius: 4px; background: #fff; color: #28413c; padding: 7px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+    button.primary { background: #176b61; border-color: #176b61; color: #fff; }
+    button.danger { color: #a53d32; border-color: #e2b8b3; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .actions, .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .notice { min-height: 24px; margin: 12px 0 0; color: #52615e; font-size: 13px; }
+    .notice[data-tone=error] { color: #a53d32; }
+    .notice[data-tone=success] { color: #176b61; }
+    .search { display: flex; gap: 8px; margin-bottom: 14px; }
+    .search input { flex: 1; }
+    .source-list { display: grid; gap: 10px; }
+    .source { border-top: 1px solid #e5eae8; padding: 14px 0 4px; }
+    .source:first-child { border-top: 0; padding-top: 0; }
+    .source-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+    .source-name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    .source-meta { color: #667371; font-size: 12px; margin: 5px 0 10px; }
+    .state { white-space: nowrap; font-size: 12px; color: #8a5e12; }
+    .state.ready { color: #176b61; }
+    .state.failed, .state.revoked { color: #a53d32; }
+    .results { margin: 10px 0 0; padding-left: 18px; color: #52615e; font-size: 13px; }
+    .empty { padding: 22px 8px; color: #667371; text-align: center; font-size: 13px; }
+    @media (max-width: 720px) {
+      .topbar, main { width: min(100% - 24px, 560px); }
+      main { padding-top: 20px; }
+      .intro { align-items: start; flex-direction: column; }
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      section { padding: 16px; }
+      .grid { grid-template-columns: 1fr; gap: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header><div class="topbar"><span class="brand">Loomrise</span><span class="agent">专家：<strong id="agent-id"></strong></span></div></header>
+  <main>
+    <div class="intro"><div><h1>知识资料</h1><p>管理已授权的 FAQ、网页和文本文件，查看实际摄入状态。</p></div><button id="refresh" type="button">刷新状态</button></div>
+    <div class="workspace">
+      <section aria-labelledby="add-title">
+        <h2 id="add-title">添加资料</h2>
+        <form id="source-form">
+          <div class="field"><label for="kind">资料类型</label><select id="kind" name="kind"><option value="file">文本文件</option><option value="url">网页</option><option value="faq">FAQ 文本</option></select></div>
+          <div class="field"><label for="display-name">资料名称</label><input id="display-name" name="display_name" required maxlength="200" autocomplete="off"></div>
+          <div class="field" data-for="file"><label for="file">上传文件</label><input id="file" name="file" type="file" accept=".txt,.md,.csv,.json"><p class="helper">支持 TXT、MD、CSV、JSON，最大 5 MiB。文件内容会上传到本机服务处理。</p></div>
+          <div class="field" data-for="url" hidden><label for="url">HTTPS 网页地址</label><input id="url" name="url" type="url" placeholder="https://example.org/policy"></div>
+          <div data-for="faq" hidden>
+            <div class="field"><label for="question">常见问题</label><input id="question" name="question" maxlength="2000"></div>
+            <div class="field"><label for="answer">标准答复</label><textarea id="answer" name="answer" maxlength="12000"></textarea></div>
+          </div>
+          <div class="field"><label for="authorization">使用授权</label><select id="authorization" name="authorization"><option value="owned">自有</option><option value="licensed">已获许可</option><option value="public_domain">公有领域</option><option value="consented">已取得同意</option></select></div>
+          <div class="actions"><button class="primary" id="submit" type="submit">上传并开始摄入</button></div>
+          <p class="notice" id="notice" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section aria-labelledby="sources-title">
+        <h2 id="sources-title">已登记资料</h2>
+        <form class="search" id="search-form"><input id="query" aria-label="检索已摄入内容" placeholder="检索已摄入内容"><button type="submit">检索</button></form>
+        <ol class="results" id="results" hidden></ol>
+        <div class="source-list" id="sources"><p class="empty">正在读取资料状态…</p></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const agentId = document.documentElement.dataset.agentId;
+    const labels = { queued: '排队中', processing: '处理中', ready: '已摄入', failed: '处理失败', revoked: '已撤回' };
+    const form = document.querySelector('#source-form');
+    const notice = document.querySelector('#notice');
+    const sourceList = document.querySelector('#sources');
+    const button = document.querySelector('#submit');
+    document.querySelector('#agent-id').textContent = agentId;
+
+    async function request(action, payload = {}) {
+      const response = await fetch('/api/configuration', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload: { agent_id: agentId, ...payload } }),
+      });
+      const envelope = await response.json();
+      if (!response.ok || envelope.ok !== true) throw new Error(envelope.error?.message || '服务请求失败');
+      return envelope.result;
+    }
+
+    function setNotice(message, tone = '') {
+      notice.textContent = message;
+      notice.dataset.tone = tone;
+    }
+
+    function formatSource(source) {
+      const item = document.createElement('article');
+      item.className = 'source';
+      const heading = document.createElement('div');
+      heading.className = 'source-heading';
+      const name = document.createElement('span');
+      name.className = 'source-name';
+      name.textContent = source.display_name;
+      const state = document.createElement('span');
+      state.className = `state ${source.state}`;
+      state.textContent = labels[source.state] || source.state;
+      heading.append(name, state);
+      const meta = document.createElement('p');
+      meta.className = 'source-meta';
+      meta.textContent = `${source.kind.toUpperCase()} · ${source.authorization} · 尝试 ${source.attempt_count}`;
+      item.append(heading, meta);
+      if (source.error_message) {
+        const error = document.createElement('p');
+        error.className = 'source-meta';
+        error.textContent = source.error_message;
+        item.append(error);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+      if (source.state === 'failed') {
+        const retry = document.createElement('button');
+        retry.type = 'button'; retry.textContent = '重试';
+        retry.addEventListener('click', () => runAction('knowledge.retry', source.source_id));
+        actions.append(retry);
+      }
+      if (source.state !== 'revoked') {
+        const revoke = document.createElement('button');
+        revoke.type = 'button'; revoke.className = 'danger'; revoke.textContent = '撤回';
+        revoke.addEventListener('click', () => runAction('knowledge.revoke', source.source_id));
+        actions.append(revoke);
+      }
+      if (actions.childElementCount) item.append(actions);
+      return item;
+    }
+
+    async function refresh() {
+      const result = await request('knowledge.source.list');
+      sourceList.replaceChildren();
+      if (!result.items.length) {
+        const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = '还没有登记资料';
+        sourceList.append(empty); return;
+      }
+      result.items.forEach(source => sourceList.append(formatSource(source)));
+    }
+
+    async function runAction(action, sourceId) {
+      setNotice('正在更新资料状态…');
+      try {
+        await request(action, { source_id: sourceId });
+        setNotice(action === 'knowledge.revoke' ? '资料已撤回，相关沙盒版本需要重新验收。' : '重试完成。', 'success');
+        await refresh();
+      } catch (error) { setNotice(error.message, 'error'); }
+    }
+
+    function toBase64(bytes) {
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      return btoa(binary);
+    }
+
+    document.querySelector('#kind').addEventListener('change', event => {
+      document.querySelectorAll('[data-for]').forEach(element => {
+        element.hidden = element.dataset.for !== event.target.value;
+      });
+    });
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      button.disabled = true;
+      setNotice('正在保存并摄入…');
+      try {
+        const data = new FormData(form);
+        const kind = data.get('kind');
+        const common = { display_name: data.get('display_name'), authorization: data.get('authorization') };
+        let payload;
+        if (kind === 'file') {
+          const file = data.get('file');
+          if (!(file instanceof File) || !file.size) throw new Error('请选择要上传的文本文件');
+          if (file.size > 5 * 1024 * 1024) throw new Error('文件不能超过 5 MiB');
+          payload = { ...common, kind, filename: file.name, content_base64: toBase64(new Uint8Array(await file.arrayBuffer())) };
+        } else if (kind === 'url') {
+          payload = { ...common, kind, locator: data.get('url') };
+        } else {
+          const question = String(data.get('question') || '').trim();
+          const answer = String(data.get('answer') || '').trim();
+          if (!question || !answer) throw new Error('FAQ 问题和标准答复都不能为空');
+          payload = { ...common, kind, locator: `问题：${question}\n标准答复：${answer}` };
+        }
+        const source = await request('knowledge.source.create', payload);
+        const ingested = await request('knowledge.ingest', { source_id: source.source_id });
+        form.reset();
+        document.querySelector('#kind').dispatchEvent(new Event('change'));
+        setNotice(ingested.state === 'ready' ? '资料已摄入，可在右侧查看。' : '摄入失败；可在资料列表中重试。', ingested.state === 'ready' ? 'success' : 'error');
+        await refresh();
+      } catch (error) { setNotice(error.message, 'error'); }
+      finally { button.disabled = false; }
+    });
+
+    document.querySelector('#search-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const query = document.querySelector('#query').value.trim();
+      const results = document.querySelector('#results');
+      results.replaceChildren();
+      if (!query) { results.hidden = true; return; }
+      try {
+        const response = await request('knowledge.search', { query });
+        results.hidden = false;
+        response.items.forEach(hit => {
+          const li = document.createElement('li'); li.textContent = `${hit.source_id}: ${hit.text}`; results.append(li);
+        });
+        if (!response.items.length) { const li = document.createElement('li'); li.textContent = '没有匹配内容'; results.append(li); }
+      } catch (error) { setNotice(error.message, 'error'); }
+    });
+    document.querySelector('#refresh').addEventListener('click', () => refresh().catch(error => setNotice(error.message, 'error')));
+    refresh().catch(error => setNotice(error.message, 'error'));
+  </script>
+</body>
+</html>

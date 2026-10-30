@@ -175,6 +175,11 @@ def create_configuration_http_app(
         page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
         return web.Response(text=page, content_type="text/html", charset="utf-8")
 
+    async def knowledge_page(request: web.Request) -> web.Response:
+        template = Path(__file__).with_name("knowledge_admin.html").read_text(encoding="utf-8")
+        page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
+        return web.Response(text=page, content_type="text/html", charset="utf-8")
+
     async def customer_execute(request: web.Request) -> web.Response:
         try:
             body = await request.json()
@@ -203,6 +208,7 @@ def create_configuration_http_app(
     app.router.add_options("/api/customer-service", customer_execute)
     app.router.add_get("/widget/{agent_id}/{entry_id}", widget_page)
     app.router.add_get("/inbox/{agent_id}", inbox_page)
+    app.router.add_get("/workbench/knowledge/{agent_id}", knowledge_page)
 
     async def close_store(_: web.Application) -> None:
         store.close()

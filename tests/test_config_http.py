@@ -152,6 +152,23 @@ class ConfigurationHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual((await response.json())["schema_version"], "config-api-v1")
 
+    async def test_knowledge_workbench_page_is_agent_scoped_and_escapes_route_value(self):
+        response = await self.client.get("/workbench/knowledge/expert-a")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "text/html")
+        self.assertIn('data-agent-id="expert-a"', await response.text())
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+        other_agent = await self.client.get("/workbench/knowledge/other-agent")
+        self.assertEqual(other_agent.status, 200)
+        self.assertIn('data-agent-id="other-agent"', await other_agent.text())
+        denied = await self.client.post("/api/configuration", json={
+            "action": "knowledge.source.list",
+            "payload": {"agent_id": "other-agent"},
+        })
+        self.assertEqual(denied.status, 403)
+        self.assertEqual((await denied.json())["error"]["code"], "forbidden")
+
     async def test_run_status_is_read_only_redacted_and_agent_scoped(self):
         store = self.app[STORE_KEY]
         request = ServiceRequest(
@@ -243,6 +260,16 @@ class ConfigurationHttpTests(unittest.IsolatedAsyncioTestCase):
             (await search.json())["result"]["items"][0]["text"],
             "报名需要提前两天预约。",
         )
+
+        listed = await self.client.post("/api/configuration", json={
+            "action": "knowledge.source.list",
+            "payload": {"agent_id": "expert-a"},
+        })
+        self.assertEqual(listed.status, 200)
+        listed_source = (await listed.json())["result"]["items"][0]
+        self.assertEqual(listed_source["state"], "ready")
+        self.assertEqual(listed_source["attempt_count"], 1)
+        self.assertIsNone(listed_source["error_message"])
 
 
 if __name__ == "__main__":
