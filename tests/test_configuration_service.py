@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from copy import deepcopy
 import os
 import tempfile
@@ -328,7 +329,7 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         ready = self.service.ingest_knowledge_source(
             tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
         )
-        self.assertEqual(ready["state"], "ready")
+        self.assertEqual(ready["state"], "ready", ready)
         self.assertEqual(len(self.service.search_ingested_knowledge(
             tenant_id="tenant-a", agent_id="expert-a", query="退费规则",
         )), 1)
@@ -412,6 +413,95 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         )
         self.assertEqual(retried["state"], "failed")
         self.assertEqual(retried["attempt_count"], 2)
+
+    def test_uploaded_text_file_ingests_retries_and_revokes_without_exposing_source_bytes(self):
+        self.seed()
+        app = ConfigurationApplication(self.service)
+        editor = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="editor", role="editor", agent_ids=("expert-a",),
+        )
+        payload = {
+            "agent_id": "expert-a", "kind": "file", "filename": "policy.md",
+            "display_name": "报名政策", "authorization": "licensed",
+            "content_base64": base64.b64encode("报名需提前两天预约。".encode()).decode(),
+        }
+
+        created = app.execute(
+            principal=editor, action="knowledge.source.create", payload=payload,
+        )["result"]
+
+        self.assertNotIn("uploaded_content", created)
+        self.assertEqual(created["locator"], "policy.md")
+        ready = app.execute(principal=editor, action="knowledge.ingest", payload={
+            "agent_id": "expert-a", "source_id": created["source_id"],
+        })["result"]
+        self.assertEqual(ready["state"], "ready", ready)
+        self.assertEqual(self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="提前两天",
+        )[0]["text"], "报名需提前两天预约。")
+        persisted = self.store.knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=created["source_id"],
+        )
+        self.assertNotIn("uploaded_content", persisted)
+        stored_bytes = self.store._conn.execute(
+            "SELECT uploaded_content FROM knowledge_sources WHERE source_id=?",
+            (created["source_id"],),
+        ).fetchone()[0]
+        self.assertIsNone(stored_bytes)
+
+        revoked = app.execute(principal=editor, action="knowledge.revoke", payload={
+            "agent_id": "expert-a", "source_id": created["source_id"],
+        })["result"]
+        self.assertEqual(revoked["state"], "revoked")
+        self.assertEqual(self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="提前两天",
+        ), [])
+
+    def test_failed_uploaded_file_retains_private_bytes_for_explicit_retry(self):
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="file", locator="bad.txt",
+            display_name="bad.txt", authorization="owned", uploaded_content=bytes([255]),
+        )
+        failed = self.service.ingest_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(failed["state"], "failed")
+        public_record = self.store.knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertNotIn("uploaded_content", public_record)
+        self.assertEqual(self.store._conn.execute(
+            "SELECT uploaded_content FROM knowledge_sources WHERE source_id=?",
+            (source["source_id"],),
+        ).fetchone()[0], bytes([255]))
+        retried = self.service.retry_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        self.assertEqual(retried["state"], "failed")
+        self.assertEqual(retried["attempt_count"], 2)
+
+    def test_non_file_knowledge_source_cannot_carry_uploaded_bytes(self):
+        with self.assertRaisesRegex(ValueError, "只有文件来源"):
+            self.service.create_knowledge_source(
+                tenant_id="tenant-a", agent_id="expert-a", kind="faq", locator="FAQ",
+                display_name="FAQ", authorization="owned", uploaded_content=b"not a file",
+            )
+
+    def test_uploaded_file_rejects_oversize_payload_before_decoding(self):
+        self.seed()
+        app = ConfigurationApplication(self.service)
+        editor = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="editor", role="editor", agent_ids=("expert-a",),
+        )
+        response = app.execute(principal=editor, action="knowledge.source.create", payload={
+            "agent_id": "expert-a", "kind": "file", "filename": "policy.txt",
+            "display_name": "政策", "authorization": "owned",
+            "content_base64": "A" * 7_000_000,
+        })
+        self.assertEqual(response["error"]["code"], "invalid_request")
+        self.assertEqual(self.store.list_knowledge_sources(
+            tenant_id="tenant-a", agent_id="expert-a",
+        ), [])
 
     def test_url_ingest_records_network_failure_and_can_be_retried(self):
         source = self.service.create_knowledge_source(

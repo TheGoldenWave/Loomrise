@@ -213,6 +213,37 @@ class ConfigurationHttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inbox.status, 200)
         self.assertIn("客服收件箱", await inbox.text())
 
+    async def test_configuration_http_uploads_and_ingests_text_knowledge_file(self):
+        uploaded = await self.client.post("/api/configuration", json={
+            "action": "knowledge.source.create",
+            "payload": {
+                "agent_id": "expert-a", "kind": "file", "filename": "policy.md",
+                "display_name": "报名政策", "authorization": "owned",
+                "content_base64": base64.b64encode("报名需要提前两天预约。".encode()).decode(),
+            },
+        })
+        self.assertEqual(uploaded.status, 200)
+        source = (await uploaded.json())["result"]
+        self.assertEqual(source["state"], "queued")
+        self.assertNotIn("uploaded_content", source)
+
+        ingested = await self.client.post("/api/configuration", json={
+            "action": "knowledge.ingest",
+            "payload": {"agent_id": "expert-a", "source_id": source["source_id"]},
+        })
+        self.assertEqual(ingested.status, 200)
+        self.assertEqual((await ingested.json())["result"]["state"], "ready")
+
+        search = await self.client.post("/api/configuration", json={
+            "action": "knowledge.search",
+            "payload": {"agent_id": "expert-a", "query": "提前两天"},
+        })
+        self.assertEqual(search.status, 200)
+        self.assertEqual(
+            (await search.json())["result"]["items"][0]["text"],
+            "报名需要提前两天预约。",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

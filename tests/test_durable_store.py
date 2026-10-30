@@ -96,6 +96,35 @@ class TestSchema(StoreCase):
             {"requests", "runs", "events", "idempotency", "outbox"} <= names, names,
         )
 
+    def test_v10_database_migrates_to_uploaded_knowledge_content(self) -> None:
+        path = os.path.join(self.tmp.name, "legacy-v10.db")
+        legacy = SqliteStore(path, owner_id="legacy")
+        source = legacy.create_knowledge_source(
+            tenant_id="tenant_demo", agent_id="expert-a", source_id="source-old",
+            kind="faq", locator="FAQ 内容", display_name="FAQ", authorization="owned",
+        )
+        legacy.close()
+        with sqlite3.connect(path) as connection:
+            connection.execute("ALTER TABLE knowledge_sources DROP COLUMN uploaded_content")
+            connection.execute("UPDATE meta SET value='10' WHERE key='schema_version'")
+
+        migrated = SqliteStore(path, owner_id="migrated")
+        try:
+            columns = {
+                row[1] for row in migrated._conn.execute("PRAGMA table_info(knowledge_sources)")
+            }
+            self.assertIn("uploaded_content", columns)
+            restored = migrated.knowledge_source(
+                tenant_id="tenant_demo", agent_id="expert-a", source_id=source["source_id"],
+            )
+            self.assertEqual(restored["locator"], "FAQ 内容")
+            self.assertNotIn("uploaded_content", restored)
+            self.assertEqual(int(migrated._conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'",
+            ).fetchone()[0]), SCHEMA_VERSION)
+        finally:
+            migrated.close()
+
     def test_v9_material_metadata_is_snapshotted_during_v10_migration(self) -> None:
         path = os.path.join(self.tmp.name, "legacy-material.db")
         legacy = SqliteStore(path, owner_id="legacy")
@@ -133,7 +162,7 @@ class TestSchema(StoreCase):
                 migrated._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()[0],
-                "10",
+                str(SCHEMA_VERSION),
             )
         finally:
             migrated.close()

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -36,6 +38,8 @@ _RELEASE_CHECKS = (
     ("human_approval", "责任人已批准", "approval"),
 )
 _MISSING = object()
+_MAX_KNOWLEDGE_FILE_BYTES = 5 * 1024 * 1024
+_MAX_KNOWLEDGE_FILE_BASE64 = 4 * ((_MAX_KNOWLEDGE_FILE_BYTES + 2) // 3)
 
 
 class RevisionConflict(RuntimeError):
@@ -469,9 +473,11 @@ class ConfigurationService:
 
     def create_knowledge_source(
         self, *, tenant_id: str, agent_id: str, kind: str, locator: str,
-        display_name: str, authorization: str,
+        display_name: str, authorization: str, uploaded_content: bytes | None = None,
     ) -> dict[str, Any]:
         self._scope(tenant_id, agent_id)
+        if uploaded_content is not None and kind != "file":
+            raise ValueError("只有文件来源可以携带上传内容")
         if authorization not in {"owned", "licensed", "public_domain", "consented"}:
             raise ValueError("必须明确来源授权范围")
         if kind == "url":
@@ -484,12 +490,20 @@ class ConfigurationService:
         elif kind == "file":
             if Path(locator).suffix.lower() not in {".txt", ".md", ".csv", ".json"}:
                 raise ValueError("仅支持 TXT、MD、CSV、JSON 文本文件")
+            if uploaded_content is not None:
+                if not isinstance(uploaded_content, bytes) or not uploaded_content:
+                    raise ValueError("上传文件内容不能为空")
+                if len(uploaded_content) > _MAX_KNOWLEDGE_FILE_BYTES:
+                    raise ValueError("上传文件不能超过 5 MiB")
+                if Path(locator).name != locator or "/" in locator or "\\" in locator:
+                    raise ValueError("上传文件名不能包含路径")
         else:
             raise ValueError("知识来源类型仅支持 FAQ、URL、文件")
         return self.store.create_knowledge_source(
             tenant_id=tenant_id, agent_id=agent_id,
             source_id=new_id("src"), kind=kind, locator=locator,
             display_name=display_name, authorization=authorization,
+            uploaded_content=uploaded_content,
         )
 
     def ingest_knowledge_source(
@@ -503,10 +517,13 @@ class ConfigurationService:
             if source["kind"] == "faq":
                 content = source["locator"]
             elif source["kind"] == "file":
-                path = Path(source["locator"]).expanduser().resolve(strict=True)
-                if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
-                    raise ValueError("文件不存在、不是普通文件或超过 5 MB")
-                content = path.read_text(encoding="utf-8")
+                if source.get("uploaded_content") is not None:
+                    content = source["uploaded_content"].decode("utf-8")
+                else:
+                    path = Path(source["locator"]).expanduser().resolve(strict=True)
+                    if not path.is_file() or path.stat().st_size > _MAX_KNOWLEDGE_FILE_BYTES:
+                        raise ValueError("文件不存在、不是普通文件或超过 5 MiB")
+                    content = path.read_text(encoding="utf-8")
             else:
                 content = fetch_https_text(source["locator"])
             if not content.strip():
@@ -824,11 +841,36 @@ class ConfigurationApplication:
                 tenant_id=tenant_id, agent_id=agent_id, entry_id=payload["entry_id"],
             )
         if action == "knowledge.source.create":
-            _keys(payload, {"agent_id", "kind", "locator", "display_name", "authorization"})
+            allowed = {
+                "agent_id", "kind", "locator", "filename", "content_base64",
+                "display_name", "authorization",
+            }
+            unknown = set(payload) - allowed
+            missing = {"agent_id", "kind", "display_name", "authorization"} - set(payload)
+            if unknown or missing:
+                raise ValueError("knowledge.source.create 请求字段不完整或包含未知字段")
+            uploaded_content = None
+            if "content_base64" in payload:
+                if payload.get("kind") != "file" or "filename" not in payload or "locator" in payload:
+                    raise ValueError("上传内容必须是带 filename 的 file 来源，不能同时传 locator")
+                encoded = payload["content_base64"]
+                if not isinstance(encoded, str) or not encoded or len(encoded) > _MAX_KNOWLEDGE_FILE_BASE64:
+                    raise ValueError("上传文件内容为空或超过 5 MiB")
+                try:
+                    uploaded_content = base64.b64decode(encoded, validate=True)
+                except (binascii.Error, ValueError) as exc:
+                    raise ValueError("上传文件内容不是有效 Base64") from exc
+                if not uploaded_content or len(uploaded_content) > _MAX_KNOWLEDGE_FILE_BYTES:
+                    raise ValueError("上传文件内容为空或超过 5 MiB")
+                locator = payload["filename"]
+            else:
+                if "filename" in payload or "locator" not in payload:
+                    raise ValueError("知识来源必须提供 locator，上传文件须提供 content_base64")
+                locator = payload["locator"]
             return self.service.create_knowledge_source(
                 tenant_id=tenant_id, agent_id=agent_id, kind=payload["kind"],
-                locator=payload["locator"], display_name=payload["display_name"],
-                authorization=payload["authorization"],
+                locator=locator, display_name=payload["display_name"],
+                authorization=payload["authorization"], uploaded_content=uploaded_content,
             )
         if action == "knowledge.source.list":
             _keys(payload, {"agent_id"})

@@ -27,7 +27,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
   agent_id        TEXT NOT NULL,
   kind            TEXT NOT NULL CHECK (kind IN ('faq','url','file')),
   locator         TEXT NOT NULL,
+  uploaded_content BLOB,
   display_name    TEXT NOT NULL,
   authorization   TEXT NOT NULL,
   state           TEXT NOT NULL CHECK (state IN ('queued','processing','ready','failed','revoked')),
@@ -374,6 +375,11 @@ class SqliteStore:
                     "UPDATE requests SET subject_id=NULL "
                     "WHERE subject_scope IS NULL OR subject_scope<>'mapped'",
                 )
+            knowledge_columns = {
+                r["name"] for r in cur.execute("PRAGMA table_info(knowledge_sources)")
+            }
+            if "uploaded_content" not in knowledge_columns:
+                cur.execute("ALTER TABLE knowledge_sources ADD COLUMN uploaded_content BLOB")
             version_columns = {r["name"] for r in cur.execute("PRAGMA table_info(material_versions)")}
             if "display_name" not in version_columns:
                 cur.execute("ALTER TABLE material_versions ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
@@ -1514,23 +1520,35 @@ class SqliteStore:
     def create_knowledge_source(
         self, *, tenant_id: str, agent_id: str, source_id: str,
         kind: str, locator: str, display_name: str, authorization: str,
+        uploaded_content: bytes | None = None,
     ) -> dict[str, Any]:
         if kind not in {"faq", "url", "file"}:
             raise ValueError("不支持的知识来源类型")
+        if uploaded_content is not None and (
+            kind != "file" or not isinstance(uploaded_content, bytes)
+            or not uploaded_content or len(uploaded_content) > 5 * 1024 * 1024
+        ):
+            raise ValueError("上传内容仅限非空且不超过 5 MiB 的文件来源")
         if not all(isinstance(value, str) and value.strip() for value in
                    (tenant_id, agent_id, source_id, locator, display_name, authorization)):
             raise ValueError("知识来源身份、位置、授权与名称必须非空")
         timestamp = now_iso()
         with self._tx() as cur:
             cur.execute(
-                "INSERT INTO knowledge_sources(source_id,tenant_id,agent_id,kind,locator,display_name,"
-                "authorization,state,attempt_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'queued',0,?,?)",
-                (source_id, tenant_id, agent_id, kind, locator, display_name,
+                "INSERT INTO knowledge_sources(source_id,tenant_id,agent_id,kind,locator,uploaded_content,display_name,"
+                "authorization,state,attempt_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'queued',0,?,?)",
+                (source_id, tenant_id, agent_id, kind, locator, uploaded_content, display_name,
                  authorization, timestamp, timestamp),
             )
-            return dict(cur.execute(
+            return self._knowledge_source_public(cur.execute(
                 "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
             ).fetchone())
+
+    @staticmethod
+    def _knowledge_source_public(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value.pop("uploaded_content", None)
+        return value
 
     def knowledge_source(
         self, *, tenant_id: str, agent_id: str, source_id: str,
@@ -1540,7 +1558,7 @@ class SqliteStore:
                 "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
                 (tenant_id, agent_id, source_id),
             ).fetchone()
-        return dict(row) if row else None
+        return self._knowledge_source_public(row) if row else None
 
     def list_knowledge_sources(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
         with self._lock:
@@ -1548,7 +1566,7 @@ class SqliteStore:
                 "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? "
                 "ORDER BY created_at,source_id", (tenant_id, agent_id),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._knowledge_source_public(row) for row in rows]
 
     def mark_knowledge_source_processing_failed(
         self, *, tenant_id: str, agent_id: str, source_id: str,
@@ -1564,7 +1582,7 @@ class SqliteStore:
                 "SELECT * FROM knowledge_sources WHERE tenant_id=? AND agent_id=? AND source_id=?",
                 (tenant_id, agent_id, source_id),
             ).fetchone()
-        return dict(row) if row else None
+        return self._knowledge_source_public(row) if row else None
 
     def start_knowledge_ingestion(
         self, *, tenant_id: str, agent_id: str, source_id: str,
@@ -1626,10 +1644,10 @@ class SqliteStore:
                         )
                 cur.execute(
                     "UPDATE knowledge_sources SET state='ready',content_hash=?,error_code=NULL,"
-                    "error_message=NULL,updated_at=? WHERE source_id=?",
+                    "error_message=NULL,uploaded_content=NULL,updated_at=? WHERE source_id=?",
                     (digest, now, source_id),
                 )
-            return dict(cur.execute(
+            return self._knowledge_source_public(cur.execute(
                 "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
             ).fetchone())
 
@@ -1644,7 +1662,7 @@ class SqliteStore:
             if row is None:
                 raise KeyError("未知知识来源")
             if row["state"] == "revoked":
-                return dict(row)
+                return self._knowledge_source_public(row)
             doc_ids = [r["document_id"] for r in cur.execute(
                 "SELECT document_id FROM knowledge_documents WHERE source_id=?", (source_id,),
             ).fetchall()]
@@ -1653,10 +1671,10 @@ class SqliteStore:
                 cur.execute("DELETE FROM knowledge_documents WHERE document_id=?", (document_id,))
             now = now_iso()
             cur.execute(
-                "UPDATE knowledge_sources SET state='revoked',revoked_at=?,updated_at=? WHERE source_id=?",
+                "UPDATE knowledge_sources SET state='revoked',uploaded_content=NULL,revoked_at=?,updated_at=? WHERE source_id=?",
                 (now, now, source_id),
             )
-            return dict(cur.execute(
+            return self._knowledge_source_public(cur.execute(
                 "SELECT * FROM knowledge_sources WHERE source_id=?", (source_id,),
             ).fetchone())
 

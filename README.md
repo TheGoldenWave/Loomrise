@@ -2,7 +2,7 @@
 
 **新会话入口**：[Agent 协作指南](AGENTS.md) · [文档总索引](docs/context/INDEX.md) · [开发路线与 Gate](docs/ROADMAP.md)。导航整理：2026-10-14；专题状态以文件正文和实际证据为准。
 
-> **状态（2026-10-30，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本与人工发送重验、最小 Widget/Inbox、工具副作用意图、只读运行状态与外部查询回执收敛写入；尚缺固定样例发布检查、provider 查询/迟到回执调用、确认等待恢复及取消竞争证据，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
+> **状态（2026-10-30，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回与 HTTP 文本文件上传（schema v11）、物料原件版本与人工发送重验、最小 Widget/Inbox、工具副作用意图、只读运行状态与外部查询回执收敛写入；尚缺固定样例发布检查、浏览器知识文件上传/公网 URL 验收、provider 查询/迟到回执调用、确认等待恢复及取消竞争证据，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
 
 Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务 **AI 产品经理、解决方案人员、小团队开发者与策略运营**。规划提供配置与验收工作台、完整网页客服应用和统一业务执行服务，让团队从授权资料与流程出发，交付可办理业务、可验收、可持续改进的 Agent，并快捷部署到用户自己的云。
 
@@ -53,7 +53,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
-| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.22**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R2 工作包实现状态与 Gate 证据 |
+| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.25**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R2 工作包实现状态与 Gate 证据 |
 | 马上要做的 R0 怎么做 | [R0 合同对齐开工清单](docs/superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检命令、证据两层约定、语音阈值登记表、WP0–WP6 复选框与 DoD；合同不合主干 |
 | 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.4**） | S1／S2-a／S2-c／S3-S4 父 Gate 与工件映射；耐久子项用于细化故障证据，不新增独立退出条件；**追溯表，不是 Gate 权威** |
 | 上一轮评审改了什么、还剩什么 | [评审处置台账](docs/RELEASE-PLAN-REVIEW-RESPONSE.md) | 15 条意见的采纳/部分采纳/不采纳与落点；5 项未关闭 |
