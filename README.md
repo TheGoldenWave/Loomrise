@@ -2,7 +2,7 @@
 
 **新会话入口**：[Agent 协作指南](AGENTS.md) · [文档总索引](docs/context/INDEX.md) · [开发路线与 Gate](docs/ROADMAP.md)。导航整理：2026-10-14；专题状态以文件正文和实际证据为准。
 
-> **状态（2026-10-29，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本与人工发送重验、最小 Widget/Inbox，以及工具副作用意图持久化；固定样例执行、确认等待恢复、未知结果对账和只读运行状态服务尚未完成，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
+> **状态（2026-10-30，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本与人工发送重验、最小 Widget/Inbox、工具副作用意图、只读运行状态与外部查询回执收敛写入；尚缺固定样例发布检查、provider 查询/迟到回执调用、确认等待恢复及取消竞争证据，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
 
 Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务 **AI 产品经理、解决方案人员、小团队开发者与策略运营**。规划提供配置与验收工作台、完整网页客服应用和统一业务执行服务，让团队从授权资料与流程出发，交付可办理业务、可验收、可持续改进的 Agent，并快捷部署到用户自己的云。
 

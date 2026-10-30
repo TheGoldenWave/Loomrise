@@ -733,6 +733,104 @@ class SqliteStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def reconcile_tool_attempt(
+        self, attempt_key: str, *, outcome: str, result_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Settle an unknown write from an authoritative read-only provider lookup.
+
+        This method never invokes the provider. `unknown` remains blocked; `not_applied`
+        permits a later explicit attempt; `applied` records the original result without
+        reopening the interrupted Run for execution.
+        """
+        if outcome not in {"applied", "not_applied", "unknown"}:
+            raise ValueError("对账结果必须是 applied、not_applied 或 unknown")
+        if outcome == "applied" and not (isinstance(result_id, str) and result_id.strip()):
+            raise ValueError("applied 对账必须提供非空 result_id")
+        if outcome != "applied" and result_id is not None:
+            raise ValueError("只有 applied 对账可以提供 result_id")
+
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT a.*,r.request_id,r.tenant_id,r.agent_version,r.status AS run_status "
+                "FROM tool_attempts a JOIN runs r ON r.run_id=a.run_id "
+                "WHERE a.attempt_key=?",
+                (attempt_key,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"未知工具操作 {attempt_key}")
+            if row["state"] == "succeeded":
+                if outcome == "applied" and row["result_id"] == result_id:
+                    return dict(cur.execute(
+                        "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+                    ).fetchone())
+                raise RuntimeError("该操作已收敛，外部结果与已登记结果不一致")
+            if row["state"] != "reconciling":
+                raise RuntimeError(f"操作状态为 {row['state']}，不能对账")
+            if outcome == "unknown":
+                return dict(row)
+
+            timestamp = now_iso()
+            if outcome == "not_applied":
+                cur.execute(
+                    "UPDATE tool_attempts SET state='failed',updated_at=? "
+                    "WHERE attempt_key=? AND state='reconciling'",
+                    (timestamp, attempt_key),
+                )
+                event_type = "tool.reconciled_not_applied"
+                payload = {"action": row["action"], "state": "not_applied"}
+            else:
+                existing = cur.execute(
+                    "SELECT action,result_id FROM idempotency WHERE key=?", (attempt_key,),
+                ).fetchone()
+                if existing is not None and (
+                    existing["action"] != row["action"] or existing["result_id"] != result_id
+                ):
+                    raise RuntimeError("幂等账本与外部对账结果冲突")
+                if existing is None:
+                    prefix = f"{row['action']}::"
+                    if not attempt_key.startswith(prefix) or len(attempt_key) == len(prefix):
+                        raise ValueError("工具操作键未按具体动作绑定，不能登记对账结果")
+                    cur.execute(
+                        "INSERT INTO idempotency(key,bare_key,run_id,action,result_id,created_at) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (attempt_key, attempt_key[len(prefix):], row["run_id"], row["action"],
+                         result_id, timestamp),
+                    )
+                cur.execute(
+                    "UPDATE tool_attempts SET state='succeeded',result_id=?,updated_at=? "
+                    "WHERE attempt_key=? AND state='reconciling'",
+                    (result_id, timestamp, attempt_key),
+                )
+                cur.execute(
+                    "INSERT OR IGNORE INTO outbox(id,run_id,kind,payload_json,state,created_at) "
+                    "VALUES(?,?,?,?,?,?)",
+                    (f"reconcile-{attempt_key}", row["run_id"], "reconciled_business_write",
+                     json.dumps({"action": row["action"], "result_id": result_id},
+                                ensure_ascii=False), "pending", timestamp),
+                )
+                event_type = "tool.reconciled"
+                payload = {"action": row["action"], "state": "applied", "result_id": result_id}
+
+            tail = cur.execute(
+                "SELECT seq,hash FROM events WHERE run_id=? ORDER BY seq DESC LIMIT 1",
+                (row["run_id"],),
+            ).fetchone()
+            event = RunEvent(
+                seq=(tail["seq"] + 1) if tail else 0,
+                event_type=event_type,
+                request_id=row["request_id"],
+                run_id=row["run_id"],
+                tenant_id=row["tenant_id"],
+                agent_version=row["agent_version"],
+                channel="",
+                idempotency_key=attempt_key,
+                payload=payload,
+            ).seal(tail["hash"] if tail else GENESIS_HASH)
+            self._append(cur, [event])
+            return dict(cur.execute(
+                "SELECT * FROM tool_attempts WHERE attempt_key=?", (attempt_key,),
+            ).fetchone())
+
     def mark_tool_attempt_unknown(self, attempt_key: str, *, run_id: str) -> bool:
         """Mark a timed-out operation unknown while its owning Run is still active."""
         with self._tx() as cur:
