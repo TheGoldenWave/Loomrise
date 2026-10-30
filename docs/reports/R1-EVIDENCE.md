@@ -4,7 +4,7 @@
 >
 > **本文件在 R1 未完成时就已经存在，这是故意的**——先把已验证部分与未验证部分分开写清，比事后一次性补写更不容易把"想做的"写成"做过的"。
 >
-> R1 进度：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调。** 2026-10-29 新增最小 TaskItem 持久化与撤销恢复测试，M-A-04/M-A-16 已通过；M-A-12 的 R1 清单预检可运行，R2 发布阻断证据未齐。矩阵中 M-A-01/02/03/06/17/18 仍为“在跑”，R1 父 Gate 未退出。用户明确授权本次直接跳过未完成的责任角色复核/签核并开工 R2；该例外不改变矩阵状态，不构成责任角色签核，详见 [R2 证据摘要](R2-EVIDENCE.md)。
+> R1 证据与决定状态（2026-10-30）：**WP1 已落；WP2/WP5/WP7 部分；WP3/WP4/WP6/WP8 后端实现与单测已落；WP9 配置页面已接入 loopback HTTP 并完成本机 fixture 浏览器联调。** 用户已明确确认 R1 Gate 通过，并授权跳过产研/策略运营复核与签核流程；矩阵 M-A-01/02/03/06/17/18 已按本报告中的既有可复现工件及本轮 M-A-20 恢复补充证据更新为通过。该记录是用户的流程与版本验收决定，不伪造责任角色签字；不扩大技术证据边界。仍不覆盖断电/介质损坏、多进程 worker 所有权、生产身份和真实外部 exactly-once。R2 实施与最终快速验收见 [R2 证据摘要](R2-EVIDENCE.md)。
 
 ## 环境
 
@@ -124,11 +124,11 @@ HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：
 
 <a id="ma-03-crash-matrix"></a>
 
-## M-A-03 SQLite 写事务崩溃矩阵 — 覆盖当前已识别写点，Gate 待签核
+## M-A-03 SQLite 写事务崩溃矩阵 — 覆盖当前已识别写点
 
 `tests/test_durable_transaction_crashes.py` **18/18 个测试方法**：覆盖运行创建各插入点、事件接纳记录与冲突诊断、事件批量追加、运行收尾各更新点、恢复写入、独立 `set_request_state`、outbox attempt/ack、稳定配置登记、草稿创建与 CAS 保存、候选冻结幂等重放、TaskItem 创建/取消、空库 schema 首建、旧列 ALTER、v3→v5 与 v4→v5 schema 迁移。各点均在子进程硬退出后重开，断言事务原子性、状态不前移、重试可行及不重复。与 `test_durable_outbox.py` **3/3**、`test_outbox_dispatch.py` **4/4** 合计另有 outbox 提交/消费者副作用后 ack 前重放证据。
 
-完整性复核：`SqliteStore` 的每个事务写入口均已映射到故障测试：`migrate`、`begin_run`、`admit_event`（首次接纳与冲突诊断）、`append_events`、`commit_write`、`finish_run`、`set_request_state`、`recover`、TaskItem 创建/取消、outbox attempt/ack、稳定配置登记、草稿创建/保存、候选冻结；`backup_to` 是在线一致性快照，不修改源库。硬退出矩阵与遵守稳定 outbox ID 去重的模拟消费者证据可复现。剩余不覆盖：系统断电/介质损坏、多进程所有权及真实外部副作用 exactly-once；M-A-03 技术证据已完整，签核按矩阵责任角色确认。
+完整性复核：`SqliteStore` 的每个事务写入口均已映射到故障测试：`migrate`、`begin_run`、`admit_event`（首次接纳与冲突诊断）、`append_events`、`commit_write`、`finish_run`、`set_request_state`、`recover`、TaskItem 创建/取消、outbox attempt/ack、稳定配置登记、草稿创建/保存、候选冻结；`backup_to` 是在线一致性快照，不修改源库。硬退出矩阵与遵守稳定 outbox ID 去重的模拟消费者证据可复现。剩余不覆盖：系统断电/介质损坏、多进程所有权及真实外部副作用 exactly-once；用户已确认 R1 Gate 通过并授权跳过责任角色签核。
 
 <a id="ma-12-release-checklist"></a>
 
@@ -152,7 +152,7 @@ HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：
 
 <a id="wp9-console-browser-acceptance"></a>
 
-## WP9 配置工作台浏览器联调 — 本机 fixture 已验，Gate 待签核
+## WP9 配置工作台浏览器联调 — 本机 fixture 已验
 
 2026-10-27 使用隔离的合成专家 `course-demo`、loopback 页面 `127.0.0.1:8768`、配置服务 `127.0.0.1:8766` 和同一 SQLite 目录 `/tmp/loomrise-r1-wp9-20261027` 完成浏览器交互。该验收证明当前原型真实调用服务，不是生产身份、多人或外部业务验收。
 
@@ -164,7 +164,7 @@ HTTP 错误 envelope 与 CLI/MCP 共用；HTTP 状态码按错误类别区分：
 | 校验与冻结 | CLI 修复 `$.units` 后页面在 r4 校验通过并冻结候选 `cp_fffa8d56f0ff11287850`；CLI 读取的 diff 为 `$.persona.goal`，候选状态 `frozen` |
 | 稳定版本边界 | 候选 UI 显示“未批准”，明确冻结不是审批、stable 或发布；稳定列表只有 `r1-fixture-v1`，stable 未被候选冻结改写 |
 
-原始件在本机忽略目录 `runs/R1/console/`：`wp9-acceptance-log.txt`、`wp9-revision-conflict-confirmed.png`、`wp9-candidate-history-confirmed.png`。SHA-256：`wp9-acceptance-log.txt`=`79b7c89efa971ed9e52bd32458a8a4703529c6cd2ecb2b26f5f412ff4d526077`；`wp9-revision-conflict-confirmed.png`=`140e12305b5b470beb5f5ccee1ace930cc4ce3446d7c7c23e4f0b5b6fea82196`；`wp9-candidate-history-confirmed.png`=`32f7834d37aad2f80a43a38a8db8389645c97a27b6f80921de3668b56eae51a7`。该证据支持 M-A-17/18 进入签核评估，不替代矩阵签核，也不关闭 M-A-04 或 R1 父 Gate。
+原始件在本机忽略目录 `runs/R1/console/`：`wp9-acceptance-log.txt`、`wp9-revision-conflict-confirmed.png`、`wp9-candidate-history-confirmed.png`。SHA-256：`wp9-acceptance-log.txt`=`79b7c89efa971ed9e52bd32458a8a4703529c6cd2ecb2b26f5f412ff4d526077`；`wp9-revision-conflict-confirmed.png`=`140e12305b5b470beb5f5ccee1ace930cc4ce3446d7c7c23e4f0b5b6fea82196`；`wp9-candidate-history-confirmed.png`=`32f7834d37aad2f80a43a38a8db8389645c97a27b6f80921de3668b56eae51a7`。该浏览器序列和 MCP/CLI 同合同测试支持 M-A-17/18；用户确认 R1 Gate 通过并授权跳过责任角色签核，决定记录见本报告顶部。
 
 ### Origin allowlist 浏览器复验
 

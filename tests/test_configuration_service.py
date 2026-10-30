@@ -213,7 +213,7 @@ class TestDraftLifecycle(ConfigurationServiceCase):
             )
         self.assertEqual(len(self.service.list_candidates(tenant_id="tenant-a", agent_id="expert-a")), 1)
 
-    def test_release_checklist_runs_and_keeps_unimplemented_evidence_pending(self):
+    def test_release_checklist_runs_versioned_r2_acceptance_standard(self):
         self.seed()
         candidate = self.service.freeze_candidate(
             tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
@@ -226,10 +226,16 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         )
 
         self.assertEqual(checklist["progress"], {
-            "passed": 2, "failed": 0, "pending": 8, "total": 10,
+            "passed": 4, "failed": 0, "pending": 6, "total": 10,
         })
         self.assertFalse(checklist["ready"])
         self.assertFalse(checklist["publish_enabled"])
+        checks = {item["key"]: item for item in checklist["checks"]}
+        self.assertEqual(checks["fixed_samples"]["detail"]["standard"], "r2-config-release-v1")
+        self.assertEqual(
+            [sample["passed"] for sample in checks["fixed_samples_passed"]["detail"]["results"]],
+            [True, True, True],
+        )
         self.assertEqual(
             [item["key"] for item in checklist["checks"]],
             [
@@ -239,6 +245,54 @@ class TestDraftLifecycle(ConfigurationServiceCase):
                 "human_approval",
             ],
         )
+
+    def test_r2_release_acceptance_publishes_and_resolves_immutable_candidate(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="r2-release-sample",
+        )
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="faq",
+            locator="课程介绍：面向初学者。", display_name="R2 验收 FAQ",
+            authorization="owned",
+        )
+        self.service.ingest_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+        )
+        app = ConfigurationApplication(self.service)
+        owner = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="owner", role="owner",
+            agent_ids=("expert-a",),
+        )
+        payload = {
+            "agent_id": "expert-a", "candidate_id": candidate["candidate_id"],
+            "entry_id": "r2-sample-entry", "version_id": "r2-sample-v1",
+        }
+        checklist = app.execute(
+            principal=owner, action="release.checklist",
+            payload={**payload, "environment": "sandbox"},
+        )
+        self.assertFalse(checklist["result"]["publish_enabled"], checklist)
+        approval = app.execute(principal=owner, action="release.approve", payload=payload)
+        self.assertIn("result", approval, approval)
+        checklist = app.execute(
+            principal=owner, action="release.checklist",
+            payload={**payload, "environment": "sandbox"},
+        )
+        self.assertTrue(checklist["result"]["publish_enabled"], checklist)
+        published = app.execute(principal=owner, action="release.publish", payload=payload)
+        self.assertEqual(published["result"]["version_id"], "r2-sample-v1")
+
+        self.service.save_draft(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            config=spec("发布后修改的草稿"),
+        )
+        entry = self.service.resolve_sandbox_entry(
+            tenant_id="tenant-a", agent_id="expert-a", entry_id="r2-sample-entry",
+        )
+        self.assertEqual(entry["version_id"], "r2-sample-v1")
+        self.assertEqual(entry["config"]["persona"]["goal"], "原始目标")
 
     def test_release_checklist_requires_authorized_candidate_scope(self):
         self.seed()

@@ -2,7 +2,7 @@
 
 **新会话入口**：[Agent 协作指南](AGENTS.md) · [文档总索引](docs/context/INDEX.md) · [开发路线与 Gate](docs/ROADMAP.md)。导航整理：2026-10-14；专题状态以文件正文和实际证据为准。
 
-> **状态（2026-10-30，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回及浏览器文件上传/公网 URL 验收（schema v11，M-A-08/09 通过）、物料原件版本与人工发送重验（M-A-14/15）、最小 Widget/Inbox（M-A-10/11）、工具意图与 provider 对账协调器（M-A-05/07）、只读运行状态和持久取消竞争（M-A-21 证据细化）；尚缺候选配置固定样例发布检查与确认等待 suspend/wake，因此 R2 Gate 未通过。provider 查询器目前是可注入边界和模拟测试，未联调真实外部业务。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
+> **状态（2026-10-30，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** 用户确认 R1 Gate 通过并授权跳过责任角色复核/签核。R2 的知识摄入、物料、Widget/Inbox、副作用对账、`r2-config-release-v1` 沙盒发布及确认等待恢复均已完成对应服务/测试证据；全后端 175/175、S1 自检与固定回放 11/11 通过。R2 实现和证据已归档，待用户快速验收关闭。范围限于沙盒模拟；声明式候选入口解析不等于执行 Unit body，provider 查询器未联调真实外部业务。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
 
 Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务 **AI 产品经理、解决方案人员、小团队开发者与策略运营**。规划提供配置与验收工作台、完整网页客服应用和统一业务执行服务，让团队从授权资料与流程出发，交付可办理业务、可验收、可持续改进的 Agent，并快捷部署到用户自己的云。
 

@@ -27,7 +27,7 @@ from .contracts import (
     ServiceRequest, now_iso,
 )
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -100,6 +100,15 @@ CREATE TABLE IF NOT EXISTS tool_attempts (
   FOREIGN KEY (run_id) REFERENCES runs(run_id)
 );
 CREATE INDEX IF NOT EXISTS idx_tool_attempts_run ON tool_attempts(run_id, state);
+CREATE TABLE IF NOT EXISTS confirmation_checkpoints (
+  request_id TEXT PRIMARY KEY REFERENCES requests(request_id),
+  run_id TEXT NOT NULL REFERENCES runs(run_id),
+  agent_version TEXT NOT NULL,
+  occupancy_generation INTEGER NOT NULL,
+  state_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS outbox (
   id            TEXT PRIMARY KEY,
   run_id        TEXT NOT NULL,
@@ -905,6 +914,7 @@ class SqliteStore:
                 "WHERE run_id=? AND state='intent'",
                 (now_iso(), run_id),
             )
+            cur.execute("DELETE FROM confirmation_checkpoints WHERE request_id=?", (row["request_id"],))
             self._append(cur, [event])
 
     def set_request_state(self, request_id: str, state: str) -> None:
@@ -933,6 +943,189 @@ class SqliteStore:
             ).fetchone() is None:
                 raise KeyError(f"未知 request {request_id}")
             return bool(updated)
+
+    def park_confirmation(
+        self, *, request_id: str, run_id: str, agent_version: str,
+        occupancy_generation: int, state: dict[str, Any],
+    ) -> None:
+        encoded = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > 5 * 1024 * 1024:
+            raise ValueError("确认恢复 checkpoint 超过 5 MiB")
+        now = now_iso()
+        with self._tx() as cur:
+            row = cur.execute(
+                "SELECT q.state,q.agent_version AS request_agent_version,"
+                "r.status,r.agent_version,r.occupancy_generation "
+                "FROM requests q JOIN runs r ON r.run_id=? AND r.request_id=q.request_id "
+                "WHERE q.request_id=?",
+                (run_id, request_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError("未知确认请求或运行")
+            if row["state"] != "running" or row["status"] != "running":
+                raise RuntimeError("只有运行中的请求可以进入确认等待")
+            if (row["request_agent_version"] != agent_version
+                    or row["agent_version"] != agent_version
+                    or row["occupancy_generation"] != occupancy_generation):
+                raise RuntimeError("确认上下文版本或执行代次已变化")
+            existing = cur.execute(
+                "SELECT run_id,agent_version,occupancy_generation FROM confirmation_checkpoints "
+                "WHERE request_id=?",
+                (request_id,),
+            ).fetchone()
+            if existing is not None and (
+                existing["run_id"] != run_id
+                or existing["agent_version"] != agent_version
+                or existing["occupancy_generation"] != occupancy_generation
+            ):
+                raise RuntimeError("请求已有其他运行代次的确认 checkpoint")
+            cur.execute(
+                "UPDATE requests SET state='waiting_confirm',updated_at=? WHERE request_id=? AND state='running'",
+                (now, request_id),
+            )
+            cur.execute(
+                "INSERT INTO confirmation_checkpoints "
+                "(request_id,run_id,agent_version,occupancy_generation,state_json,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(request_id) DO UPDATE SET "
+                "run_id=excluded.run_id,agent_version=excluded.agent_version,"
+                "occupancy_generation=excluded.occupancy_generation,state_json=excluded.state_json,"
+                "updated_at=excluded.updated_at",
+                (request_id, run_id, agent_version, occupancy_generation, encoded, now, now),
+            )
+
+    def confirmation_checkpoint(self, request_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM confirmation_checkpoints WHERE request_id=?", (request_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        value = dict(row)
+        value["state"] = json.loads(value.pop("state_json"))
+        return value
+
+    def claim_confirmation_wake(
+        self, *, request_id: str, run_id: str, agent_version: str,
+    ) -> dict[str, Any]:
+        """Fence the old parked process and return a validated checkpoint for a new generation."""
+        with self._tx() as cur:
+            checkpoint = cur.execute(
+                "SELECT * FROM confirmation_checkpoints WHERE request_id=?", (request_id,),
+            ).fetchone()
+            request = cur.execute("SELECT * FROM requests WHERE request_id=?", (request_id,)).fetchone()
+            run = cur.execute("SELECT * FROM runs WHERE run_id=?", (run_id,)).fetchone()
+            if checkpoint is None or request is None or run is None:
+                raise KeyError("没有可恢复的确认等待")
+            if request["state"] != "waiting_confirm" or checkpoint["run_id"] != run_id:
+                raise RuntimeError("确认等待已被取消、关闭或由其他代接管")
+            if any(value != agent_version for value in (
+                request["agent_version"], checkpoint["agent_version"], run["agent_version"],
+            )):
+                raise RuntimeError("配置版本已变化，拒绝恢复旧确认")
+            if (run["occupancy_generation"] != checkpoint["occupancy_generation"]
+                    or run["status"] != "failed"
+                    or run["finish_reason"] != "restart_interrupted"):
+                raise RuntimeError("确认等待旧运行未被安全恢复裁决")
+            return {
+                "request": dict(request), "run": dict(run),
+                "state": json.loads(checkpoint["state_json"]),
+                "generation": checkpoint["occupancy_generation"],
+            }
+
+    def begin_confirmation_wake(
+        self, request: ServiceRequest, run: Run, events: list[RunEvent], *,
+        previous_run_id: str,
+    ) -> dict[str, Any]:
+        """Atomically consume a confirmation checkpoint and create its new Run."""
+        with self._tx() as cur:
+            checkpoint = cur.execute(
+                "SELECT * FROM confirmation_checkpoints WHERE request_id=?",
+                (request.request_id,),
+            ).fetchone()
+            current = cur.execute(
+                "SELECT * FROM requests WHERE request_id=? AND tenant_id=?",
+                (request.request_id, request.tenant_id),
+            ).fetchone()
+            previous = cur.execute(
+                "SELECT * FROM runs WHERE run_id=? AND request_id=?",
+                (previous_run_id, request.request_id),
+            ).fetchone()
+            if checkpoint is None or current is None or previous is None:
+                raise KeyError("没有可恢复的确认等待")
+            if (current["state"] != "waiting_confirm"
+                    or checkpoint["run_id"] != previous_run_id
+                    or current["agent_version"] != run.agent_version
+                    or checkpoint["agent_version"] != run.agent_version
+                    or previous["agent_version"] != run.agent_version
+                    or previous["occupancy_generation"] != checkpoint["occupancy_generation"]
+                    or run.occupancy_generation != checkpoint["occupancy_generation"] + 1
+                    or previous["status"] != "failed"
+                    or previous["finish_reason"] != "restart_interrupted"):
+                raise RuntimeError("确认等待已变化、版本已变或旧运行未通过恢复裁决")
+            if cur.execute(
+                "SELECT 1 FROM idempotency i JOIN runs r ON r.run_id=i.run_id "
+                "WHERE r.request_id=? LIMIT 1", (request.request_id,),
+            ).fetchone() is not None:
+                raise RuntimeError("请求已有持久副作用，不能恢复待确认操作")
+            state = json.loads(checkpoint["state_json"])
+            cur.execute(
+                "DELETE FROM confirmation_checkpoints WHERE request_id=? AND run_id=?",
+                (request.request_id, previous_run_id),
+            )
+            self._begin_run(cur, request, run, events)
+            return state
+
+    def clear_confirmation_checkpoint(self, request_id: str, run_id: str) -> None:
+        with self._tx() as cur:
+            cur.execute(
+                "DELETE FROM confirmation_checkpoints WHERE request_id=? AND run_id=?",
+                (request_id, run_id),
+            )
+
+    def cancel_confirmation_wait(
+        self, request: ServiceRequest, run: Run, events: list[RunEvent], *,
+        previous_run_id: str,
+    ) -> None:
+        """Atomically cancel a confirmation parked by a process that has exited."""
+        if len(events) < 2:
+            raise ValueError("取消确认需要开始和结束事件")
+        with self._tx() as cur:
+            checkpoint = cur.execute(
+                "SELECT * FROM confirmation_checkpoints WHERE request_id=?",
+                (request.request_id,),
+            ).fetchone()
+            current = cur.execute(
+                "SELECT * FROM requests WHERE request_id=? AND tenant_id=?",
+                (request.request_id, request.tenant_id),
+            ).fetchone()
+            previous = cur.execute(
+                "SELECT * FROM runs WHERE run_id=? AND request_id=?",
+                (previous_run_id, request.request_id),
+            ).fetchone()
+            if checkpoint is None or current is None or previous is None:
+                raise RuntimeError("没有可取消的确认等待")
+            if (current["state"] != "waiting_confirm"
+                    or checkpoint["run_id"] != previous_run_id
+                    or previous["status"] != "failed"
+                    or previous["finish_reason"] != "restart_interrupted"
+                    or run.occupancy_generation != checkpoint["occupancy_generation"] + 1):
+                raise RuntimeError("确认等待已变化或旧运行尚未安全接管")
+            cur.execute(
+                "DELETE FROM confirmation_checkpoints WHERE request_id=? AND run_id=?",
+                (request.request_id, previous_run_id),
+            )
+            self._begin_run(cur, request, run, events[:1])
+            self._append(cur, events[1:])
+            cur.execute(
+                "UPDATE runs SET status='cancelled',ended_at=?,finish_reason='confirmation_cancelled' "
+                "WHERE run_id=? AND status='running'",
+                (now_iso(), run.run_id),
+            )
+            cur.execute(
+                "UPDATE requests SET state='cancelled',updated_at=? "
+                "WHERE request_id=? AND state='running'",
+                (now_iso(), request.request_id),
+            )
 
     # -- 恢复 --------------------------------------------------------------
     def recover(

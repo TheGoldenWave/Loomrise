@@ -111,6 +111,116 @@ class TestPersistedRun(Base):
         finally:
             store.close()
 
+    async def test_confirmation_wakes_after_restart_once_and_fences_old_callback(self) -> None:
+        first, first_store = self.service("p1")
+        second_store = None
+        waiting = asyncio.Event()
+        release_old = asyncio.Event()
+
+        async def old_confirmation(calls):
+            waiting.set()
+            await release_old.wait()
+            return [True] * len(calls)
+
+        old_task = asyncio.create_task(first.handle_text(
+            self.case.turns[0]["text"], script=self.case.script,
+            ask_confirm=old_confirmation,
+        ))
+        try:
+            await asyncio.wait_for(waiting.wait(), timeout=5)
+            old_row = next(iter(first.requests.values()))
+            request_id = old_row.request_id
+            checkpoint = first_store.confirmation_checkpoint(request_id)
+            self.assertIsNotNone(checkpoint)
+            self.assertEqual(first_store.request_row(request_id)["state"], "waiting_confirm")
+
+            second_store = SqliteStore(self.path, owner_id="p2")
+            second = ExecutionService(self.pack, store=second_store, owner_id="p2")
+            self.assertEqual(second_store.run_row(checkpoint["run_id"])["finish_reason"], "restart_interrupted")
+            current_tools = second.pack.tools
+            second.pack.tools = []
+            with self.assertRaisesRegex(RuntimeError, "授权已失效"):
+                await second.resume_confirmation(
+                    request_id, confirmed=True, script=self.case.script,
+                )
+            self.assertIsNotNone(second_store.confirmation_checkpoint(request_id))
+            second.pack.tools = current_tools
+            result = await second.resume_confirmation(
+                request_id, confirmed=True, script=self.case.script,
+            )
+            self.assertEqual(result.write_count, 1)
+            self.assertEqual(second_store.request_row(request_id)["state"], "success")
+            self.assertIsNone(second_store.confirmation_checkpoint(request_id))
+            self.assertTrue(second_store.verify_chain())
+            with self.assertRaises(RuntimeError):
+                await second.resume_confirmation(
+                    request_id, confirmed=True, script=self.case.script,
+                )
+
+            release_old.set()
+            old_results = await asyncio.gather(old_task, return_exceptions=True)
+            self.assertIsInstance(old_results[0], RuntimeError)
+            self.assertEqual(second_store.request_row(request_id)["state"], "success")
+            self.assertEqual(len(second_store.pending_outbox()), 1)
+        finally:
+            release_old.set()
+            if not old_task.done():
+                old_task.cancel()
+            await asyncio.gather(old_task, return_exceptions=True)
+            first_store.close()
+            if second_store is not None:
+                second_store.close()
+
+    async def test_confirmation_wait_can_be_cancelled_after_restart(self) -> None:
+        first, first_store = self.service("p1")
+        second_store = None
+        waiting = asyncio.Event()
+        release_old = asyncio.Event()
+
+        async def old_confirmation(calls):
+            waiting.set()
+            await release_old.wait()
+            return [True] * len(calls)
+
+        old_task = asyncio.create_task(first.handle_text(
+            self.case.turns[0]["text"], script=self.case.script,
+            ask_confirm=old_confirmation,
+        ))
+        try:
+            await asyncio.wait_for(waiting.wait(), timeout=5)
+            request_id = next(iter(first.requests.values())).request_id
+            previous_run_id = first_store.request_row(request_id)["latest_run_id"]
+            second_store = SqliteStore(self.path, owner_id="p2")
+            second = ExecutionService(self.pack, store=second_store, owner_id="p2")
+
+            self.assertTrue(second.cancel(request_id, run_id=previous_run_id))
+            row = second_store.request_row(request_id)
+            self.assertEqual(row["state"], RequestState.CANCELLED.value)
+            self.assertNotEqual(row["latest_run_id"], previous_run_id)
+            cancel_run = second_store.run_row(row["latest_run_id"])
+            self.assertEqual(cancel_run["status"], "cancelled")
+            self.assertEqual(cancel_run["finish_reason"], "confirmation_cancelled")
+            self.assertEqual(
+                [event.event_type for event in second_store.load_events(cancel_run["run_id"])],
+                ["run.started", "run.cancel_requested", "run.cancel_confirmed", "run.finished"],
+            )
+            self.assertIsNone(second_store.confirmation_checkpoint(request_id))
+            self.assertEqual(second_store.recoverable_requests(tenant_id="tenant_demo"), [])
+            self.assertFalse(second.cancel(request_id, run_id=previous_run_id))
+
+            release_old.set()
+            await asyncio.gather(old_task, return_exceptions=True)
+            self.assertEqual(second_store.request_row(request_id)["state"], RequestState.CANCELLED.value)
+            self.assertEqual(second_store.pending_outbox(), [])
+        finally:
+            release_old.set()
+            if not old_task.done():
+                old_task.cancel()
+            await asyncio.gather(old_task, return_exceptions=True)
+            first_store.close()
+            if second_store is not None:
+                second_store.close()
+
     async def test_cancel_during_confirmation_is_durable_and_not_overwritten_by_callback(self) -> None:
         svc, store = self.service("p1")
         callback_entered = asyncio.Event()
@@ -308,7 +418,7 @@ class TestRecovery(Base):
         finally:
             store.close()
 
-    async def test_explicit_recovery_starts_new_run_and_rechecks_confirmation(self) -> None:
+    async def test_confirmation_without_checkpoint_cannot_be_rerun_as_fresh_work(self) -> None:
         store1 = SqliteStore(self.path, owner_id="p1")
         adapter1 = DurableRunAdapter(store1, owner_id="p1")
         request = queued_request(self.pack.agent_version.version_id)
@@ -327,24 +437,15 @@ class TestRecovery(Base):
         store1.close()
 
         store2 = SqliteStore(self.path, owner_id="p2")
-        confirmations: list[int] = []
         try:
             svc = ExecutionService(self.pack, store=store2, owner_id="p2")
-
-            def confirm(calls):
-                confirmations.append(len(calls))
-                return [True] * len(calls)
-
-            result = await svc.resume_recoverable_request(
-                request.request_id, script=self.case.script, ask_confirm=confirm,
-            )
-            row = store2.run_row(result.run_id)
-            self.assertNotEqual(result.run_id, run1.run_id)
-            self.assertEqual(row["lineage_parent"], run1.run_id)
-            self.assertEqual(row["occupancy_generation"], 2)
-            self.assertEqual(confirmations, [1])
-            self.assertEqual(result.write_count, 1)
-            self.assertEqual(store2.request_row(request.request_id)["state"], RequestState.SUCCESS.value)
+            with self.assertRaisesRegex(RuntimeError, "不可恢复"):
+                await svc.resume_recoverable_request(
+                    request.request_id, script=self.case.script,
+                    ask_confirm=confirm_all,
+                )
+            self.assertEqual(store2.request_row(request.request_id)["state"], RequestState.WAITING_CONFIRM.value)
+            self.assertEqual(store2.request_row(request.request_id)["latest_run_id"], run1.run_id)
             self.assertTrue(store2.verify_chain())
         finally:
             store2.close()
@@ -364,7 +465,7 @@ class TestRecovery(Base):
                 store = SqliteStore(self.path, owner_id="p2")
                 try:
                     svc = ExecutionService(self.pack, store=store, owner_id="p2")
-                    with self.assertRaisesRegex(RuntimeError, "副作用或确认事实"):
+                    with self.assertRaisesRegex(RuntimeError, "不可恢复"):
                         await svc.resume_recoverable_request(
                             request.request_id, script=self.case.script,
                             ask_confirm=confirm_all,

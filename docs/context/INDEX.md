@@ -1,6 +1,6 @@
 # Loomrise 文档总索引 v0.17
 
-日期：2026-10-30（同步 R2 附件浏览器走查与 152 项后端回归证据）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-10-30（同步 R2 发布标准、确认恢复及 173 项后端回归证据）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -22,6 +22,7 @@
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
 | 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [R1 证据摘要](../reports/R1-EVIDENCE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) · [持久执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md) | SQLite `DurableRunAdapter` 已部分实现；旧本地 running 尝试失败、待确认事实保留但不自动续跑；TaskItem 撤销与完整恢复 Gate 未通过；R3/R4 才做 Worker/parking，未引入默认依赖；评审列出 DC-01–08 缺口，属意见不构成 Gate |
+| R2 版本开发与证据闭环到哪 | [R2 证据摘要](../reports/R2-EVIDENCE.md) · [版本切分](../RELEASE-PLAN.md) · [Gate 矩阵](../RELEASE-GATE-MATRIX.md) | `r2-config-release-v1` 发布验收与确认等待耐久恢复已有服务/测试证据；R1 其他技术 Gate 仍在跑，父 Gate 未关闭 |
 | 到底已经跑通哪些功能 | [S1 交付与验收](../S1-BUILD-REPORT.md)、对应原型报告 | 运行证据与局限；不能用规划或原型代替服务验收 |
 | 实际安装的是哪个构件 | [VERSION-PINS](../../VERSION-PINS.md) | 实测版本、commit、许可证与安装复现 |
 | 什么材料可以公开 | [开源与私有边界](../OPEN-SOURCE-BOUNDARY.md) | 分类、脱敏、公开晋升、许可与提交红线 |

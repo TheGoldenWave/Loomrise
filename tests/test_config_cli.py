@@ -145,7 +145,7 @@ class ConfigurationCliCase(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(checklist["result"]["progress"], {
-            "passed": 2, "failed": 0, "pending": 8, "total": 10,
+            "passed": 4, "failed": 0, "pending": 6, "total": 10,
         })
         self.assertFalse(checklist["result"]["ready"])
         self.assertFalse(checklist["result"]["publish_enabled"])

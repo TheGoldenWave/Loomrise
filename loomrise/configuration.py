@@ -37,6 +37,12 @@ _RELEASE_CHECKS = (
     ("entry_version_bound", "入口绑定目标版本", "release"),
     ("human_approval", "责任人已批准", "approval"),
 )
+_R2_ACCEPTANCE_STANDARD = "r2-config-release-v1"
+_R2_ACCEPTANCE_SAMPLES = (
+    "entry_unit_references_resolve",
+    "entry_units_fail_closed",
+    "candidate_content_hash_matches",
+)
 _MISSING = object()
 _MAX_KNOWLEDGE_FILE_BYTES = 5 * 1024 * 1024
 _MAX_KNOWLEDGE_FILE_BASE64 = 4 * ((_MAX_KNOWLEDGE_FILE_BYTES + 2) // 3)
@@ -68,6 +74,33 @@ def _canonical(value: Any) -> str:
 
 def _hash(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _r2_acceptance_samples(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    """R2 release contract checks for the frozen declarative config surface."""
+    config = candidate["config"]
+    persona = config.get("persona") if isinstance(config, dict) else None
+    units = config.get("units") if isinstance(config, dict) else None
+    persona = persona if isinstance(persona, dict) else {}
+    units = units if isinstance(units, list) else []
+    unit_by_id = {
+        unit.get("unit_id"): unit for unit in units
+        if isinstance(unit, dict) and isinstance(unit.get("unit_id"), str)
+    }
+    entries = persona.get("entry_unit_ids")
+    entries = entries if isinstance(entries, list) else []
+    resolved = bool(entries) and all(entry in unit_by_id for entry in entries)
+    safe_fallbacks = resolved and all(
+        isinstance(unit_by_id[entry].get("fallback"), dict)
+        and unit_by_id[entry]["fallback"].get("kind") in {"clarify", "human"}
+        for entry in entries
+    )
+    hash_matches = _hash(config) == candidate.get("content_hash")
+    checks = (resolved, safe_fallbacks, hash_matches)
+    return [
+        {"id": sample_id, "passed": passed}
+        for sample_id, passed in zip(_R2_ACCEPTANCE_SAMPLES, checks)
+    ]
 
 
 def _json_path_member(path: str, key: str) -> str:
@@ -372,7 +405,19 @@ class ConfigurationService:
                         if ready_sources else ("pending", "尚无成功摄入且授权有效的知识来源")
                     )
             elif key == "fixed_samples" or key == "fixed_samples_passed":
-                status, detail = "pending", "固定样例执行服务尚未接入"
+                samples = _r2_acceptance_samples(candidate)
+                if key == "fixed_samples":
+                    status, detail = "passed", {
+                        "standard": _R2_ACCEPTANCE_STANDARD,
+                        "sample_ids": list(_R2_ACCEPTANCE_SAMPLES),
+                    }
+                else:
+                    passed = all(sample["passed"] for sample in samples)
+                    status, detail = (
+                        ("passed", {"standard": _R2_ACCEPTANCE_STANDARD, "results": samples})
+                        if passed else
+                        ("failed", {"standard": _R2_ACCEPTANCE_STANDARD, "results": samples})
+                    )
             elif key == "sandbox_selected":
                 status, detail = (
                     ("passed", "目标环境为 sandbox")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
@@ -19,6 +20,7 @@ from .contracts import (
     RequestState,
     Run,
     RunAdmission,
+    RunEvent,
     RunStatus,
     ScenarioPack,
     ServiceRequest,
@@ -45,6 +47,7 @@ from .adapters.agentscope_runtime import (
     wrap_tool,
 )
 from agentscope.message import Msg, TextBlock
+from agentscope.state import AgentState
 
 OUTPUT_CONTRACT = """输出合同（必须遵守）：
 1. 只依据已加载上下文与工具返回的资料回答，不得补造事实。
@@ -180,15 +183,15 @@ class ExecutionService:
     ) -> RunResult:
         """Explicitly start a new Run for a safely recoverable queued request.
 
-        A recovered confirmation is asked again in this R1 path. R2's durable
-        suspend/wake keeps the original pending confirmation instead.
+        Confirmation waits require a persisted R2 checkpoint and must use
+        ``resume_confirmation``; they are never rerun as fresh model work.
         """
         if self.durable is None:
             raise RuntimeError("恢复请求需要持久 store")
         row = self.durable.store.request_row(request_id)
         if row is None or row["tenant_id"] != self.tenant_id:
             raise KeyError("未知请求")
-        if row["state"] not in (RequestState.QUEUED.value, RequestState.WAITING_CONFIRM.value):
+        if row["state"] != RequestState.QUEUED.value:
             raise RuntimeError("请求当前不可恢复")
         if row["latest_run_status"] != RunStatus.FAILED.value:
             raise RuntimeError("请求没有已中断的旧运行")
@@ -234,8 +237,136 @@ class ExecutionService:
             resume_expected_request_state=row["state"],
         )
 
+    async def resume_confirmation(
+        self, request_id: str, *, confirmed: bool | list[bool],
+        script: list[dict[str, Any]] | None = None,
+    ) -> RunResult:
+        """Wake a persisted human-confirmation wait in a fenced new Run."""
+        if self.durable is None:
+            raise RuntimeError("恢复确认需要持久 store")
+        row = self.durable.store.request_row(request_id)
+        checkpoint = self.durable.store.confirmation_checkpoint(request_id)
+        if (row is None or row["tenant_id"] != self.tenant_id
+                or row["state"] != RequestState.WAITING_CONFIRM.value
+                or checkpoint is None):
+            raise RuntimeError("没有属于当前租户的待恢复确认")
+        if row["agent_version"] != self.pack.agent_version.version_id:
+            raise RuntimeError("配置版本已变化，拒绝恢复旧确认")
+        previous_run_id = checkpoint["run_id"]
+        previous = self.durable.store.run_row(previous_run_id)
+        if (previous is None or previous["status"] != RunStatus.FAILED.value
+                or previous["finish_reason"] != "restart_interrupted"):
+            raise RuntimeError("确认等待尚未被重启恢复流程安全接管")
+        if checkpoint["occupancy_generation"] != previous["occupancy_generation"]:
+            raise RuntimeError("确认执行代次已变化")
+
+        saved = checkpoint["state"]
+        try:
+            state = AgentState.model_validate(saved["agent_state"])
+            text = saved["input_text"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("确认 checkpoint 格式无效") from exc
+        if not isinstance(text, str) or not text:
+            raise RuntimeError("原始请求输入缺失，不能恢复确认")
+        calls = state.get_awaiting_tool_calls("course_consult_agent")
+        answers = [confirmed] * len(calls) if isinstance(confirmed, bool) else list(confirmed)
+        if not calls or len(answers) != len(calls) or any(type(v) is not bool for v in answers):
+            raise ValueError("确认结果与待处理工具调用数量不一致")
+
+        skill_id = self._route(text)
+        policy = DecisionPolicy(self.pack.rules, emit=lambda *_a, **_k: None, tools=self.pack.tools)
+        for call in calls:
+            try:
+                arguments = json.loads(call.input or "{}")
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise RuntimeError("待确认工具参数无法验证") from exc
+            decision = policy.check(call.name, arguments, skill_id=skill_id)
+            authorization = decision.authorization
+            if authorization is None or not authorization.allowed:
+                raise RuntimeError("当前工具授权已失效，拒绝恢复确认")
+            if decision.verdict is not None and decision.verdict.value in {"deny", "stop", "dedupe"}:
+                raise RuntimeError("当前规则已阻止该工具调用，拒绝恢复确认")
+
+        request = ServiceRequest(
+            request_id=request_id, tenant_id=row["tenant_id"],
+            agent_version=row["agent_version"], channel=Channel(row["channel"]),
+            state=RequestState.RUNNING, trigger_kind=row.get("trigger_kind") or "inbound_message",
+            trigger_ref=row.get("trigger_ref"),
+            subject_id=row.get("subject_id") if row.get("subject_scope") == SubjectScope.MAPPED.value else None,
+            subject_scope=SubjectScope.MAPPED if row.get("subject_scope") == SubjectScope.MAPPED.value else SubjectScope.EPHEMERAL,
+            created_at=row["created_at"], updated_at=now_iso(), result_id=row.get("result_id"),
+        )
+        admission, resumed_state = self.durable.wake_confirmation(
+            request, agent_version=self.pack.agent_version.version_id,
+            snapshot={"skill_routing": self.pack.routing,
+                      "context_budget": self.pack.agent_version.context_budget_tokens},
+            input_text=text, previous_run_id=previous_run_id,
+            generation=int(checkpoint["occupancy_generation"]) + 1,
+        )
+        self._states[request_id] = AgentState.model_validate(resumed_state["agent_state"])
+        return await self._handle(
+            text, channel=request.channel, request=request,
+            script=script,
+            resume_lineage_parent=previous_run_id,
+            resume_generation=int(checkpoint["occupancy_generation"]) + 1,
+            resume_expected_request_state=RequestState.WAITING_CONFIRM.value,
+            resume_admission=admission, resumed_confirmation=answers,
+        )
+
     def cancel(self, request_id: str, *, run_id: str, reason: str = "user_cancel") -> bool:
         """取消请求已发送 ≠ 业务动作已撤销：两件事分别记账。"""
+        if self.durable is not None:
+            row = self.durable.store.request_row(request_id)
+            checkpoint = self.durable.store.confirmation_checkpoint(request_id)
+            task = self._active.get(run_id)
+            if (row is not None and row["tenant_id"] == self.tenant_id
+                    and row["state"] == RequestState.WAITING_CONFIRM.value
+                    and checkpoint is not None and checkpoint["run_id"] == run_id
+                    and (task is None or task.done())):
+                old_run = self.durable.store.run_row(run_id)
+                if (old_run is None or old_run["status"] != RunStatus.FAILED.value
+                        or old_run["finish_reason"] != "restart_interrupted"):
+                    return False
+                req = ServiceRequest(
+                    request_id=request_id, tenant_id=row["tenant_id"],
+                    agent_version=row["agent_version"], channel=Channel(row["channel"]),
+                    state=RequestState.RUNNING, trigger_kind=row.get("trigger_kind") or "inbound_message",
+                    trigger_ref=row.get("trigger_ref"),
+                    subject_id=row.get("subject_id") if row.get("subject_scope") == SubjectScope.MAPPED.value else None,
+                    subject_scope=SubjectScope.MAPPED if row.get("subject_scope") == SubjectScope.MAPPED.value else SubjectScope.EPHEMERAL,
+                    created_at=row["created_at"], updated_at=now_iso(), result_id=row.get("result_id"),
+                )
+                generation = int(checkpoint["occupancy_generation"]) + 1
+                cancel_run = Run(
+                    run_id=new_id("run"), request_id=request_id,
+                    tenant_id=self.tenant_id, agent_version=req.agent_version,
+                    owner_id=self.durable.owner_id, occupancy_generation=generation,
+                    lineage_parent=run_id,
+                )
+                payloads = [
+                    ("run.started", {"trigger_kind": req.trigger_kind, "resumed_confirmation_cancel": True}),
+                    ("run.cancel_requested", {"reason": reason}),
+                    ("run.cancel_confirmed", {"write_prevented": True, "business_action_revoked": False, "result_ids": []}),
+                    ("run.finished", {"request_state": RequestState.CANCELLED.value, "write_count": 0, "result_ids": []}),
+                ]
+                events = []
+                for seq, (event_type, payload) in enumerate(payloads):
+                    event = RunEvent(
+                        seq=seq, event_type=event_type, request_id=request_id,
+                        run_id=cancel_run.run_id, tenant_id=self.tenant_id,
+                        agent_version=req.agent_version, channel=req.channel.value,
+                        payload=payload,
+                    ).seal(events[-1].hash if events else "")
+                    events.append(event)
+                self.durable.store.cancel_confirmation_wait(
+                    req, cancel_run, events, previous_run_id=run_id,
+                )
+                self.requests[request_id] = req
+                req.state = RequestState.CANCELLED
+                req.updated_at = now_iso()
+                for event in events:
+                    self.ledger.record(event, persist=False)
+                return True
         started = next((e for e in self.ledger.find("run.started") if e.run_id == run_id and e.request_id == request_id), None)
         if started is None:
             return False
@@ -269,6 +400,7 @@ class ExecutionService:
                     channel=started.channel, reason="request_state_changed",
                 )
                 return False
+            self.durable.store.clear_confirmation_checkpoint(request_id, run_id)
         self.requests[request_id].state = RequestState.CANCELLING
         task.cancel()
         return True
@@ -289,6 +421,8 @@ class ExecutionService:
         resume_lineage_parent: str | None = None,
         resume_generation: int = 1,
         resume_expected_request_state: str | None = None,
+        resume_admission: RunAdmission | None = None,
+        resumed_confirmation: list[bool] | None = None,
     ) -> RunResult:
         av = self.pack.agent_version
         req = request or self._new_request(channel, text)
@@ -303,7 +437,11 @@ class ExecutionService:
             raise ValueError("事件级幂等需要持久 store")
         run: Run | None = None
         admission: RunAdmission | None = None
-        if self.durable is not None:
+        if resume_admission is not None:
+            admission = resume_admission
+            run = admission.run
+            run_id = run.run_id
+        elif self.durable is not None:
             admission = self.durable.begin(
                 candidate,
                 agent_version=av.version_id,
@@ -475,13 +613,18 @@ class ExecutionService:
 
         async def persisted_ask_confirm(calls: list[Any]) -> list[bool]:
             if self.durable is not None:
+                state = {
+                    "agent_state": agent.state.model_dump(mode="json"),
+                    "input_text": text,
+                }
+                self.durable.store.park_confirmation(
+                    request_id=req.request_id, run_id=run_id,
+                    agent_version=av.version_id,
+                    occupancy_generation=run.occupancy_generation if run else 1,
+                    state=state,
+                )
                 req.state = RequestState.WAITING_CONFIRM
                 req.updated_at = now_iso()
-                self.durable.store.transition_request_state(
-                    req.request_id,
-                    expected=(RequestState.RUNNING.value,),
-                    target=RequestState.WAITING_CONFIRM.value,
-                )
             try:
                 answers = (ask_confirm or self.ask_confirm)(calls)
                 if inspect.isawaitable(answers):
@@ -497,6 +640,7 @@ class ExecutionService:
                     if resumed:
                         req.state = RequestState.RUNNING
                         req.updated_at = now_iso()
+                        self.durable.store.clear_confirmation_checkpoint(req.request_id, run_id)
 
         # 5) 驱动一次 reply（含人工确认恢复）
         final_text = ""
@@ -540,6 +684,7 @@ class ExecutionService:
                 ask_confirm=persisted_ask_confirm,
                 confirms=confirms,
                 is_cancelled=lambda: req.state is RequestState.CANCELLING,
+                resumed_confirmation=resumed_confirmation,
             ):
                 if etype == "reply.text":
                     # 只有真拿到文本才算"已产出文本事件"：空文本事件不构成流式输出。

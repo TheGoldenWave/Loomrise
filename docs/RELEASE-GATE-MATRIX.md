@@ -52,27 +52,27 @@
 
 | ID | Gate（权威出处：客服方案 §3 S2-a） | 版本 | 工件 | 正例 | 反例 | 通过条件 | 证据位置 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| M-A-01 | 请求、事件、幂等键、outbox 持久化 | R1 | 存储 schema + 迁移脚本 | 重启后账本完整 | 账本在进程内存 | 断电式杀进程后重放一致 | `R1-EVIDENCE.md#wp1-持久化底座--已落` | 在跑 |
-| M-A-02 | 重启恢复：重启后未完成请求可续 | R1 | 恢复测试 | 重启后待确认动作仍待确认 | 重启丢在途 | 恢复矩阵逐格有结论 | `R1-EVIDENCE.md#wp2-恢复与故障--部分` | 在跑 |
-| M-A-03 | 事务失败与进程崩溃不丢义务；outbox 重放不重复 | R1 | 故障注入测试 | 崩溃点逐个重放一次 | 重放产生第二条副作用 | 全崩溃点重放后计数不变 | `R1-EVIDENCE.md#ma-03-crash-matrix` | 在跑 |
+| M-A-01 | 请求、事件、幂等键、outbox 持久化 | R1 | 存储 schema + 迁移脚本 | 重启后账本完整 | 账本在进程内存 | 断电式杀进程后重放一致 | `R1-EVIDENCE.md#wp1-持久化底座--已落`、`tests/test_durable_outbox.py`（硬退出前/后提交与重放） | 通过 |
+| M-A-02 | 重启恢复：重启后未完成请求可续 | R1 | 恢复测试 | 重启后待确认动作仍待确认 | 重启丢在途 | 恢复矩阵逐格有结论 | `R1-EVIDENCE.md#wp2-恢复与故障--部分`、`R2-EVIDENCE.md#wp5-确认等待恢复`（queued/running/waiting_confirm/cancelling 及显式确认唤醒/取消） | 通过 |
+| M-A-03 | 事务失败与进程崩溃不丢义务；outbox 重放不重复 | R1 | 故障注入测试 | 崩溃点逐个重放一次 | 重放产生第二条副作用 | 全崩溃点重放后计数不变 | `R1-EVIDENCE.md#ma-03-crash-matrix`（当前已识别写事务 18/18；outbox 提交/消费者崩溃矩阵）；`R2-EVIDENCE.md#wp5-确认等待恢复`（确认唤醒原子回滚） | 通过 |
 | M-A-04 | 撤销事项不在恢复后复活 | R1 | 撤销×恢复交叉测试 | 已取消事项恢复后仍取消 | 恢复把取消冲掉 | 交叉矩阵全绿 | `R1-EVIDENCE.md#ma-04-task-item-cancel-recovery` | 通过 |
-| M-A-19 | **父 Gate 细化：M-A-01…03**。执行进度/可选 checkpoint 的提交可见性与恢复 lineage | R1 | Durable Adapter 故障注入 + 父 Gate 恢复摘要 | 本地 `running` 旧尝试按裁决失败；获准新尝试只复用输入/版本兼容的已提交结果 | 半提交状态被读到、业务事实重复，或旧 Attempt 被复活 | Loomrise 事务状态全或无、旧尝试中断事实保留、事件哈希链可验证；若实现使用 checkpoint，再验证其引用可见性 | `R1-EVIDENCE.md#wp1-持久化底座--已落`（无 checkpoint：按「提交可见性」验，不适用项已在摘要写明） | 在跑 |
+| M-A-19 | **父 Gate 细化：M-A-01…03**。执行进度/可选 checkpoint 的提交可见性与恢复 lineage | R1 | Durable Adapter 故障注入 + 父 Gate 恢复摘要 | 本地 `running` 旧尝试按裁决失败；获准新尝试只复用输入/版本兼容的已提交结果 | 半提交状态被读到、业务事实重复，或旧 Attempt 被复活 | Loomrise 事务状态全或无、旧尝试中断事实保留、事件哈希链可验证；若实现使用 checkpoint，再验证其引用可见性 | `R1-EVIDENCE.md#wp1-持久化底座--已落`、`R2-EVIDENCE.md#wp5-确认等待恢复`（checkpoint 与新 Run 同事务；失败注入回滚；generation lineage） | 通过 |
 | M-A-05 | 同请求去重、只写一次（含并发重复） | R2 | 并发重复提交测试 | N 并发只落一次 | 并发绕过幂等 | 并发=100 时计数=1 | `R2-EVIDENCE.md#wp5-副作用意图首片`（100 独立 SQLite 连接同键竞争，仅 1 个获得执行资格；跨重启同键复用原结果） | 通过 |
-| M-A-06 | 幂等键绑定**具体业务操作**，跨渠道/跨重启重试不重复 | R1 | 幂等键登记表 + 重试测试 | 同操作换渠道仍命中 | 键只绑请求不绑操作 | 键与操作的映射表齐全 | `R1-EVIDENCE.md#wp7-幂等键语义--部分` | 在跑 |
+| M-A-06 | 幂等键绑定**具体业务操作**，跨渠道/跨重启重试不重复 | R1 | 幂等键登记表 + 重试测试 | 同操作换渠道仍命中 | 键只绑请求不绑操作 | 键与操作的映射表齐全 | `R1-EVIDENCE.md#wp7-幂等键语义--部分`（action-bound key、两个动作不共键、跨文字/语音及重启复用原 result_id） | 通过 |
 | M-A-07 | 工具已受理但调用超时 / 迟到回执 / 未知状态可区分并进入对账 | R2 | 超时与迟到场景测试 | 未知→`reconciling`→对账收敛 | 超时直接当失败 | 三类均可区分且有对账出口 | `R2-EVIDENCE.md#wp5-副作用意图首片`（注入式只读 provider 查询协调器、迟到回执路由与 unknown 阻断/失败不重放测试；未接真实业务 provider） | 通过 |
-| M-A-20 | **父 Gate 细化：M-A-02**。人工确认等待可 suspend/wake，重启后重验确认上下文 | R2 | 确认前/后崩溃与唤醒测试 | 持久等待态沿原关联恢复，不重复询问或写入 | 本地 running 旧尝试被误复活，或等待状态复用过期授权 | 等待态、确认、版本、权限、预算和代次均按 Task §7.1/执行规则裁决 | 待登记 | 未开始 |
-| M-A-21 | **父 Gate 细化：M-A-03/04/07**。取消竞争与旧 generation/执行者迟到输出拒绝 | R2 | 取消 race + stale execution test | 旧代迟到输出被拒，未知结果进入对账，取消事实可区分 | 旧代继续写入、未知状态自动重试或把 abort 当业务撤销 | `cancel_requested`/`cancel_confirmed`/`business_action_revoked` 分离，旧代无副作用；不代表跨进程 Worker handoff 已通过 | `R2-EVIDENCE.md#取消状态竞争2026-10-30`（确认中取消持久化、迟到回调不可覆盖、重启取消 fail-closed、旧 run 写入拒绝及取消/业务撤销事实分离） | 通过 |
+| M-A-20 | **父 Gate 细化：M-A-02**。人工确认等待可 suspend/wake，重启后重验确认上下文 | R2 | 确认前/后崩溃与唤醒测试 | 持久等待态沿原关联恢复，不重复询问或写入 | 本地 running 旧尝试被误复活，或等待状态复用过期授权 | 等待态、确认、版本、权限、预算和代次均按 Task §7.1/执行规则裁决 | `R2-EVIDENCE.md#wp5-确认等待恢复`（两个独立服务实例；授权撤销拒绝且 checkpoint 保留；恢复只提交一次；重复唤醒与旧代回调拒绝） | 通过 |
+| M-A-21 | **父 Gate 细化：M-A-03/04/07**。取消竞争与旧 generation/执行者迟到输出拒绝 | R2 | 取消 race + stale execution test | 旧代迟到输出被拒，未知结果进入对账，取消事实可区分 | 旧代继续写入、未知状态自动重试或把 abort 当业务撤销 | `cancel_requested`/`cancel_confirmed`/`business_action_revoked` 分离，旧代无副作用；不代表跨进程 Worker handoff 已通过 | `R2-EVIDENCE.md#wp5-确认等待恢复`、`#取消状态竞争2026-10-30`（活跃及重启后取消、旧回调/旧 Run 拒写、取消与外部业务撤销分离） | 通过 |
 | M-A-08 | 摄入：FAQ/URL/文件解析状态、失败、重试、撤回 | R2 | 摄入状态机测试 | 失败不冒充已索引 | 解析失败标 Indexed | 状态互斥且失败可重试 | `R2-EVIDENCE.md#wp1wp4-服务端切片`、本机浏览器真实上传与 `https://example.org/` 公网 HTTPS 摄入；私网 URL 拒绝并可重试 | 通过 |
 | M-A-09 | **撤回后索引与缓存停止提供旧内容**，受影响版本/评测转待重验 | R2 | 撤回后检索测试 | 撤回后检索 0 命中 | 缓存仍返回旧段 | 检索与缓存双清且版本标待重验 | `R2-EVIDENCE.md#wp1wp4-服务端切片`、本机浏览器撤回后检索零命中；既有服务测试验证已发布沙盒版本转 stale 且入口 fail-closed（当前无独立缓存服务） | 通过 |
 | M-A-10 | 访客↔人工文本往返可复核（最小 Widget + Inbox） | R2 | 往返记录 | 双向消息可检索 | 只有单向 | 双向且顺序可核 | `R2-EVIDENCE.md#wp1wp4-服务端切片`、`tests/test_customer_service.py`（访客/客服文本序号、人工接管及本机浏览器往返） | 通过 |
 | M-A-11 | 最小身份隔离与凭据引用有效 | R2 | 越权测试 | 越权请求被拒 | 凭据进前端包 | 越权用例全拒、包内无密钥 | `R2-EVIDENCE.md#wp1wp4-服务端切片`、`tests/test_customer_service.py`、`tests/test_config_http.py`（访客 token 哈希存储、跨会话拒绝、客服 principal/专家越权拒绝；仅 loopback 身份） | 通过 |
-| M-A-12 | 冻结配置 + 来源/权限/固定样例检查 + 人工批准 | R1→R2 | `release.checklist` 服务/CLI + R2 发布阻断测试 | 未过检查不能发布 | 检查只做展示 | 清单项与阻断一一对应 | `R1-EVIDENCE.md#ma-12-release-checklist`、`R2-EVIDENCE.md#wp1wp4-服务端切片`（固定样例检查未接入，发布保持阻断） | 在跑 |
-| M-A-13 | 明确沙盒环境 + 入口绑定指定版本 + **草稿不生效** | R2 | 入口绑定测试 | 改草稿不影响线上 | 草稿即生效 | 改草稿后线上行为不变 | `R2-EVIDENCE.md#wp1wp4-服务端切片`（存储绑定测试；统一发布路径仍受阻） | 在跑 |
+| M-A-12 | 冻结配置 + 来源/权限/固定样例检查 + 人工批准 | R1→R2 | `release.checklist` 服务/CLI + R2 发布阻断测试 | 未过检查不能发布 | 检查只做展示 | 清单项与阻断一一对应 | `R1-EVIDENCE.md#ma-12-release-checklist`、`R2-EVIDENCE.md#r2-配置发布验收标准-r2-config-release-v1`（三项版本化配置样例、来源就绪、批准前阻断及 owner 批准发布服务测试） | 通过 |
+| M-A-13 | 明确沙盒环境 + 入口绑定指定版本 + **草稿不生效** | R2 | 入口绑定测试 | 改草稿不影响线上 | 草稿即生效 | 改草稿后线上行为不变 | `R2-EVIDENCE.md#r2-配置发布验收标准-r2-config-release-v1`（沙盒发布后入口解析指定不可变候选；后续草稿编辑不改变入口）；不宣称执行声明式 Unit body | 通过 |
 | M-A-14 | 物料原件与权限版本真实保存，按支持格式恢复/下载 | R2 | 上传→下载→恢复测试 | 四种格式往返一致 | 只存元数据 | 格式×操作矩阵全绿 | `R2-EVIDENCE.md#wp1wp4-服务端切片`（全部九种支持格式 MIME/内容上传、下载、备份恢复；授权逐版本快照） | 通过 |
 | M-A-15 | 人工发送前重验会话占用与版本 | R2 | 占用竞争测试 | 占用变化即拒发 | 旧占用仍发 | 四种失效条件各拒一次 | `R2-EVIDENCE.md#wp1wp4-服务端切片`（过期/撤回/旧版本/旧 generation；独立连接版本更新与发送交错拒绝） | 通过 |
 | M-A-16 | 存储不是仅事件文件落盘 | R1 | SQLite schema + Online Backup 往返测试 | 结构化存储 + 备份 | 只有 JSONL | 目录结构与恢复路径可核 | `R1-EVIDENCE.md#wp1-持久化底座--已落` | 通过 |
-| M-A-17 | 外部受限草稿/候选在工作台可见，同一 revision 与授权校验 | R1 | MCP 写入等价测试 + WP9 浏览器读写联调 | 后台与 MCP 同结果 | 两入口语义不同 | 同 revision 双入口结果一致 | `R1-EVIDENCE.md#wp9-console-browser-acceptance` | 在跑 |
-| M-A-18 | 冻结配置经字段级 diff 可审 | R1 | diff 输出样例 + 候选历史页面 | 逐字段列出 | 只给"共 N 处" | 每条改动有字段路径 | `R1-EVIDENCE.md#wp9-console-browser-acceptance` | 在跑 |
+| M-A-17 | 外部受限草稿/候选在工作台可见，同一 revision 与授权校验 | R1 | MCP 写入等价测试 + WP9 浏览器读写联调 | 后台与 MCP 同结果 | 两入口语义不同 | 同 revision 双入口结果一致 | `R1-EVIDENCE.md#wp9-console-browser-acceptance`（HTTP/CLI/MCP 共享服务、revision 冲突与重启后读取） | 通过 |
+| M-A-18 | 冻结配置经字段级 diff 可审 | R1 | diff 输出样例 + 候选历史页面 | 逐字段列出 | 只给"共 N 处" | 每条改动有字段路径 | `R1-EVIDENCE.md#wp9-console-browser-acceptance`（候选历史逐字段 diff；浏览器与 CLI 读取同一冻结快照） | 通过 |
 
 ## 3. S2-c（R4 承担）
 

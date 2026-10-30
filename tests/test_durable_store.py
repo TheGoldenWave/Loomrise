@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -95,6 +96,58 @@ class TestSchema(StoreCase):
         self.assertTrue(
             {"requests", "runs", "events", "idempotency", "outbox"} <= names, names,
         )
+
+    def test_confirmation_checkpoint_requires_current_running_context(self) -> None:
+        from loomrise.contracts import RequestState
+
+        req = make_request(state=RequestState.RUNNING.value)
+        run = make_run(req)
+        self.store.begin_run(req, run, [])
+        state = {"reply_id": "reply-1", "tool_calls": [{"id": "call-1"}]}
+
+        self.store.park_confirmation(
+            request_id=req.request_id, run_id=run.run_id, agent_version="av_test",
+            occupancy_generation=1, state=state,
+        )
+
+        self.assertEqual(self.store.request_row(req.request_id)["state"], "waiting_confirm")
+        saved = self.store.confirmation_checkpoint(req.request_id)
+        self.assertEqual(saved["run_id"], run.run_id)
+        self.assertEqual(saved["state"], state)
+        with self.assertRaises(RuntimeError):
+            self.store.park_confirmation(
+                request_id=req.request_id, run_id=run.run_id, agent_version="av_test",
+                occupancy_generation=1, state=state,
+            )
+
+    def test_confirmation_wake_rolls_back_checkpoint_consumption_with_run_creation(self) -> None:
+        from loomrise.contracts import RequestState
+
+        request = make_request(state=RequestState.RUNNING.value)
+        previous = make_run(request)
+        self.store.begin_run(request, previous, [])
+        self.store.park_confirmation(
+            request_id=request.request_id, run_id=previous.run_id,
+            agent_version="av_test", occupancy_generation=1,
+            state={"agent_state": {"test": True}},
+        )
+        self.store._conn.execute(
+            "UPDATE runs SET status='failed',finish_reason='restart_interrupted' WHERE run_id=?",
+            (previous.run_id,),
+        )
+
+        next_request = make_request(state=RequestState.RUNNING.value)
+        next_request.request_id = request.request_id
+        next_run = make_run(next_request, owner="p2", generation=2)
+        start = make_event(next_run, 0, "run.started").seal(GENESIS_HASH)
+        with patch.object(self.store, "_begin_run", side_effect=RuntimeError("crash point")):
+            with self.assertRaisesRegex(RuntimeError, "crash point"):
+                self.store.begin_confirmation_wake(
+                    next_request, next_run, [start], previous_run_id=previous.run_id,
+                )
+        self.assertIsNotNone(self.store.confirmation_checkpoint(request.request_id))
+        self.assertEqual(self.store.request_row(request.request_id)["state"], "waiting_confirm")
+        self.assertIsNone(self.store.run_row(next_run.run_id))
 
     def test_v10_database_migrates_to_uploaded_knowledge_content(self) -> None:
         path = os.path.join(self.tmp.name, "legacy-v10.db")

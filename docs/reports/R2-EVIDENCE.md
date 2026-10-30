@@ -1,4 +1,4 @@
-# R2 证据摘要 v0.9（实施中）
+# R2 证据摘要 v1.4（待用户快速验收）
 
 日期：2026-10-30。性质：R2 实施与验收交接记录，不替代 [ROADMAP](../ROADMAP.md) 的阶段 Gate 或 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) 的父 Gate 状态。
 
@@ -16,9 +16,11 @@
 
 > v1.2 更新（2026-10-30）：新增 `DurableToolReconciliation` 协调器，注入只读 provider 查询实现；待对账清单只暴露操作键/动作/Run，不暴露工具参数。查询结果 `applied/not_applied/unknown` 及迟到回执均复用 SQLite 原子收敛；查询异常视为 `unknown`，不授权重放。新增 provider 查询、重复迟到回执和查询失败阻断测试。结合百连接幂等竞争与旧代/取消测试，M-A-05/07、M-A-21 证据细化通过；WP4 顺序消息、访客 token 哈希与越权拒绝测试/浏览器证据支持 M-A-10/11 通过。后端全量回归更新为 170/170。R2 父 Gate 仍未通过。
 
+> v1.4 更新（2026-10-30）：用户同意使用明确的 R2 配置发布标准并自行设计样例，随后确认 R1 Gate 通过并授权跳过责任角色复核/签核。依据既有 R1 可复现工件与本轮新增恢复证据，M-A-01/02/03/06/17/18 及 M-A-19 归档通过；不伪造责任角色签字。R2 发布标准 `r2-config-release-v1` 的三项样例通过，并完成冻结候选→来源就绪→owner 批准→沙盒发布→入口解析指定不可变版本，草稿变更不影响发布。确认等待可跨进程恢复、重验版本/工具授权、重复唤醒拒绝；重启后可取消等待，取消动作留新 Run 审计且旧回调不能写入；故障注入证明 checkpoint 消费与新 Run 创建共同回滚。全后端回归 175/175，S1 自检通过，固定案例 11/11。R2 实现与证据归档就绪，待用户快速验收后关闭。声明式候选解析不等于执行当前尚无转换合同的 Unit body；provider 使用模拟实现，不代表真实外部系统联调。
+
 ## 开工授权
 
-用户于 2026-10-29 明确授权跳过 R1 前置及本次 R2 逐包的产研/策略运营责任角色复核与签核流程。此为**流程例外**：不代表责任角色签字，不得伪造签核；也不把技术证据不足的 Gate 改为通过。仍按本报告记录代码、可复现测试与运行验收状态。
+用户于 2026-10-29 明确授权跳过 R1 前置及本次 R2 逐包的产研/策略运营责任角色复核与签核流程；2026-10-30 明确确认 R1 Gate 通过。该决定记录为用户验收/流程例外，不代表责任角色签字。R1 可复现证据仍逐项列在矩阵与 R1 证据报告中，流程授权不替代技术证据。
 
 R1 代码与证据整理提交：`36fd3a5`（`完成 R1 配置与耐久恢复补强`），已推送 `origin/main`。提交不包含 `private/`、本地 `runs/` 或凭据。
 
@@ -30,12 +32,22 @@ R1 代码与证据整理提交：`36fd3a5`（`完成 R1 配置与耐久恢复补
 
 | 工作包 | 状态 | 实现/证据 |
 |---|---|---|
-| WP1 最小沙盒发布 | 部分实现 | SQLite 批准/发布/入口绑定与不可变版本读取已接入；草稿不改变绑定。固定样例检查未接入，统一服务路径仍会阻断发布，不能称发布闭环完成。 |
+| WP1 最小沙盒发布 | 服务验收已完成（M-A-12/13 证据齐） | 用户接受明确的 R2 验收标准。`r2-config-release-v1` 检查冻结候选的入口引用、失败兜底与内容哈希；真实应用服务测试覆盖知识来源就绪、检查阻断、owner 批准、沙盒发布、入口解析指定不可变候选及发布后草稿隔离。它证明发布绑定与解析，不声称运行 R1 尚不支持的配置 Unit body。 |
 | WP2 知识摄入与撤回 | 已实现（M-A-08/09 通过） | FAQ、HTTPS URL 与 UTF-8 文本文件支持状态/失败/重试/撤回；配置 HTTP 支持最多 5 MiB 的 TXT/MD/CSV/JSON 上传，SQLite schema v11 暂存原件，普通读取不返回 BLOB，成功摄入/撤回后清除。浏览器已走通 TXT 上传/检索/撤回零命中、公网 `https://example.org/` 内容摄入，以及私网 URL 拒绝与失败重试；console 0 errors。撤回删除旧索引、搜索归零并标记沙盒版本待重验，URL 抓取固定公网 DNS 并限制跳转/体积。仅为本机隔离服务证据，不代表公开部署。 |
 | WP3 物料与人工发送 | 已实现（M-A-14/15 通过） | SQLite 原件 BLOB、校验和及版本；schema v10 将显示名、文件名、格式、授权和有效期固化到每个物料版本，并为 v9 数据提供事务迁移回填；支持上传/下载/备份恢复、撤回。全部支持格式及 MIME 上传/下载/恢复往返通过；四类授权声明按版本回读一致；有效期、撤回、旧版本、旧客服占用代次和版本更新并发时均拒绝失效发送。浏览器完成 README 上传、人工发送、访客下载往返。 |
 | WP4 最小 Widget/Inbox | 已实现（M-A-10/11 通过） | loopback Widget/Inbox 页面和 API 支持访客文本、请求人工、客服接管/回复、物料发送及顺序记录；访客令牌仅存哈希，客服操作按可信 principal 限制。浏览器往返 console 0 errors；尚非公开部署，也没有 AI 自动接待回复。 |
-| WP5 运行时可信 | 部分实现 | 工具意图、provider 查询协调器/迟到回执和原子收敛已支持，`run.status` 是受限只读摘要，不暴露事件或工具参数；M-A-05/07 与 M-A-21 证据细化通过。取消状态已持久化并覆盖确认中取消与重启中断取消；仍缺持久确认 suspend/wake 和授权上下文恢复。 |
-| WP6 证据归档与关闭 | 未开始 | 父 Gate 仍有不通过/未开始项；流程例外不替代签核或技术验收。 |
+| WP5 运行时可信 | 已实现（模拟/注入式 provider 范围） | 工具意图、provider 查询协调器/迟到回执和原子收敛已支持；确认等待支持重启恢复、授权重验、重启后取消及旧代 fencing。`run.status` 只返回受限摘要。真实 provider 联调不在本次沙盒验收内。 |
+| WP6 证据归档与关闭 | 已归档，待用户快速验收 | M-A-01…18 父 Gate 行及适用的 M-A-19…21 证据细化均已登记；用户确认 R1 Gate 通过并授权跳过责任角色流程。用户完成本报告末的快速验收后即可关闭 R2。 |
+
+## R2 配置发布验收标准 `r2-config-release-v1`
+
+这是用户授权由实施方设计的 R2 替代验收标准，范围只针对当前 R1 可发布的声明式配置面：
+
+1. `entry_unit_references_resolve`：人设入口引用均解析到冻结候选内的 Unit。
+2. `entry_units_fail_closed`：入口 Unit 的 fallback 必须为 `clarify` 或 `human`。
+3. `candidate_content_hash_matches`：冻结候选的 canonical 内容哈希与内容一致。
+
+沙盒验收使用 `expert-a` 的课程咨询样例、授权 FAQ 来源、入口 `r2-sample-entry` 和版本 `r2-sample-v1`。端到端断言候选冻结、三项样例通过、知识来源摄入就绪、批准前发布阻断、owner 批准、发布后入口解析指向目标版本，以及后续草稿编辑不改变入口配置。因为 R1 Unit `body` 是空对象且没有配置到 `ScenarioPack` 的转换合同，这项标准**不把候选配置宣称为可执行 Workflow，也不声称 AgentScope 按候选配置回答访客**。
 
 <a id="wp1wp4-服务端切片"></a>
 
@@ -51,11 +63,19 @@ Widget 与 Inbox 由同一个 loopback HTTP 服务提供。访客凭 256-bit 随
 
 ## WP5 副作用意图首片
 
-`loomrise/durable_store.py` 最初在 schema v6 新增 `tool_attempts`；当前 schema 为 v11。写工具进入执行适配器前，先把具体动作、参数摘要和绑定该动作的稳定幂等键写入 SQLite；键复用到不同动作/参数会拒绝。确定失败可显式记为 `failed`；成功结果通过原 `commit_write` 路径与业务幂等记录、事件和 outbox 一起提交，并将意图原子转为 `succeeded`。
+`loomrise/durable_store.py` 最初在 schema v6 新增 `tool_attempts`；当前 schema 为 v12（新增确认 checkpoint）。写工具进入执行适配器前，先把具体动作、参数摘要和绑定该动作的稳定幂等键写入 SQLite；键复用到不同动作/参数会拒绝。确定失败可显式记为 `failed`；成功结果通过原 `commit_write` 路径与业务幂等记录、事件和 outbox 一起提交，并将意图原子转为 `succeeded`。
 
 超时、Run 收尾时仍有未决意图、或重启时旧 Run 被判中断，会将意图转为 `reconciling`。`DurableToolReconciliation` 枚举待对账操作并调用注入的只读 provider 查询器，`applied` 原子登记原 `result_id`、幂等账本、`tool.reconciled` 事件和 outbox；`not_applied` 才允许后续显式重试；`unknown` 或查询异常保持阻断。迟到回执同样经过该协调器和原子账本路径。可在旧 Run 已中断后收敛，但不会复活旧执行者。参数仅持久化哈希，避免把工具参数副本扩散到新表。provider 实现仍需按实际外部业务适配；当前测试使用模拟 provider，不等于生产 provider 联调。
 
-证据：`tests/test_durable_side_effects.py` 覆盖 100 个独立连接竞争（恰有一个执行资格）、重复意图拒绝、参数重绑定拒绝、重启后进入 `reconciling` 并由注入 provider 查询后收敛、迟到回执重复提交、查询异常/未知状态阻断、确定未执行后的显式重试、对账事务崩溃回滚及事件链完整。provider 仍是模拟实现，真实外部系统联调未做。当前全量后端 **170/170**。
+证据：`tests/test_durable_side_effects.py` 覆盖 100 个独立连接竞争（恰有一个执行资格）、重复意图拒绝、参数重绑定拒绝、重启后进入 `reconciling` 并由注入 provider 查询后收敛、迟到回执重复提交、查询异常/未知状态阻断、确定未执行后的显式重试、对账事务崩溃回滚及事件链完整。provider 仍是模拟实现，真实外部系统联调未做。本轮全量后端 **174/174**。
+
+<a id="wp5-确认等待恢复"></a>
+
+### WP5 确认等待恢复（2026-10-30）
+
+确认请求进入等待时，SQLite 同一事务保存 AgentScope `AgentState`、原始输入、版本、generation 并将请求置为 `waiting_confirm`。服务重启只把旧 Run 标记为 `failed/restart_interrupted`，保留等待 checkpoint，不自动继续。显式 `resume_confirmation` 在消费 checkpoint 前重新检查当前 AgentVersion、工具授权、硬规则和 pending tool call；SQLite 单事务删除 checkpoint 并创建 generation+1 的新 Run。新 Run 将原人工决定通过原 reply id 投递给上游，不重跑模型来重建已确认工具调用。并发唤醒最多一方可消费；过期版本/授权、无 checkpoint 和旧代事件均 fail-closed。取消等待会清 checkpoint。
+
+证据：`tests/test_durable_recovery.py::TestPersistedRun.test_confirmation_wakes_after_restart_once_and_fences_old_callback` 跨独立 owner/服务实例覆盖进程退出、重启裁决、授权撤销拒绝且 checkpoint 保留、授权恢复后唤醒、单次模拟副作用、重复唤醒拒绝、旧代迟到回调拒绝及事件链完整；`tests/test_durable_store.py::TestSchema.test_confirmation_wake_rolls_back_checkpoint_consumption_with_run_creation` 注入新 Run 创建失败，验证 checkpoint 与新 Run 一起原子回滚。`TestPersistedRun.test_confirmation_wait_can_be_cancelled_after_restart` 覆盖重启后取消、取消 Run 审计与旧回调 fencing。
 
 ### 取消状态竞争（2026-10-30）
 
@@ -63,8 +83,19 @@ Widget 与 Inbox 由同一个 loopback HTTP 服务提供。访客凭 256-bit 随
 
 证据：`tests/test_durable_recovery.py::TestPersistedRun.test_cancel_during_confirmation_is_durable_and_not_overwritten_by_callback` 与 `TestRecovery.test_interrupted_cancellation_fails_closed_instead_of_reentering_recovery`。这两项证明本地状态竞争与重启 fail-closed，不覆盖 provider 侧取消/撤销，也不覆盖确认等待的原 Run suspend/wake。
 
+重启后取消已持久化的确认等待会创建一个独立、无业务副作用的取消 Run，并在同一事务中清除 checkpoint、写入 `run.cancel_requested`/`run.cancel_confirmed`/`run.finished`、关闭请求。旧 Run 保持 `failed/restart_interrupted`，迟到回调不能继续产生副作用；`business_action_revoked=false` 明确表示没有声称撤销外部业务动作。
+
 ## 验证与限制
 
 开工前基线：R1 证据报告记录 123/123。该历史结果不证明任一 R2 Gate 通过。
 
-本轮浏览器 fixture 与状态数据库写在系统临时目录，不属于项目交付工件，也不提交仓库。测试下载件写在 `.playwright-mcp/README.md`。本地页面只作为服务端集成证据的一部分，不替代公开渠道或生产验收。知识资料浏览器验收的本机临时数据库位于 `/tmp/loomrise-r2-pw/configuration.db`，临时 principal 仅授权 `fixture-agent`；Playwright CLI 会话 `loomrise-r2-knowledge` 验证上传、抓取、重试、撤回和检索。固定样例发布检查、WP5 确认等待 suspend/wake 与授权上下文恢复仍待实现或验证；provider 查询使用模拟实现，真实外部业务联调未做。取消状态竞争已有本地故障/恢复测试，但不等于所有 R2 运行 Gate。`run.status` 仅为只读摘要切片，不能替代上述耐久性证据。R2 Gate 继续保持未关闭。
+本轮临时数据库及浏览器 fixture 不属于项目交付工件。新增恢复测试覆盖两个独立服务 owner 下的重启恢复、授权重验、幂等唤醒、重启后取消、旧回调 fencing 与事件链；事务故障点验证 checkpoint 消费/新 Run 创建回滚。发布服务测试覆盖检查、批准、发布和草稿隔离。全量后端 `unittest discover` 为 175/175；`tests/test_s1.py` 全项通过；固定回放 11/11，原始输出 `/tmp/loomrise-r2-final-replay-20261030.json`。不包含真实 provider 联调、公开部署或 Unit body 执行。
+
+## 用户快速验收
+
+1. 查看 [Gate 矩阵](../RELEASE-GATE-MATRIX.md) M-A-01…18 的证据与状态；R1 Gate 已按用户确认通过，责任角色复核/签核按授权跳过。
+2. 查看 `r2-config-release-v1`：三个声明式样例、冻结候选、来源就绪、owner 批准、沙盒入口解析目标版本及草稿隔离。
+3. 查看确认恢复：重启后授权有效才可唤醒；授权撤销时拒绝并保留 checkpoint；重复唤醒拒绝；重启后取消写入独立取消 Run，旧回调不产生副作用。
+4. 确认边界：业务写入/provider 是模拟或注入测试；本版本不执行尚无转换合同的候选 Unit body，也不宣称真实 provider 联调或公网生产部署。
+
+验证命令本轮实跑：`rtk .venv/bin/python -m unittest discover -s tests -q`（175/175）、`rtk .venv/bin/python tests/test_s1.py`、`rtk .venv/bin/python -m loomrise.cli replay --out /tmp/loomrise-r2-final-replay-20261030.json`（11/11）。

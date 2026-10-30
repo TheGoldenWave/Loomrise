@@ -3,6 +3,7 @@
 > 2026-10-30（R2-WP2 文件上传）：配置 HTTP 支持最多 5 MiB TXT/MD/CSV/JSON 上传，SQLite schema v11；普通来源读取隐藏原件，成功摄入/撤回清理，失败文件可显式重试。全量后端回归 162/162 通过。浏览器上传交互和公网 URL 验收仍缺，WP2 与 R2 Gate 状态不变。
 > 2026-10-30（R2-WP2 浏览器验收）：隔离 loopback fixture 真实走通 TXT 上传、检索、撤回零命中、公网 `https://example.org/` 内容抓取，以及私网地址拒绝/失败重试；知识工作页 console 0 errors。M-A-08/09 登记通过；R2 父 Gate 不变。
 > 2026-10-30（R2 WP4/WP5 追溯更新）：Widget/Inbox 身份隔离及双向文本顺序证据登记 M-A-10/11 通过；新增注入式只读 provider 对账协调器、迟到回执路由和失败/未知阻断，M-A-05/07 及 M-A-21 细化通过。R2 仍缺固定样例发布门禁和确认等待 suspend/wake，父 Gate 不变。
+> 2026-10-30（R2 发布标准与恢复闭环）：用户确认 R1 Gate 通过；基于现存证据更新 M-A-01/02/03/06/17/18/19，R2 M-A-12/13/20/21 也有通过证据。175/175 后端、S1 自检与固定回放 11/11 通过。R2 实现和归档已完成，待用户快速验收关闭；候选入口解析不表示执行尚无转换合同的 Unit body。
 
 > 2026-10-30（R2 浏览器证据更新）：WP3/4 本地 fixture 浏览器完成物料上传、人工发送与访客下载；后端回归 151/151、自检通过、固定案例 11/11。R2 已有部分实现但父 Gate 未通过，关键缺口见 [R2 证据摘要](reports/R2-EVIDENCE.md)。不改变阶段范围或退出 Gate。
 
@@ -42,16 +43,16 @@ S1 进度沿用 Git 基线 `2f0633a`（S0 文档 Gate）及其后已留证的 S1
 |---|---|---|
 | S0 产品与文档边界 | 已完成 | 基线提交 `2f0633a`；私有目录保持忽略 |
 | S1 合同与执行内核 | 已实现最小切片 | 业务请求、事件账本、三段式上下文、模型外规则、模拟预约和事件投影；无 B 端界面 |
-| 执行耐久与恢复层 | R1 部分实现；R2-WP5 部分实现 | `Run`/事件/幂等/outbox/中断裁决与 lineage 已落 SQLite；当前 schema v11 含工具意图、逐版本物料授权元数据与知识上传暂存，未决操作转 `reconciling` 并阻止自动重放；账本可原子收敛受信查询结果。`run.status` 已提供受限只读摘要；尚无 provider 查询/迟到回执调用或确认唤醒；详见 [R2 证据摘要](reports/R2-EVIDENCE.md)。跨进程 Worker/parking 归 R3/R4 |
+| 执行耐久与恢复层 | R1 Gate 已按用户确认通过；R2-WP5 已实现（模拟/注入 provider） | `Run`/事件/幂等/outbox/中断裁决与 lineage 已落 SQLite；当前 schema v12 含工具意图、逐版本物料授权元数据、知识上传暂存与确认 checkpoint。未决操作转 `reconciling` 并阻止自动重放；注入式只读 provider 查询与迟到回执可原子收敛，确认等待支持跨进程恢复、授权重验、取消与旧代隔离。`run.status` 提供受限只读摘要；真实业务 provider 联调及跨进程 Worker/parking 归后续阶段。详见 [R2 证据摘要](reports/R2-EVIDENCE.md) |
 | S1 固定案例 | 干净环境回放 11/11 | 精确 AgentScope commit 安装、完整自检、取消专项案例均通过；仍使用脚本模型 |
 | 语音与取消 | 部分实现（真实模型已验取消，媒体未验） | 执行中取消、确认和文字/语音跨渠道断言通过（脚本模型 + 真实模型双覆盖）；Web Speech 网页入口已就绪，固定 STT/TTS 组合及浏览器音频未验，中文可懂度、语音首响与打断恢复未测，重启恢复未验 |
 | S1 网页 / HTTP-SSE 入口 | 已实现，自检通过（脚本模型） | 回环监听的 `web.py`：文字/语音输入、AG-UI 事件经 SSE 投送、页面人工确认/拒绝/取消；音视频走浏览器 Web Speech，非云端 ASR/TTS。真实模型下已起服务（`/api/status` 为 `configured: true`），页面实测待人工 |
 | 真实模型接入方式 | 已实跑通过（Coding Plan Responses API） | `scripts/live_model_check.py` 六路径 11/11（咨询/确认/拒绝/失败/取消/文字→语音）；**验收默认 `gpt-6-sol`**（两次运行：首响 2.4–4.8 s、单轮 7–23 s，全部场景 `attempts=1`），`gpt-6-luna` 降级为成本对照（首响 10.8–14.8 s、单轮 22–57 s，偶发不发起写入工具需重试兜底）；密钥存 `~/.config/loomrise` 在仓库外 |
 | 离线依赖锁定 | 已执行通过 | `scripts/build_offline.py` 生成 macOS arm64/Py3.13 wheelhouse（92 wheel）与 SHA-256 锁；`scripts/verify_offline.sh` 干净环境离线安装 → 11/11 回放 → 自检 → `--offline` 导出 → 第二个干净环境离线恢复 11/11 |
 | 导出与可复现安装 | 恢复已验证（联网 + 离线） | 导出包在独立目录和新虚拟环境安装、加载场景并 11/11 回放；`--offline` 导出的 wheelhouse 也在第二个干净环境离线恢复 11/11；语音依赖单列且未安装验收 |
-| S2 本地工作台与 R1 配置后端 | 第二轮交互前端已验证；R1 配置主链已实现，服务端版本工作面的 WP9 本机浏览器联调已验，R1 Gate 未通过 | [第二轮前端交付与评审](S2-FRONTEND-ROUND2.md)记录本地 UI；[R1 证据摘要](reports/R1-EVIDENCE.md)记录 SQLite 配置草稿/版本/候选、可运行的 M-A-12 十项预检、loopback HTTP、MCP/CLI、主要耐久崩溃矩阵与浏览器联调。知识/物料/客服/治理/部署仍待真实服务；M-A-12 完整检查及发布阻断、M-A-03/17/18 签核和 R1 父 Gate 未关闭，页面验收不能替代 S2/R1 Gate |
-| 物料库与文件发送 | 产品方向已确认；本地前端扩展，后端未实现 | [物料专题](MATERIAL-LIBRARY-AND-DELIVERY.md)：IndexedDB 原件和元数据分别管理；压缩/理解/自动发送仅明确仿真。真实存储、处理、索引、渠道发送及回执须后端 Gate |
-| S2-a、S2-b、S2-c | 范围已确认；R1 与 R2 已有部分服务端实现，两个版本父 Gate 均未通过 | R2 已落知识摄入/撤回、物料原件版本、最小 Widget/Inbox、沙盒候选绑定、工具意图/provider 对账协调器及受限只读运行状态查询；本地浏览器已走通知识文件/公网 URL 摄入、检索/撤回，及 Inbox 上传、人工发送和 Widget 下载，console 0 errors。固定样例发布门禁和确认等待 suspend/wake/授权重验仍缺；provider 查询用模拟实现，未联调真实业务系统。详见 [R1/R2 证据摘要](reports/R2-EVIDENCE.md) |
+| S2 本地工作台与 R1 配置后端 | R1 Gate 已按用户确认通过；R2 服务端工作包与本机验收已完成，待用户快速验收关闭 | [第二轮前端交付与评审](S2-FRONTEND-ROUND2.md)记录本地 UI；[R1/R2 证据摘要](reports/R2-EVIDENCE.md)记录配置/知识/物料/客服服务、发布阻断与绑定、持久确认恢复及回归。浏览器验收为本机隔离 fixture，不代表公开部署或真实 provider 联调；R1 Unit body 尚无运行时转换合同 |
+| 物料库与文件发送 | R2 最小物料与人工发送已实现；自动处理、渠道回执仍未实现 | R2 支持原件、逐版本授权快照、上传/下载/备份恢复及发送前占用/版本重验；见 [R2 证据摘要](reports/R2-EVIDENCE.md)。压缩/理解/自动发送及外部渠道回执仍不在本版本范围 |
+| S2-a、S2-b、S2-c | S2-a/R1 Gate 已按用户确认通过；R2 实现已完成、待快速验收关闭 | R2 的知识、物料、Widget/Inbox、`r2-config-release-v1` 沙盒发布验收与确认等待耐久恢复均有服务/测试证据，175/175 后端及 S1/回放回归通过。provider 查询使用模拟实现，未联调真实业务系统；R1 Unit body 仍无运行时转换合同。详见 [R1/R2 证据摘要](reports/R2-EVIDENCE.md) |
 | S3、S4 | 范围已确认，规划未实现 | 标准 Linux/容器发行、首云快捷部署，再扩其他云；其他 IM、电话与多租户各自独立 Gate |
 | 初始化与摄入通道 | 网页核心摄入与受限外部创建方向已确认，规划未实现 | S2-a 建设 FAQ、URL 与文件网页摄入，CLI 为可选通道；MCP 受限草稿／候选写入列入 P0，具体接口待登记。强制来源、授权、有效期与撤销约束，产物进入候选审阅，不直接发布；第二轮支持本地 FAQ/文本登记，真实服务端解析/索引尚未实现。见 [初始化与摄入通道](INTAKE-AND-INITIALIZATION.md) |
 | 第三方 Agent 与配套 Skills | 高优先级计划已确认，接口／Skills／Worker 未实现 | S2-a 共用 API、MCP、创建 Skill 与首个 host 联调为 P0；S2-b 只读诊断，S2-c 受控改进与治理，S3 可选 Worker 云交付。原生 MCP Skills 与本地包降级分别验证；见 [开发计划](AGENT-INTEGRATION-PLAN.md) |

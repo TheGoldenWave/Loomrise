@@ -471,6 +471,7 @@ async def drive_reply(
     confirms: ConfirmLedger | None = None,
     is_cancelled: Callable[[], bool] = lambda: False,
     max_confirm_rounds: int = 3,
+    resumed_confirmation: list[bool] | None = None,
 ) -> AsyncGenerator[tuple[str, Any], None]:
     """驱动一次 reply，处理人工确认与恢复。
 
@@ -480,6 +481,27 @@ async def drive_reply(
     pending = first_input
     confirms = confirms or ConfirmLedger()
     rounds = 0
+    if resumed_confirmation is not None:
+        calls = agent.state.get_awaiting_tool_calls(agent.name)
+        if not calls or len(calls) != len(resumed_confirmation):
+            raise RuntimeError("确认 checkpoint 与待处理工具调用不匹配")
+        answers = [bool(value) for value in resumed_confirmation]
+        for answer, call in zip(answers, calls):
+            call_id = getattr(call, "id", "")
+            if call_id:
+                (confirms.confirmed if answer else confirms.denied).add(call_id)
+        emit(
+            "permission.confirm_answered", answers=answers,
+            tools=[getattr(call, "name", None) for call in calls],
+            resumed=True,
+        )
+        pending = UserConfirmResultEvent(
+            reply_id=agent.state.reply_id,
+            confirm_results=[
+                ConfirmResult(confirmed=answer, tool_call=call)
+                for answer, call in zip(answers, calls)
+            ],
+        )
     while True:
         need_confirm: RequireUserConfirmEvent | None = None
         async for evt in agent.reply_stream(pending, yield_final_msg=True):

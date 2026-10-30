@@ -114,6 +114,28 @@ class DurableRunAdapter:
             self.store.begin_run(request, run, [])
         return RunAdmission("created", request, run)
 
+    def wake_confirmation(
+        self, request: ServiceRequest, *, agent_version: str, snapshot: dict[str, Any],
+        input_text: str, previous_run_id: str, generation: int,
+    ) -> tuple[RunAdmission, dict[str, Any]]:
+        run = Run(
+            run_id=new_id("run"), request_id=request.request_id,
+            tenant_id=self.tenant_id, agent_version=agent_version,
+            owner_id=self.owner_id, occupancy_generation=generation,
+            lineage_parent=previous_run_id, snapshot=dict(snapshot),
+        )
+        event = RunEvent(
+            seq=0, event_type="run.started", request_id=request.request_id,
+            run_id=run.run_id, tenant_id=request.tenant_id,
+            agent_version=agent_version, channel=str(request.channel),
+            payload={"input": input_text, "trigger_kind": request.trigger_kind,
+                     "resumed_confirmation": True},
+        ).seal(GENESIS_HASH)
+        state = self.store.begin_confirmation_wake(
+            request, run, [event], previous_run_id=previous_run_id,
+        )
+        return RunAdmission("created", request, run, event), state
+
     def persist(self, evt: RunEvent) -> None:
         """事件落库入口（挂在 `EventLedger.sink` 上，逐条调用）。
 
