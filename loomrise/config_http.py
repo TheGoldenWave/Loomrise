@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import html
 import os
+import time
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 from typing import Any, Iterable
 
@@ -17,16 +20,23 @@ from .configuration import (
     ConfigurationService,
 )
 from .customer_service import CustomerService, CustomerServiceApplication
+from .contact_pages import render_contact_page
 from .durable_store import SqliteStore
+from .contracts import new_id
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _DEFAULT_ALLOWED_ORIGINS = frozenset({
     "http://127.0.0.1:8765", "http://localhost:8765",
 })
+_SSE_KEEPALIVE_SECONDS = 15
+_SSE_POLL_SECONDS = 0.5
+_PUBLIC_INSTANCE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 STORE_KEY = web.AppKey("configuration_store", SqliteStore)
 APPLICATION_KEY = web.AppKey("configuration_application", ConfigurationApplication)
 PRINCIPAL_KEY = web.AppKey("configuration_principal", ConfigurationPrincipal)
 CUSTOMER_APPLICATION_KEY = web.AppKey("customer_service_application", CustomerServiceApplication)
+_LOCAL_RECEPTION_PROVIDER = object()
+_LOCAL_CONTACT_GENERATION_PROVIDER = object()
 
 
 def _normalize_local_origin(origin: str) -> str | None:
@@ -86,6 +96,8 @@ def _http_status(response: dict[str, Any]) -> int:
 def create_configuration_http_app(
     *, principal_path=DEFAULT_PRINCIPAL_FILE, database_path=DEFAULT_DATABASE_FILE,
     allowed_origins: Iterable[str] | None = None,
+    reception_provider: Any = _LOCAL_RECEPTION_PROVIDER,
+    contact_generation_provider: Any = _LOCAL_CONTACT_GENERATION_PROVIDER,
 ) -> web.Application:
     """Build an HTTP adapter bound to one trusted local principal.
 
@@ -94,11 +106,23 @@ def create_configuration_http_app(
     """
     principal = load_configuration_principal(principal_path)
     origin_allowlist = _allowed_origins(allowed_origins)
-    store = SqliteStore(str(database_path))
+    store = SqliteStore(str(database_path), owner_id=new_id('config_http'))
+    store.recover_customer_receptions()
     configuration = ConfigurationService(store)
     application = ConfigurationApplication(configuration)
-    customer_application = CustomerServiceApplication(CustomerService(store, configuration))
-    app = web.Application(client_max_size=14 * 1024 * 1024)
+    if reception_provider is _LOCAL_RECEPTION_PROVIDER:
+        from .model_provider import LocalModelProvider
+        try:
+            reception_provider = LocalModelProvider.from_local_config()
+        except (OSError, ValueError, RuntimeError, KeyError):
+            reception_provider = None
+    if contact_generation_provider is _LOCAL_CONTACT_GENERATION_PROVIDER:
+        contact_generation_provider = reception_provider
+    customer_application = CustomerServiceApplication(CustomerService(
+        store, configuration, reception_provider=reception_provider,
+        contact_generation_provider=contact_generation_provider))
+    app = web.Application(client_max_size=14 * 1024 * 1024,
+                          handler_args={'handler_cancellation': True})
     app[STORE_KEY] = store
     app[APPLICATION_KEY] = application
     app[PRINCIPAL_KEY] = principal
@@ -121,8 +145,8 @@ def create_configuration_http_app(
             response = await handler(request)
         if origin:
             response.headers["Access-Control-Allow-Origin"] = normalized_origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Last-Event-ID"
             response.headers["Vary"] = "Origin"
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -168,11 +192,83 @@ def create_configuration_http_app(
         template = Path(__file__).with_name("customer_widget.html").read_text(encoding="utf-8")
         page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
         page = page.replace("__ENTRY_ID__", html.escape(request.match_info["entry_id"], quote=True))
-        return web.Response(text=page, content_type="text/html", charset="utf-8")
+        page = page.replace("__CONTACT_VERSION__", "")
+        frame_ancestors = " ".join(("'self'", *sorted(origin_allowlist)))
+        return web.Response(text=page, content_type="text/html", charset="utf-8", headers={
+            "Content-Security-Policy": f"frame-ancestors {frame_ancestors}",
+        })
+
+    async def widget_loader(request: web.Request) -> web.Response:
+        if (set(request.query) != {"agent_id", "entry_id"}
+                or len(request.query.getall("agent_id", [])) != 1
+                or len(request.query.getall("entry_id", [])) != 1):
+            raise web.HTTPBadRequest(text="widget loader requires one agent_id and entry_id")
+        agent_id = request.query["agent_id"]
+        entry_id = request.query["entry_id"]
+        if not _PUBLIC_INSTANCE_ID.fullmatch(agent_id) or not _PUBLIC_INSTANCE_ID.fullmatch(entry_id):
+            raise web.HTTPBadRequest(text="invalid public widget identifier")
+
+        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+            principal=request.app[PRINCIPAL_KEY], action="widget.configuration",
+            payload={"agent_id": agent_id, "entry_id": entry_id},
+        )
+        if not result["ok"]:
+            code = result["error"]["code"]
+            status = {"not_found": 404, "forbidden": 403, "release_blocked": 409,
+                      "invalid_request": 400}.get(code, 500)
+            return web.Response(status=status, text="Widget instance is unavailable")
+
+        template = Path(__file__).with_name("widget_loader.js").read_text(encoding="utf-8")
+        script = template.replace("__AGENT_ID__", json.dumps(agent_id))
+        script = script.replace("__ENTRY_ID__", json.dumps(entry_id))
+        script = script.replace("__ALLOWED_ORIGINS__", json.dumps(sorted(origin_allowlist)))
+        return web.Response(text=script, content_type="application/javascript", charset="utf-8",
+                            headers={"Cache-Control": "no-store"})
 
     async def inbox_page(request: web.Request) -> web.Response:
         template = Path(__file__).with_name("customer_inbox.html").read_text(encoding="utf-8")
         page = template.replace("__AGENT_ID__", html.escape(request.match_info["agent_id"], quote=True))
+        return web.Response(text=page, content_type="text/html", charset="utf-8")
+
+    async def contact_page(request: web.Request) -> web.Response:
+        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+            principal=request.app[PRINCIPAL_KEY], action="contact.get",
+            payload={"agent_id": request.match_info["agent_id"], "entry_id": request.match_info["entry_id"]},
+        )
+        return contact_response(result)
+
+    def contact_response(result: dict[str, Any], *, preview: bool = False) -> web.Response:
+        if not result["ok"]:
+            code = result["error"]["code"]
+            status = {"not_found": 404, "forbidden": 403, "release_blocked": 409,
+                      "state_conflict": 409, "invalid_request": 400}.get(code, 400)
+            return web.Response(status=status, text="联系页不可用，请联系管理员检查配置或重新验收版本。")
+        page = render_contact_page(result["result"], preview=preview)
+        return web.Response(text=page, content_type="text/html", charset="utf-8", headers={
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; media-src https:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+        })
+
+    async def contact_preview(request: web.Request) -> web.Response:
+        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+            principal=request.app[PRINCIPAL_KEY], action="contact.preview",
+            payload={"agent_id": request.match_info["agent_id"]},
+        )
+        return contact_response(result, preview=True)
+
+    async def contact_chat(request: web.Request) -> web.Response:
+        agent_id, entry_id, version_id = (request.match_info[name] for name in ("agent_id", "entry_id", "version_id"))
+        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+            principal=request.app[PRINCIPAL_KEY], action="contact.get",
+            payload={"agent_id": agent_id, "entry_id": entry_id},
+        )
+        if not result["ok"]:
+            return contact_response(result)
+        if result["result"]["version_id"] != version_id:
+            return web.Response(status=409, text="联系页已换版，请返回联系页重新咨询。")
+        template = Path(__file__).with_name("customer_widget.html").read_text(encoding="utf-8")
+        values = {"AGENT_ID": agent_id, "ENTRY_ID": entry_id, "CONTACT_VERSION": version_id}
+        import re
+        page = re.sub(r"__(AGENT_ID|ENTRY_ID|CONTACT_VERSION)__", lambda match: html.escape(values[match[1]], quote=True), template)
         return web.Response(text=page, content_type="text/html", charset="utf-8")
 
     async def customer_execute(request: web.Request) -> web.Response:
@@ -187,22 +283,118 @@ def create_configuration_http_app(
                 "result": None,
                 "error": {"code": "invalid_request", "message": "请求必须包含 action 与 payload 对象"},
             }, status=400)
-        result = request.app[CUSTOMER_APPLICATION_KEY].execute(
-            principal=request.app[PRINCIPAL_KEY],
-            action=body["action"], payload=body["payload"],
-        )
+        if body['action'] in {'widget.send', 'contact.generate', 'inbox.assistance.generate'}:
+            result = await request.app[CUSTOMER_APPLICATION_KEY].execute_async(
+                principal=request.app[PRINCIPAL_KEY], action=body['action'], payload=body['payload'])
+        elif body['action'] == 'material.process':
+            result = await asyncio.to_thread(request.app[CUSTOMER_APPLICATION_KEY].execute,
+                principal=request.app[PRINCIPAL_KEY], action=body['action'], payload=body['payload'])
+        else:
+            result = request.app[CUSTOMER_APPLICATION_KEY].execute(
+                principal=request.app[PRINCIPAL_KEY],
+                action=body["action"], payload=body["payload"],
+            )
         code = result.get("error", {}).get("code") if not result.get("ok") else None
         status = {"invalid_request": 400, "forbidden": 403, "not_found": 404,
-                  "state_conflict": 409, "release_blocked": 409}.get(code, 200)
+                  "state_conflict": 409, "release_blocked": 409, "revision_conflict": 409,
+                  "generation_unavailable": 503, "generation_failed": 502,
+                  "assistance_unavailable": 503, "assistance_failed": 502,
+                  "assistance_timeout": 504, "assistance_invalid_response": 502}.get(code, 200)
         return web.json_response(result, status=status)
+
+    async def inbox_events_stream(request: web.Request) -> web.StreamResponse:
+        """Replay the durable, redacted Inbox event log over a resumable SSE stream.
+
+        Reconnects start from the consumer's durable application ack.  The SSE
+        Last-Event-ID header records transport delivery only and is ignored;
+        this stream does not claim OS push delivery or message read state.
+        """
+        unknown_query = set(request.query) - {"agent_id", "consumer_id"}
+        if unknown_query:
+            raise web.HTTPBadRequest(text="仅支持 agent_id 与 consumer_id 参数")
+        if any(len(request.query.getall(name, [])) != 1 for name in request.query):
+            raise web.HTTPBadRequest(text="每个查询参数只能出现一次")
+        agent_id = request.query.get("agent_id")
+        consumer_id = request.query.get("consumer_id")
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            raise web.HTTPBadRequest(text="agent_id must be a non-empty string")
+        if not isinstance(consumer_id, str) or not consumer_id:
+            raise web.HTTPBadRequest(text="consumer_id must be a non-empty string")
+        customer = request.app[CUSTOMER_APPLICATION_KEY]
+        principal = request.app[PRINCIPAL_KEY]
+        try:
+            receipt = customer.service.inbox_consumer_cursor(
+                principal=principal, agent_id=agent_id, consumer_id=consumer_id,
+            )
+            # Validate scope before committing to a long-lived response so
+            # failures remain ordinary HTTP statuses.
+            customer.service.inbox_events(
+                principal=principal, agent_id=agent_id, after_sequence=receipt['cursor'], limit=100,
+            )
+        except PermissionError as exc:
+            raise web.HTTPForbidden(text=str(exc)) from None
+        except (KeyError, ValueError) as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
+
+        delivery_cursor = receipt['cursor']
+
+        response = web.StreamResponse(status=200, headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-store, no-transform",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+            "Connection": "keep-alive",
+        })
+        origin = request.headers.get("Origin")
+        if origin:
+            normalized_origin = _normalize_local_origin(origin)
+            if normalized_origin is not None:
+                response.headers["Access-Control-Allow-Origin"] = normalized_origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Last-Event-ID"
+                response.headers["Vary"] = "Origin"
+        await response.prepare(request)
+        last_heartbeat = time.monotonic()
+        try:
+            while True:
+                page = customer.service.inbox_events(
+                    principal=principal, agent_id=agent_id,
+                    after_sequence=delivery_cursor, limit=100,
+                )
+                for event in page["events"]:
+                    payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                    await response.write(
+                        f"id: {event['sequence']}\nevent: inbox\ndata: {payload}\n\n".encode("utf-8")
+                    )
+                    # This cursor only avoids duplicates within this connection.
+                    # A reconnect rereads the durable application ack above.
+                    delivery_cursor = event["sequence"]
+                if page["has_more"]:
+                    continue
+                now = time.monotonic()
+                if now - last_heartbeat >= _SSE_KEEPALIVE_SECONDS:
+                    await response.write(b": keep-alive\n\n")
+                    last_heartbeat = now
+                await asyncio.sleep(_SSE_POLL_SECONDS)
+        except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
+            pass
+        finally:
+            response.force_close()
+        return response
 
     app.router.add_get("/api/configuration/health", health)
     app.router.add_post("/api/configuration", execute)
     app.router.add_options("/api/configuration", execute)
     app.router.add_post("/api/customer-service", customer_execute)
     app.router.add_options("/api/customer-service", customer_execute)
+    app.router.add_get("/api/customer-service/inbox/events", inbox_events_stream, allow_head=False)
+    app.router.add_options("/api/customer-service/inbox/events", inbox_events_stream)
+    app.router.add_get("/widget.js", widget_loader, allow_head=False)
     app.router.add_get("/widget/{agent_id}/{entry_id}", widget_page)
     app.router.add_get("/inbox/{agent_id}", inbox_page)
+    app.router.add_get("/contact/{agent_id}/{entry_id}", contact_page)
+    app.router.add_get("/contact/{agent_id}/{entry_id}/chat/{version_id}", contact_chat)
+    app.router.add_get("/contact-preview/{agent_id}", contact_preview)
 
     async def close_store(_: web.Application) -> None:
         store.close()
@@ -222,7 +414,7 @@ def serve_configuration_http(
         allowed_origins=allowed_origins,
     )
     print(f"Loomrise configuration API: http://127.0.0.1:{port}")
-    web.run_app(app, host="127.0.0.1", port=port, print=None)
+    web.run_app(app, host="127.0.0.1", port=port, print=None, handler_cancellation=True)
 
 
 __all__ = [

@@ -1,9 +1,11 @@
-"""Deterministic R1 configuration checks for draft/frozen manifests.
+"""Deterministic configuration checks for draft/frozen manifests.
 
 This module validates declarative configuration only. R1 keeps Unit ``body``
 empty; it does not parse or execute a graph, compose units, or run concurrent
-loads. Use ``submitting=True`` for freeze/check validation. Draft validation is
-permissive so incomplete editor state can be retained.
+loads. Explicit ``unit-graph-v1`` drafts delegate structural checks to the R3
+validator; unsupported runtime capabilities are rejected at their own paths.
+Use ``submitting=True`` for freeze/check validation. Incomplete editor state
+can always be retained by the draft-save service.
 """
 
 from __future__ import annotations
@@ -16,9 +18,11 @@ from .validation import MAX_CONDITION_DEPTH, validate_condition_depth
 
 UNIT_FIELDS = (
     "unit_id", "version", "load_mode", "entry_ports", "reads", "writes",
-    "exit_ports", "on_event", "fallback", "max_rounds", "body",
+    "exit_ports", "on_event", "fallback", "max_rounds", "waits", "load_scope", "body",
 )
 LOAD_MODES = {"routed", "concurrent"}
+CONCURRENT_CONFIG_FIELDS = {"max_units"}
+LOAD_SCOPE_FIELDS = {"after", "exclude"}
 RULE_SCOPES = {"global", "task", "skill"}
 RULE_VERDICTS = {"deny", "require", "stop", "dedupe"}
 RULE_SEVERITIES = {"normal", "redline"}
@@ -26,6 +30,15 @@ FACT_OPERATORS = {
     "eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte", "between",
     "matches", "exists", "is_set", "is_unset", "changed_to",
 }
+# changed_to 需要「服务端签发、调用方不可自报」的 trusted previous-value 来源。
+# 当前传入 GraphRuntime 的 state 完全来自调用方 routing_state，唯一的服务端持久投影
+# state_window_counts 只有 attempts/runs 计数，没有按字段的前值快照；冻结版本里的常量
+# 不是真实前值，仅凭表达式启用会让调用方凭当前输入轻松满足跃迁，并伪装成有权威前值来源。
+# 在引入可信前值来源前，冻结校验与运行时都明确拒绝该算子；不放松确定性裁决与两层条件深度上限。
+CHANGED_TO_BLOCKED_REASON = (
+    "changed_to is blocked: no server-issued, caller-unforgeable previous-value source exists; "
+    "state is caller-controlled and the durable provider only exposes run/attempt counts"
+)
 STATE_WINDOWS = {"cycle", "24h", "forever", "session"}
 SYSTEM_FIELDS = {
     "system.channel", "system.attempts", "system.request_id", "system.run_id",
@@ -33,7 +46,7 @@ SYSTEM_FIELDS = {
 }
 KNOWN_EVENTS = {
     "tool_call", "route_step", "recall_hit", "input_matched", "channel",
-    "attempts", "user_hangup", "timeout", "side_effect_unknown", "human_takeover",
+    "attempts", "user_hangup", "timeout", "side_effect_unknown", "handoff", "human_takeover",
 }
 ROUTE_EVENTS = {"user_hangup", "side_effect_unknown", "timeout", "handoff"}
 
@@ -53,7 +66,7 @@ class ValidationIssue:
 def validate_configuration(
     spec: Mapping[str, Any], *, submitting: bool = False
 ) -> list[ValidationIssue]:
-    """Validate an R1 manifest in stable input order.
+    """Validate a manifest in stable input order.
 
     Draft saves intentionally retain incomplete intermediate states. Full
     deterministic checks run when freezing/submitting.
@@ -78,6 +91,8 @@ class _Validator:
         self.units = units if isinstance(units, list) else []
         self.unit_by_id: dict[str, tuple[int, Mapping[str, Any]]] = {}
         self._incoming: set[str] = set()
+        orchestration = spec.get("orchestration")
+        self.graph_mode = isinstance(orchestration, Mapping) and orchestration.get("schema_version") == "unit-graph-v1"
 
     def add(self, path: str, code: str, message: str) -> None:
         self.issues.append(ValidationIssue(path, code, message))
@@ -85,13 +100,36 @@ class _Validator:
     def validate(self) -> None:
         self._validate_root()
         self._index_units()
+        self._validate_concurrent_config()
         for index, unit in enumerate(self.units):
             if isinstance(unit, Mapping):
                 self._validate_unit(index, unit)
         self._validate_g0()
         self._validate_hard_rules()
         self._validate_task_blueprints()
-        self._validate_isolation()
+        if "contact" in self.spec:
+            from .contact_pages import validate_contact
+            try:
+                validate_contact(self.spec["contact"])
+            except ValueError as exc:
+                self.add("$.contact", "invalid_contact_page", str(exc))
+        if 'widget' in self.spec:
+            from .widget_configuration import validate_widget_configuration
+            try:
+                validate_widget_configuration(self.spec['widget'])
+            except ValueError as exc:
+                self.add('$.widget', 'invalid_widget_configuration', str(exc))
+        if 'ai_reception' in self.spec:
+            from .widget_configuration import validate_ai_reception_configuration
+            try:
+                validate_ai_reception_configuration(self.spec['ai_reception'])
+            except ValueError as exc:
+                self.add('$.ai_reception', 'invalid_ai_reception', str(exc))
+        if "orchestration" in self.spec:
+            from .graph_validation import validate_graph_configuration
+            validate_graph_configuration(self)
+        if not self.graph_mode:
+            self._validate_isolation()
 
     def _validate_root(self) -> None:
         if not isinstance(self.spec.get("persona"), Mapping):
@@ -104,6 +142,43 @@ class _Validator:
         for index, unit in enumerate(self.units):
             if not isinstance(unit, Mapping):
                 self.add(f"$.units[{index}]", "invalid_unit", "unit must be an object")
+
+    def _validate_concurrent_config(self) -> None:
+        if not self.graph_mode:
+            return
+        concurrent_units = [
+            unit for unit in self.units
+            if isinstance(unit, Mapping) and unit.get("load_mode") == "concurrent"
+        ]
+        if "concurrent_config" not in self.spec:
+            if concurrent_units:
+                self.add(
+                    "$.concurrent_config.max_units", "missing_concurrent_limit",
+                    "concurrent_config.max_units is required when concurrent Units exist",
+                )
+            return
+        config = self.spec.get("concurrent_config")
+        if not isinstance(config, Mapping):
+            self.add("$.concurrent_config", "invalid_concurrent_config", "concurrent_config must be an object")
+            return
+        for name in config:
+            if name not in CONCURRENT_CONFIG_FIELDS:
+                self.add(
+                    f"$.concurrent_config.{name}", "unsupported_concurrent_config_field",
+                    f"{name} is not part of the concurrent loading contract",
+                )
+        if concurrent_units and "max_units" not in config:
+            self.add(
+                "$.concurrent_config.max_units", "missing_concurrent_limit",
+                "concurrent_config.max_units is required when concurrent Units exist",
+            )
+        if "max_units" in config:
+            limit = config.get("max_units")
+            if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+                self.add(
+                    "$.concurrent_config.max_units", "invalid_concurrent_limit",
+                    "max_units must be a positive integer",
+                )
 
     def _index_units(self) -> None:
         for index, unit in enumerate(self.units):
@@ -120,7 +195,7 @@ class _Validator:
     def _validate_unit(self, index: int, unit: Mapping[str, Any]) -> None:
         base = f"$.units[{index}]"
         for name in UNIT_FIELDS:
-            if name not in unit:
+            if name not in unit and name not in {"waits", "load_scope"}:
                 self.add(f"{base}.{name}", "missing_field", f"{name} is required")
         for name in unit:
             if name not in UNIT_FIELDS:
@@ -136,7 +211,10 @@ class _Validator:
         if not isinstance(mode, str) or mode not in LOAD_MODES:
             self.add(f"{base}.load_mode", "invalid_load_mode", "load_mode must be routed or concurrent")
         elif mode == "concurrent" and self.submitting:
-            self.add(f"{base}.load_mode", "unsupported_concurrent", "concurrent loading is declared but not submittable in R1")
+            if not self.graph_mode:
+                self.add(f"{base}.load_mode", "unsupported_concurrent", "concurrent loading is declared but not submittable in R1")
+
+        self._validate_load_scope(index, unit, mode)
 
         reads = _string_list(unit.get("reads"))
         writes = _string_list(unit.get("writes"))
@@ -161,13 +239,63 @@ class _Validator:
         elif not exit_ports:
             self.add(f"{base}.exit_ports", "missing_exit_port", "unit must declare at least one exit port")
         self._validate_ports(index, unit, entry_ports, exit_ports, reads, writes)
-        self._validate_events(index, unit)
-        self._validate_fallback(index, unit)
+        if not self.graph_mode:
+            self._validate_events(index, unit)
+            self._validate_fallback(index, unit)
         rounds = unit.get("max_rounds")
         if not isinstance(rounds, int) or isinstance(rounds, bool) or rounds < 1:
             self.add(f"{base}.max_rounds", "invalid_max_rounds", "max_rounds must be a positive integer")
-        if unit.get("body") != {}:
+        if not self.graph_mode and unit.get("body") != {}:
             self.add(f"{base}.body", "body_not_empty", "R1 reserves body as an empty object")
+
+    def _validate_load_scope(self, index: int, unit: Mapping[str, Any], mode: Any) -> None:
+        if "load_scope" not in unit:
+            return
+        path = f"$.units[{index}].load_scope"
+        scope = unit.get("load_scope")
+        if mode != "concurrent":
+            self.add(path, "unsupported_load_scope", "load_scope is only valid for concurrent Units")
+            return
+        if not isinstance(scope, Mapping):
+            self.add(path, "invalid_load_scope", "load_scope must be an object with after and/or exclude")
+            return
+        for name in scope:
+            if name not in LOAD_SCOPE_FIELDS:
+                self.add(
+                    f"{path}.{name}", "unsupported_load_scope_field",
+                    f"{name} is not part of the load_scope contract",
+                )
+        known = False
+        if "after" in scope:
+            known = True
+            after = scope.get("after")
+            if not isinstance(after, str) or not after.strip():
+                self.add(f"{path}.after", "invalid_load_scope_after", "after must be a routed Unit id")
+            else:
+                target = self.unit_by_id.get(after)
+                if target is None or target[1].get("load_mode") != "routed":
+                    self.add(f"{path}.after", "unknown_load_scope_after", "after must reference a known routed Unit")
+        if "exclude" in scope:
+            known = True
+            excluded = scope.get("exclude")
+            if not isinstance(excluded, list) or not excluded:
+                self.add(f"{path}.exclude", "invalid_load_scope_exclude", "exclude must be a non-empty array of routed Unit ids")
+            else:
+                seen: set[str] = set()
+                for offset, target_id in enumerate(excluded):
+                    target_path = f"{path}.exclude[{offset}]"
+                    if not isinstance(target_id, str) or not target_id.strip():
+                        self.add(target_path, "invalid_load_scope_exclude_item", "exclude entries must be non-empty Unit ids")
+                        continue
+                    if target_id in seen:
+                        self.add(target_path, "duplicate_load_scope_exclude", "exclude Unit ids must be unique")
+                        continue
+                    seen.add(target_id)
+                    target = self.unit_by_id.get(target_id)
+                    if target is None or target[1].get("load_mode") != "routed":
+                        self.add(target_path, "unknown_load_scope_exclude", "exclude must reference known routed Units")
+        if not known:
+            self.add(path, "invalid_load_scope", "load_scope must declare after and/or exclude")
 
     def _validate_field_list(self, index: int, name: str, values: Any) -> None:
         if not isinstance(values, list):
@@ -320,14 +448,16 @@ class _Validator:
         *,
         deterministic_only: bool,
         allow_legacy: bool = False,
+        allow_positive_llm: bool = False,
     ) -> None:
         malformed = False
         nondeterministic = False
+        invalid_model_use = False
         unknown_fields: list[tuple[str, str]] = []
         unknown_ops: list[tuple[str, str]] = []
 
-        def walk(node: Any, node_path: str) -> Any:
-            nonlocal malformed, nondeterministic
+        def walk(node: Any, node_path: str, *, model_allowed: bool = True) -> Any:
+            nonlocal malformed, nondeterministic, invalid_model_use
             if not isinstance(node, Mapping):
                 malformed = True
                 return {"arg": "invalid"}
@@ -335,7 +465,14 @@ class _Validator:
                 return {}
             if "llm" in node or "llm_judge" in node:
                 nondeterministic = True
-                return {"llm": node.get("llm", node.get("llm_judge"))}
+                if not model_allowed:
+                    invalid_model_use = True
+                model = node.get("llm", node.get("llm_judge"))
+                if len(node) != 1 or not isinstance(model, Mapping) or set(model) != {"prompt"} or (
+                    not isinstance(model.get("prompt"), str) or not model["prompt"].strip()
+                ):
+                    malformed = True
+                return {"llm": model}
             combinators = {
                 "all_of": ("all", True), "any_of": ("any", True), "none_of": ("not", False),
                 "all": ("all", True), "any": ("any", True), "not": ("not", False),
@@ -353,7 +490,11 @@ class _Validator:
                 elif not list_required and (not isinstance(children, list) or len(children) != 1):
                     malformed = True
                     children = children if isinstance(children, list) else [children]
-                return {normalized: [walk(item, f"{node_path}.{key}[{i}]") for i, item in enumerate(children)]}
+                child_model_allowed = model_allowed and key not in ("none_of", "not")
+                return {normalized: [
+                    walk(item, f"{node_path}.{key}[{i}]", model_allowed=child_model_allowed)
+                    for i, item in enumerate(children)
+                ]}
             atom_types = [key for key in ("fact", "event", "state") if key in node]
             if atom_types:
                 if len(atom_types) != 1 or len(node) != 1:
@@ -377,6 +518,9 @@ class _Validator:
                     name = atom.get("event")
                     if not isinstance(name, str) or name not in KNOWN_EVENTS:
                         malformed = True
+                    attributes = atom.get('attributes', {})
+                    if not isinstance(attributes, Mapping) or any(not isinstance(key, str) for key in attributes):
+                        malformed = True
                     return {"arg": f"event.{name or 'invalid'}"}
                 metric, window, op = atom.get("metric"), atom.get("window", "cycle"), atom.get("op")
                 if not isinstance(metric, str) or not metric or not isinstance(window, str) or window not in STATE_WINDOWS:
@@ -398,12 +542,15 @@ class _Validator:
             return {"arg": "invalid"}
 
         normalized = walk(condition, path)
-        if nondeterministic:
-            message = "this condition surface must be deterministic" if deterministic_only else "HardRule v0.2 conditions must be deterministic"
+        if nondeterministic and (
+            deterministic_only or not allow_positive_llm or invalid_model_use
+        ):
+            message = ("model leaves are supported only in positive llm/hybrid graph edge conditions"
+                       if allow_positive_llm else "this condition surface must be deterministic")
             self.add(path, "nondeterministic_condition", message)
             return
         if malformed:
-            self.add(path, "invalid_condition", "condition must use fact/event/state atoms and supported combinators")
+            self.add(path, "invalid_condition", "condition must use supported atoms and combinators; a model leaf needs only a non-empty prompt")
             return
         for field_path, field_name in unknown_fields:
             self.add(field_path, "undeclared_condition_field", f"condition field {field_name!r} is not declared")

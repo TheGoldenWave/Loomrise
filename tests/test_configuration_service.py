@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import os
 import tempfile
 import unittest
@@ -14,6 +15,7 @@ from loomrise.configuration import (
     RevisionConflict,
     StableVersionError,
     field_diff,
+    object_diff,
 )
 from loomrise.durable_store import SqliteStore
 
@@ -137,6 +139,7 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         self.assertEqual(saved["diff"], [{
             "path": "$.persona.goal", "before": "原始目标", "after": "更新后的目标",
         }])
+        self.assertEqual(saved["object_diff"], object_diff(spec("原始目标"), updated))
 
         with self.assertRaises(RevisionConflict) as caught:
             self.service.save_draft(
@@ -152,6 +155,7 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         )
         self.assertEqual(candidate["source_revision"], 2)
         self.assertEqual(candidate["status"], "frozen")
+        self.assertEqual(candidate["object_diff"], saved["object_diff"])
         self.assertEqual(candidate["diff"], [{
             "path": "$.persona.goal", "before": "原始目标", "after": "更新后的目标",
         }])
@@ -319,6 +323,46 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         self.assertEqual(entry["version_id"], "sandbox-v1")
         self.assertEqual(entry["config"]["persona"]["goal"], "原始目标")
 
+    def test_published_sandbox_entry_list_is_read_only_scoped_and_excludes_drafts(self):
+        self.seed()
+        candidate = self.service.freeze_candidate(
+            tenant_id="tenant-a", agent_id="expert-a", expected_revision=1,
+            idempotency_key="release-entry-list",
+        )
+        self.store.approve_release_candidate(
+            tenant_id="tenant-a", agent_id="expert-a",
+            candidate_id=candidate["candidate_id"], content_hash=candidate["content_hash"],
+            environment="sandbox", entry_id="visitor-entry", version_id="sandbox-v1",
+            approved_by="owner",
+        )
+        self.store.publish_sandbox_candidate(
+            tenant_id="tenant-a", agent_id="expert-a",
+            candidate_id=candidate["candidate_id"], entry_id="visitor-entry",
+            version_id="sandbox-v1",
+        )
+        app = ConfigurationApplication(self.service)
+        owner = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="owner", role="owner", agent_ids=("expert-a",),
+        )
+        viewer = ConfigurationPrincipal(
+            tenant_id="tenant-a", actor_id="viewer", role="viewer", agent_ids=("expert-a",),
+        )
+        listed = app.execute(principal=viewer, action="release.entry.list", payload={
+            "agent_id": "expert-a",
+        })
+        self.assertTrue(listed["ok"], listed)
+        self.assertEqual([item["entry_id"] for item in listed["result"]["items"]], ["visitor-entry"])
+        self.assertNotIn("config", listed["result"]["items"][0])
+        self.assertNotIn("tenant_id", listed["result"]["items"][0])
+        self.assertNotIn("content_hash", listed["result"]["items"][0])
+        forbidden = app.execute(principal=viewer, action="release.entry.list", payload={
+            "agent_id": "expert-b",
+        })
+        self.assertEqual(forbidden["error"]["code"], "forbidden")
+        self.assertTrue(app.execute(principal=owner, action="release.entry.list", payload={
+            "agent_id": "expert-a",
+        })["ok"])
+
     def test_faq_ingest_retry_revoke_and_cache_invalidation(self):
         source = self.service.create_knowledge_source(
             tenant_id="tenant-a", agent_id="expert-a", kind="faq",
@@ -398,20 +442,47 @@ class TestDraftLifecycle(ConfigurationServiceCase):
         self.assertEqual(runtime["error"]["code"], "release_blocked")
 
     def test_failed_file_ingest_is_distinct_and_retryable(self):
+        path = os.path.join(self.temp.name, "repaired.txt")
         source = self.service.create_knowledge_source(
             tenant_id="tenant-a", agent_id="expert-a", kind="file",
-            locator=os.path.join(self.temp.name, "missing.txt"),
-            display_name="missing.txt", authorization="licensed",
+            locator=path,
+            display_name="repaired.txt", authorization="licensed",
         )
         failed = self.service.ingest_knowledge_source(
             tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
         )
         self.assertEqual(failed["state"], "failed")
+        with open(path, "w", encoding="utf-8") as repaired:
+            repaired.write("退费规则：开课前可申请。")
         retried = self.service.retry_knowledge_source(
             tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
         )
-        self.assertEqual(retried["state"], "failed")
+        self.assertEqual(retried["state"], "ready")
         self.assertEqual(retried["attempt_count"], 2)
+        self.assertEqual(retried["content_hash"], hashlib.sha256(
+            "退费规则：开课前可申请。".encode("utf-8")).hexdigest())
+        self.assertEqual(self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="退费规则",
+        )[0]["text"], "退费规则：开课前可申请。")
+
+    def test_url_ingest_indexes_fetched_text_and_records_hash(self):
+        source = self.service.create_knowledge_source(
+            tenant_id="tenant-a", agent_id="expert-a", kind="url",
+            locator="https://example.test/faq", display_name="FAQ URL",
+            authorization="licensed",
+        )
+        content = "退费规则：开课前可申请。\n\n改期规则：提前三天联系。"
+        with patch("loomrise.configuration.fetch_https_text", return_value=content) as fetch:
+            result = self.service.ingest_knowledge_source(
+                tenant_id="tenant-a", agent_id="expert-a", source_id=source["source_id"],
+            )
+        fetch.assert_called_once_with("https://example.test/faq")
+        self.assertEqual(result["state"], "ready")
+        self.assertEqual(result["content_hash"], hashlib.sha256(content.encode("utf-8")).hexdigest())
+        matches = self.service.search_ingested_knowledge(
+            tenant_id="tenant-a", agent_id="expert-a", query="退费规则",
+        )
+        self.assertEqual([item["text"] for item in matches], ["退费规则：开课前可申请。"])
 
     def test_url_ingest_records_network_failure_and_can_be_retried(self):
         source = self.service.create_knowledge_source(
@@ -453,6 +524,63 @@ class TestDraftLifecycle(ConfigurationServiceCase):
 
 
 class TestFieldDiff(unittest.TestCase):
+    def test_object_alignment_and_priority_do_not_report_reordered_content(self):
+        before = {"units": [{"unit_id": "b"}, {"unit_id": "a"}], "orchestration": {
+            "edges": [{"id": "b", "condition": True}, {"id": "a", "condition": False}]}}
+        original = deepcopy(before)
+        after = deepcopy(before)
+        after["units"].reverse()
+        after["orchestration"]["edges"].reverse()
+        changes = object_diff(before, after)["changes"]
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]["operation"], "priority")
+        self.assertEqual(changes[0]["before"], ["b", "a"])
+        self.assertEqual(changes[0]["after"], ["a", "b"])
+        self.assertEqual(before, original)
+
+    def test_nested_ports_edges_and_nodes_are_separately_identified(self):
+        before = {"units": [{"unit_id": "outer", "entry_ports": [{"port": "in", "requires": []}],
+                             "exit_ports": [{"port": "out", "completion": True}], "body": {
+                                 "nodes": [{"id": "old"}], "edges": [{"id": "route", "condition": True}]}}]}
+        after = deepcopy(before)
+        owner = after["units"][0]
+        owner["entry_ports"][0]["requires"] = ["phone"]
+        owner["exit_ports"][0]["completion"] = False
+        owner["body"]["nodes"] = [{"id": "new"}]
+        owner["body"]["edges"][0]["condition"] = False
+        changes = object_diff(before, after)["changes"]
+        self.assertEqual({(c["object_type"], c["object_id"], c["operation"]) for c in changes}, {
+            ("entry_port", "in", "changed"), ("exit_port", "out", "changed"),
+            ("edge", "route", "changed"), ("node", "old", "removed"), ("node", "new", "added")})
+        self.assertTrue(all('unit_id="outer"' in c["path"] for c in changes))
+
+    def test_ambiguous_identity_uses_explicit_positional_fallback(self):
+        for items in ([{"id": "x"}, {"id": "x"}], [{"condition": True}]):
+            result = object_diff({"orchestration": {"edges": items}}, {"orchestration": {"edges": []}})
+            self.assertEqual(result["diagnostics"][0]["code"], "ambiguous_identity")
+            self.assertTrue(all(c["operation"] == "positional" for c in result["changes"]))
+
+    def test_port_collection_add_remove_and_unknown_array_order_remain_visible(self):
+        before = {"units": [{"unit_id": "u"}], "legacy": {"nodes": [{"id": "a"}, {"id": "b"}]}}
+        after = deepcopy(before)
+        after["units"][0]["entry_ports"] = [{"port": "in", "requires": []}]
+        after["legacy"]["nodes"].reverse()
+        result = object_diff(before, after)["changes"]
+        port = next(c for c in result if c["object_type"] == "entry_port")
+        self.assertEqual((port["object_id"], port["operation"]), ("in", "added"))
+        self.assertFalse(port["before_exists"])
+        self.assertEqual(len([c for c in result if c["path"].startswith("$.legacy.nodes")]), 2)
+        removed = object_diff(after, before)["changes"]
+        self.assertEqual(next(c for c in removed if c["object_type"] == "entry_port")["operation"], "removed")
+
+    def test_adding_condition_field_is_an_edge_modification_not_a_new_edge(self):
+        before = {"orchestration": {"edges": [{"id": "e", "condition": {}}]}}
+        after = deepcopy(before)
+        after["orchestration"]["edges"][0]["condition"]["always"] = True
+        change, = object_diff(before, after)["changes"]
+        self.assertEqual((change["object_type"], change["object_id"], change["operation"]), ("edge", "e", "changed"))
+        self.assertFalse(change["before_exists"])
+
     def test_boolean_and_number_are_distinct_json_values(self):
         self.assertEqual(field_diff({"enabled": True}, {"enabled": 1}), [{
             "path": "$.enabled", "before": True, "after": 1,

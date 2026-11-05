@@ -86,18 +86,20 @@ class DurableRunAdapter:
             lineage_parent=lineage_parent,
             snapshot=dict(snapshot or {}),
         )
+        cycle_payload = {'service_cycle': request.service_cycle.to_dict()} if request.service_cycle else {}
         if request.event_identity(scenario_pack_id) is not None:
             payload_hash = sha256(json.dumps({
                 "text": input_text,
                 "subject_id": request.persistent_subject,
                 "subject_scope": str(request.subject_scope),
+                **cycle_payload,
             }, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
             first = RunEvent(
                 seq=event_seq, event_type="run.started", request_id=request.request_id,
                 run_id=run.run_id, tenant_id=request.tenant_id, agent_version=agent_version,
                 channel=str(request.channel), media_session_id=media_session_id,
                 payload={"trigger_kind": request.trigger_kind, "input": input_text,
-                         "trigger_event_id": request.trigger_event_id, "event_deduplication": True},
+                         "trigger_event_id": request.trigger_event_id, "event_deduplication": True, **cycle_payload},
             ).seal(GENESIS_HASH)
             return self.store.admit_event(
                 request, run, scenario_pack_id=scenario_pack_id,
@@ -106,10 +108,26 @@ class DurableRunAdapter:
         if recovery_previous_run_id is not None:
             if recovery_expected_request_state is None:
                 raise ValueError("恢复运行必须提供预期请求状态")
+            first = RunEvent(
+                seq=event_seq, event_type="run.started", request_id=request.request_id,
+                run_id=run.run_id, tenant_id=request.tenant_id, agent_version=agent_version,
+                channel=str(request.channel), media_session_id=media_session_id,
+                payload={"trigger_kind": request.trigger_kind, "input": input_text,
+                         "event_deduplication": False, **cycle_payload},
+            ).seal(GENESIS_HASH)
             self.store.begin_recovered_run(
-                request, run, [], previous_run_id=recovery_previous_run_id,
+                request, run, [first], previous_run_id=recovery_previous_run_id,
                 expected_request_state=recovery_expected_request_state,
             )
+            return RunAdmission("created", request, run, first)
+        elif request.service_cycle is not None:
+            first = RunEvent(seq=event_seq, event_type='run.started', request_id=request.request_id,
+                run_id=run.run_id, tenant_id=request.tenant_id, agent_version=agent_version,
+                channel=str(request.channel), media_session_id=media_session_id,
+                payload={'trigger_kind': request.trigger_kind, 'input': input_text,
+                         'event_deduplication': False, **cycle_payload}).seal(GENESIS_HASH)
+            self.store.begin_run(request, run, [first])
+            return RunAdmission('created', request, run, first)
         else:
             self.store.begin_run(request, run, [])
         return RunAdmission("created", request, run)
@@ -187,6 +205,79 @@ class DurableRunAdapter:
             reason=reason,
         )
         run.status = final
+
+    def suspend_wait(
+        self,
+        run: Run,
+        *,
+        waiting_on: str,
+        timeout_ms: int | None = None,
+        timeout_to: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        request_state: str = "waiting",
+        events: list[RunEvent] | None = None,
+    ) -> dict[str, Any]:
+        evt = self._pending_finish.pop(run.run_id, None)
+        if evt is not None:
+            raise RuntimeError("waiting run 不应携带 pending finish")
+        parked = self.store.suspend_wait(
+            run.run_id, request_state=request_state, waiting_on=waiting_on,
+            generation=run.occupancy_generation, timeout_ms=timeout_ms,
+            timeout_to=timeout_to, metadata=metadata,
+            events=events,
+        )
+        run.status = RunStatus.WAITING
+        return parked
+
+    def wait_row(self, run_id: str) -> dict[str, Any] | None:
+        return self.store.wait_row(run_id)
+
+    def due_waits(self) -> list[dict[str, Any]]:
+        return self.store.due_waits(tenant_id=self.tenant_id)
+
+    def wake_wait(self, run_id: str, *, wake_kind: str = "event", generation: int | None = None,
+                  agent_version: str | None = None,
+                  wake_state: dict[str, Any] | None = None) -> dict[str, Any]:
+        row = self.store.run_row(run_id)
+        if row is None:
+            raise KeyError(f"未知 run {run_id}")
+        tail = self.store.last_event(run_id)
+        evt = RunEvent(
+            seq=self.store.next_seq(run_id), event_type="run.wait_woken",
+            request_id=row["request_id"], run_id=run_id, tenant_id=row["tenant_id"],
+            agent_version=row["agent_version"], channel="",
+            payload={"wake_kind": wake_kind,
+                     "event": (wake_state or {}).get("event"),
+                     "timeout_to": (wake_state or {}).get("__wait_timeout_to"),
+                     "generation": int(row["occupancy_generation"] if generation is None else generation)},
+        ).seal(tail.hash if tail else GENESIS_HASH)
+        result = self.store.wake_wait(
+            run_id, tenant_id=self.tenant_id,
+            agent_version=agent_version if agent_version is not None else str(row["agent_version"]),
+            generation=int(row["occupancy_generation"] if generation is None else generation),
+            wake_kind=wake_kind,
+            events=[evt],
+            wake_state=wake_state,
+        )
+        result["wake_event"] = evt
+        return result
+
+    def cancel_wait(self, run: Run, *, reason: str = "user_cancel") -> list[RunEvent]:
+        tail = self.store.last_event(run.run_id)
+        request_event = RunEvent(
+            seq=self.store.next_seq(run.run_id), event_type="run.cancel_requested",
+            request_id=run.request_id, run_id=run.run_id, tenant_id=run.tenant_id,
+            agent_version=run.agent_version, channel="", payload={"reason": reason},
+        ).seal(tail.hash if tail else GENESIS_HASH)
+        finished = RunEvent(
+            seq=request_event.seq + 1, event_type="run.cancel_confirmed",
+            request_id=run.request_id, run_id=run.run_id, tenant_id=run.tenant_id,
+            agent_version=run.agent_version, channel="", payload={"waiting": True, "reason": reason},
+        ).seal(request_event.hash)
+        self.store.cancel_wait(run.run_id, tenant_id=self.tenant_id, reason=reason,
+                               events=[request_event, finished])
+        run.status = RunStatus.CANCELLED
+        return [request_event, finished]
 
     # -- 查询 --------------------------------------------------------------
     def is_running(self, run_id: str) -> bool:

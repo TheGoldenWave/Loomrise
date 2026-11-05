@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -106,7 +107,7 @@ class TestSchema(StoreCase):
             expires_at="2099-01-01T00:00:00+00:00", content=b"guide",
         )
         legacy.close()
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             connection.execute("ALTER TABLE material_versions RENAME TO material_versions_v10")
             connection.execute(
                 "CREATE TABLE material_versions (version_id TEXT PRIMARY KEY,"
@@ -133,7 +134,7 @@ class TestSchema(StoreCase):
                 migrated._conn.execute(
                     "SELECT value FROM meta WHERE key='schema_version'",
                 ).fetchone()[0],
-                "10",
+                str(SCHEMA_VERSION),
             )
         finally:
             migrated.close()

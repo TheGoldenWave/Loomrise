@@ -8,6 +8,7 @@
   <style>
     :root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #21332f; background: #f4f7f5; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; }
     main { width: min(100%, 520px); height: min(720px, calc(100vh - 32px)); display: flex; flex-direction: column; background: white; border: 1px solid #d7e0dc; border-radius: 8px; overflow: hidden; }
     header { padding: 16px 20px; border-bottom: 1px solid #e1e8e5; display: flex; align-items: center; justify-content: space-between; }
@@ -18,35 +19,218 @@
     .visitor { align-self: flex-end; background: #dcefe8; }
     .operator { align-self: flex-start; border: 1px solid #e0e6e3; background: white; }
     .assistant { align-self: flex-start; background: #f2eee1; }
+    .citation { display: block; margin-top: 8px; border-top: 1px solid #cfcbbd; padding-top: 6px; font-size: 12px; }
+    #reception { margin: 0; padding: 8px 16px; color: #536b65; font-size: 13px; }
     .attachment { margin-top: 8px; padding: 6px 9px; border: 1px solid #9eb9af; border-radius: 4px; background: white; color: #176b55; font: inherit; cursor: pointer; }
     form { border-top: 1px solid #e1e8e5; padding: 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
     textarea { grid-column: 1 / -1; width: 100%; min-height: 78px; resize: vertical; border: 1px solid #bac9c3; border-radius: 5px; padding: 10px; font: inherit; }
     label { align-self: center; color: #435b55; font-size: 13px; }
-    button { min-height: 40px; border: 0; border-radius: 5px; padding: 0 16px; color: white; background: #176b55; font: inherit; cursor: pointer; }
+    button { min-height: 40px; border: 0; border-radius: 5px; padding: 0 16px; color: var(--widget-accent-text, white); background: var(--widget-accent, #176b55); font: inherit; cursor: pointer; }
     button:focus-visible, textarea:focus-visible { outline: 3px solid #d79840; outline-offset: 2px; }
     button:disabled { opacity: .55; cursor: wait; }
+    #intro { padding: 12px 20px; border-bottom: 1px solid #e1e8e5; }
+    #intro p { margin: 4px 0; }
+    #availability { color: #536b65; font-size: 13px; }
+    #faqQuestions { display: grid; gap: 6px; margin-top: 8px; }
+    #faqQuestions button { width: 100%; min-height: 40px; padding: 6px 10px; text-align: left; white-space: normal; overflow-wrap: anywhere; color: var(--widget-accent, #176b55); background: white; border: 1px solid #c8d8d2; }
+    #logo { width: 32px; height: 32px; object-fit: contain; }
+    #dismiss { min-height: 32px; padding: 0 8px; color: #435b55; background: transparent; border: 1px solid #bac9c3; }
+    #visitorProfile { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+    #visitorProfile label { display: grid; width: 100%; gap: 5px; }
+    #visitorProfile input { min-width: 0; min-height: 44px; border: 1px solid #bac9c3; border-radius: 5px; padding: 8px; font: inherit; }
+    #booking { display: inline-block; color: #176b55; padding: 8px 0; }
     @media (max-width: 480px) { body { padding: 0; } main { height: 100vh; border: 0; border-radius: 0; } }
   </style>
 </head>
-<body data-agent-id="__AGENT_ID__" data-entry-id="__ENTRY_ID__">
+<body data-agent-id="__AGENT_ID__" data-entry-id="__ENTRY_ID__" data-contact-version="__CONTACT_VERSION__"
+      data-bridge-allowed-origins="http://127.0.0.1:8765,http://localhost:8765">
   <main aria-label="课程咨询">
-    <header><h1>课程咨询</h1><span id="status" role="status">正在连接</span></header>
+    <header><img id="logo" hidden alt="" src="data:,"><h1>课程咨询</h1><span id="status" role="status">正在连接</span><button id="dismiss" hidden type="button" aria-label="关闭">×</button></header>
+    <section id="intro" hidden><p id="greeting"></p><p id="availability"></p><section id="faqSuggestions" hidden aria-label="常见问题"><p>常见问题</p><div id="faqQuestions"></div></section><a id="booking" hidden target="_blank" rel="noopener noreferrer">前往外部预约页面</a></section>
+    <form id="visitorProfile" hidden aria-label="访客信息"><div id="profileFields"></div><button id="begin" type="submit">开始咨询</button></form>
     <section id="messages" aria-live="polite" aria-label="对话记录"></section>
-    <form id="form">
+    <p id="reception" role="status" hidden></p>
+    <form id="form" hidden>
       <textarea id="text" maxlength="20000" placeholder="输入您的问题" required aria-label="咨询内容"></textarea>
-      <label><input id="handoff" type="checkbox"> 请人工客服协助</label>
+      <label><input id="handoff" type="checkbox"> <span id="handoffLabel">请人工客服协助</span></label>
       <button id="send" type="submit">发送</button>
     </form>
   </main>
   <script>
+    /* loomrise-webview-bridge-contract: browser host handoff only; no native platform claim. */
+    const LOOMRISE_WEBVIEW_BRIDGE_CONTRACT = (() => {
+      const VERSION = 'loomrise.webview.bridge.v1';
+      const HOST_SOURCE = 'loomrise.host';
+      const WIDGET_SOURCE = 'loomrise.customer-widget';
+      const INCOMING = Object.freeze({ HANDOFF: 'session.handoff', DISMISS: 'dismiss' });
+      const OUTGOING = Object.freeze({ READY: 'ready', ACCEPTED: 'session.accepted', REJECTED: 'session.rejected', DISMISSED: 'dismissed' });
+      const ENVELOPE_KEYS = new Set(['schema', 'source', 'target', 'type', 'request_id', 'payload']);
+      const AUTHORITY_KEYS = new Set([
+        'tenant', 'tenant_id', 'tenantId', 'actor', 'actor_id', 'actorId', 'subject', 'subject_id',
+        'user', 'user_id', 'userId', 'role', 'principal', 'permissions', 'authorization',
+        'agent_id', 'agentId', 'entry_id', 'entryId'
+      ]);
+      const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+      function normalizeOrigin(value) {
+        if (typeof value !== 'string' || !value.trim()) return null;
+        try {
+          const url = new URL(value);
+          if (!['http:', 'https:'].includes(url.protocol) || !LOOPBACK_HOSTS.has(url.hostname)
+              || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+          return url.origin;
+        } catch { return null; }
+      }
+
+      function isRecord(value) {
+        return value !== null && typeof value === 'object' && !Array.isArray(value);
+      }
+
+      function containsAuthorityKey(value, seen = new Set()) {
+        if (!isRecord(value) || seen.has(value)) return false;
+        seen.add(value);
+        return Object.entries(value).some(([key, item]) => AUTHORITY_KEYS.has(key)
+          || (isRecord(item) && containsAuthorityKey(item, seen)));
+      }
+
+      function collectAllowedOrigins(win, doc) {
+        const origins = new Set(['http://127.0.0.1:8765', 'http://localhost:8765']);
+        const add = value => {
+          const normalized = normalizeOrigin(value);
+          if (normalized) origins.add(normalized);
+        };
+        for (const value of String(doc?.body?.dataset?.bridgeAllowedOrigins || '').split(',')) add(value.trim());
+        for (const value of Array.isArray(win.__LOOMRISE_WEBVIEW_ALLOWED_ORIGINS__)
+          ? win.__LOOMRISE_WEBVIEW_ALLOWED_ORIGINS__ : []) add(value);
+        return origins;
+      }
+
+      function validatePayload(type, payload) {
+        if (!isRecord(payload) || containsAuthorityKey(payload)) return null;
+        if (type === INCOMING.DISMISS) {
+          if (Object.keys(payload).some(key => key !== 'reason')
+              || (payload.reason !== undefined && (typeof payload.reason !== 'string' || payload.reason.length > 100))) return null;
+          return { reason: payload.reason || 'host' };
+        }
+        if (Object.keys(payload).some(key => !['session', 'identity'].includes(key))) return null;
+        const result = {};
+        if (payload.session !== undefined) {
+          if (!isRecord(payload.session) || Object.keys(payload.session).some(key => !['conversation_id', 'visitor_token'].includes(key))
+              || typeof payload.session.conversation_id !== 'string' || !payload.session.conversation_id
+              || typeof payload.session.visitor_token !== 'string' || !payload.session.visitor_token) return null;
+          result.session = { conversation_id: payload.session.conversation_id, visitor_token: payload.session.visitor_token };
+        }
+        if (payload.identity !== undefined) {
+          if (!isRecord(payload.identity) || Object.keys(payload.identity).some(key => key !== 'fields')
+              || !isRecord(payload.identity.fields)) return null;
+          const fields = {};
+          for (const [key, value] of Object.entries(payload.identity.fields)) {
+            if (!key || key.length > 100 || typeof value !== 'string' || value.length > 500) return null;
+            fields[key] = value;
+          }
+          result.identity = { fields };
+        }
+        if (!result.session && !result.identity) return null;
+        return result;
+      }
+
+      function create(options = {}, win = window, doc = document) {
+        const parent = win.parent;
+        const hostWindow = parent && parent !== win ? parent : null;
+        const allowedOrigins = collectAllowedOrigins(win, doc);
+        let hostOrigin = null;
+        const onSessionHandoff = typeof options.onSessionHandoff === 'function' ? options.onSessionHandoff : () => {};
+        const onDismiss = typeof options.onDismiss === 'function' ? options.onDismiss : () => {};
+        let initialOrigin = null;
+        try { initialOrigin = normalizeOrigin(new URL(doc.referrer).origin); } catch { /* No host referrer is a safe no-op. */ }
+        if (hostWindow && initialOrigin && allowedOrigins.has(initialOrigin)) hostOrigin = initialOrigin;
+
+        function emit(type, payload = {}, requestId = null) {
+          if (!hostWindow || !hostOrigin || !allowedOrigins.has(hostOrigin)
+              || !Object.values(OUTGOING).includes(type) || !isRecord(payload) || containsAuthorityKey(payload)) return false;
+          try {
+            hostWindow.postMessage({
+              schema: VERSION, source: WIDGET_SOURCE, target: HOST_SOURCE, type,
+              ...(requestId ? { request_id: requestId } : {}), payload,
+            }, hostOrigin);
+          } catch { return false; /* 宿主窗口消失/被移除时安全 no-op。 */ }
+          return true;
+        }
+
+        function receive(event) {
+          if (!hostWindow || event?.source !== hostWindow || !allowedOrigins.has(event.origin)) return false;
+          const data = event.data;
+          if (!isRecord(data) || data.schema !== VERSION || data.source !== HOST_SOURCE
+              || data.target !== WIDGET_SOURCE || ![INCOMING.HANDOFF, INCOMING.DISMISS].includes(data.type)
+              || [...Object.keys(data)].some(key => !ENVELOPE_KEYS.has(key))) return false;
+          const requestId = data.request_id === undefined ? null
+            : (typeof data.request_id === 'string' && data.request_id.length <= 100 ? data.request_id : null);
+          if (data.request_id !== undefined && requestId === null) return false;
+          const payload = validatePayload(data.type, data.payload);
+          if (!payload) return false;
+          hostOrigin = event.origin;
+          if (data.type === INCOMING.HANDOFF) onSessionHandoff(payload, requestId);
+          else onDismiss(payload, requestId);
+          return true;
+        }
+
+        if (hostWindow) {
+          win.addEventListener('message', receive);
+          emit(OUTGOING.READY);
+        }
+        return Object.freeze({
+          version: VERSION, enabled: Boolean(hostWindow && hostOrigin), types: { ...INCOMING, ...OUTGOING },
+          emit, receive, dispose: () => hostWindow && win.removeEventListener('message', receive),
+        });
+      }
+
+      return Object.freeze({ VERSION, HOST_SOURCE, WIDGET_SOURCE, INCOMING, OUTGOING, create });
+    })();
+    window.__LOOMRISE_WEBVIEW_BRIDGE_CONTRACT__ = LOOMRISE_WEBVIEW_BRIDGE_CONTRACT;
+  </script>
+  <script>
     const agentId = document.body.dataset.agentId;
     const entryId = document.body.dataset.entryId;
+    const contactVersion = document.body.dataset.contactVersion;
     const status = document.querySelector('#status');
     const messages = document.querySelector('#messages');
     const form = document.querySelector('#form');
     const send = document.querySelector('#send');
-    const sessionKey = `loomrise:${agentId}:${entryId}`;
+    const sessionKey = contactVersion
+      ? `loomrise:contact:${JSON.stringify([agentId, entryId, contactVersion])}`
+      : `loomrise:${agentId}:${entryId}`;
     let session = null;
+    let configuration = null;
+    let pendingSubmission = null;
+    let widgetBridge = null;
+    let bridgeHandoff = null;
+    let bridgeRequestId = null;
+    let bridgeStartComplete = false;
+    let language = 'zh-CN';
+    const copy = {
+      'zh-CN': { connected: '已连接', closed: '入口已停用', open: '当前在接待时段内', start: '开始咨询', send: '发送', input: '输入您的问题', human: '请人工客服协助', requested: '已请求人工客服', download: '下载附件', booking: '前往外部预约页面', required: '（必填）', details: '请填写访客信息' },
+      en: { connected: 'Connected', closed: 'This entry is disabled', open: 'Within service hours', start: 'Start chat', send: 'Send', input: 'Enter your question', human: 'Ask a human agent', requested: 'Human assistance requested', download: 'Download attachment', booking: 'Open external booking page', required: ' (required)', details: 'Enter visitor details' },
+    };
+    const t = key => copy[language][key];
+    const receptionCopy = {
+      generating: 'Generating a reply…', answered: 'AI reply saved. Sources are shown below the answer.',
+      handoff: 'Human assistance requested.', human_requested: 'Human assistance requested. Automatic replies stopped.',
+      disabled: 'AI reception is disabled. Your message is in the support inbox.',
+      outside_schedule: 'A human agent will handle your message during service hours.',
+      not_configured: 'The AI model is not configured. Your message is saved for a human agent.',
+      knowledge_unavailable: 'Approved information is unavailable. Your message is saved for a human agent.',
+      provider_error: 'The AI service is unavailable. Your message is saved for a human agent.',
+      invalid_response: 'The AI reply could not be verified. Your message is saved for a human agent.',
+      superseded: 'Automatic reply stopped because a human took over or a newer message arrived.',
+      interrupted: 'Automatic reply interrupted. Your message is saved for a human agent.',
+      human_replied: 'A human agent has replied. You can continue the conversation here.',
+    };
+    function showReception(reception) {
+      if (!reception) return;
+      const node = document.querySelector('#reception');
+      node.hidden = false;
+      node.textContent = language === 'en' ? receptionCopy[reception.status] || reception.message : reception.message;
+    }
     async function call(action, payload) {
       const response = await fetch('/api/customer-service', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -61,16 +245,22 @@
         const node = document.createElement('div');
         node.className = `message ${item.sender}`;
         node.textContent = item.text;
+        for (const citation of item.citations || []) {
+          const evidence = document.createElement('small'); evidence.className = 'citation';
+          evidence.textContent = `${citation.title || citation.source_id}\n“${citation.quote}”`;
+          node.append(evidence);
+        }
         if (item.asset_id && item.asset_version_id) {
           const attachment = document.createElement('button');
           attachment.className = 'attachment'; attachment.type = 'button';
-          attachment.textContent = '下载附件';
+          attachment.textContent = t('download');
           attachment.onclick = async () => {
             attachment.disabled = true;
             try {
               const file = await call('widget.material.download', {
                 conversation_id: session.conversation_id, visitor_token: session.visitor_token,
-                asset_id: item.asset_id, version_id: item.asset_version_id
+                asset_id: item.asset_id, version_id: item.asset_version_id,
+                ...(item.derivative_id ? { derivative_id: item.derivative_id } : {})
               });
               const binary = atob(file.content_base64);
               const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
@@ -93,34 +283,257 @@
         conversation_id: session.conversation_id, visitor_token: session.visitor_token
       });
       draw(result.items);
+      const latest = result.items.filter(item => item.sender === 'visitor' && item.reception).at(-1);
+      if (result.items.at(-1)?.sender === 'operator') {
+        showReception({ status: 'human_replied', message: '人工客服已回复，可在此继续咨询。' });
+      } else if (latest) showReception(latest.reception);
+      if (pendingSubmission && result.items.some(item => item.message_id === pendingSubmission.message_id)) {
+        if (document.querySelector('#text').value.trim() === pendingSubmission.text) document.querySelector('#text').value = '';
+        pendingSubmission = null; sessionStorage.removeItem(`${sessionKey}:pending`);
+      }
+    }
+    function showConfiguration(value) {
+      configuration = value;
+      const widget = value.widget;
+      language = widget.language;
+      document.documentElement.lang = language;
+      document.title = widget.title;
+      document.querySelector('h1').textContent = widget.title;
+      document.querySelector('main').setAttribute('aria-label', widget.title);
+      document.documentElement.style.setProperty('--widget-accent', widget.color);
+      const rgb = widget.color.slice(1).match(/../g).map(value => parseInt(value, 16) / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+      document.documentElement.style.setProperty('--widget-accent-text', rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722 > .179 ? '#000' : '#fff');
+      document.querySelector('#greeting').textContent = widget.greeting;
+      document.querySelector('#availability').textContent = widget.availability === 'open' ? t('open') : widget.offline_message;
+      document.querySelector('#intro').hidden = false;
+      renderFAQSuggestions();
+      const logo = document.querySelector('#logo'); logo.hidden = !widget.logo_url;
+      if (widget.logo_url) { logo.src = widget.logo_url; logo.alt = widget.title; }
+      const booking = document.querySelector('#booking'); booking.hidden = !widget.booking_url;
+      if (widget.booking_url) { booking.href = widget.booking_url; booking.textContent = t('booking'); }
+      document.querySelector('#begin').textContent = t('start');
+      document.querySelector('#handoffLabel').textContent = t('human');
+      document.querySelector('#text').placeholder = t('input');
+      send.textContent = t('send');
+    }
+    function renderFAQSuggestions() {
+      const section = document.querySelector('#faqSuggestions');
+      const questions = session && !contactVersion && Array.isArray(configuration?.faq_suggestions)
+        ? configuration.faq_suggestions.filter(question => typeof question === 'string' && question.trim()) : [];
+      const buttons = questions.map(question => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'faq-question'; button.textContent = question;
+        button.addEventListener('click', () => {
+          if (!session || send.disabled) return;
+          document.querySelector('#text').value = question;
+          form.requestSubmit();
+        });
+        return button;
+      });
+      document.querySelector('#faqQuestions').replaceChildren(...buttons);
+      section.hidden = buttons.length === 0;
+    }
+    function visitorFieldsFromBridge(fields = {}) {
+      if (!configuration?.widget?.fields?.length) return {};
+      const allowed = new Set(configuration.widget.fields.map(field => field.id));
+      return Object.fromEntries(Object.entries(fields).filter(([key, value]) =>
+        allowed.has(key) && typeof value === 'string' && value.length <= 500));
+    }
+    function renderVisitorProfile(initialFields = {}) {
+      const fields = document.querySelector('#profileFields');
+      fields.replaceChildren(...(configuration.widget.fields || []).map(field => {
+        const label = document.createElement('label'); label.textContent = field.label + (field.required ? t('required') : '');
+        const input = document.createElement('input'); input.name = field.id; input.type = field.type;
+        input.required = field.required; input.maxLength = 500; input.value = initialFields[field.id] || '';
+        label.append(input); return label;
+      }));
+    }
+    function requiredVisitorFieldsComplete(fields) {
+      return (configuration.widget.fields || []).every(field => !field.required || fields[field.id]);
+    }
+    async function restoreSession() {
+      showConfiguration(await call('widget.configuration', { agent_id: agentId, entry_id: entryId,
+        conversation_id: session.conversation_id, visitor_token: session.visitor_token,
+        ...(contactVersion ? { contact_version_id: contactVersion } : {}) }));
+      document.querySelector('#visitorProfile').hidden = true;
+      form.hidden = false; status.textContent = t('connected');
+      await refresh();
+    }
+    async function openConversation(visitorFields = {}) {
+      session = await call(contactVersion ? 'contact.open' : 'widget.open', {
+        agent_id: agentId, entry_id: entryId, visitor_fields: visitorFields,
+        ...(contactVersion ? { version_id: contactVersion } : { expected_version_id: configuration.version_id })
+      });
+      sessionStorage.setItem(sessionKey, JSON.stringify(session));
+      renderFAQSuggestions();
+      document.querySelector('#visitorProfile').hidden = true;
+      form.hidden = false; status.textContent = t('connected');
+      await refresh();
+    }
+    function bridgeReply(type, requestId, payload = {}) {
+      if (widgetBridge) widgetBridge.emit(type, payload, requestId);
+    }
+    async function handleBridgeHandoff(payload, requestId) {
+      document.querySelector('#dismiss').hidden = false;
+      if (!bridgeStartComplete) {
+        if (bridgeHandoff) {
+          // 迟到/重复交接：保留首个待处理交接，按首个会话幂等回执，不覆盖缓冲、不丢 request_id。
+          const same = payload.session && bridgeHandoff.session
+            && payload.session.conversation_id === bridgeHandoff.session.conversation_id
+            && payload.session.visitor_token === bridgeHandoff.session.visitor_token;
+          bridgeReply(same ? widgetBridge.types.ACCEPTED : widgetBridge.types.REJECTED, requestId,
+            same ? { conversation_id: payload.session.conversation_id } : { reason: 'session_start_pending' });
+          return;
+        }
+        bridgeHandoff = payload;
+        bridgeRequestId = requestId;
+        return;
+      }
+      if (session) {
+        const same = payload.session && payload.session.conversation_id === session.conversation_id
+          && payload.session.visitor_token === session.visitor_token;
+        bridgeReply(same ? widgetBridge.types.ACCEPTED : widgetBridge.types.REJECTED, requestId,
+          same ? { conversation_id: session.conversation_id } : { reason: 'session_already_active' });
+        return;
+      }
+      try {
+        if (payload.session) {
+          session = payload.session;
+          sessionStorage.setItem(sessionKey, JSON.stringify(session));
+          await restoreSession();
+        } else if (configuration) {
+          const fields = visitorFieldsFromBridge(payload.identity?.fields);
+          if (requiredVisitorFieldsComplete(fields)) await openConversation(fields);
+          else {
+            renderVisitorProfile(fields); document.querySelector('#visitorProfile').hidden = false; status.textContent = t('details');
+            bridgeReply(widgetBridge.types.REJECTED, requestId, { reason: 'visitor_fields_required' });
+            return;
+          }
+        } else throw new Error('widget_not_ready');
+        bridgeReply(widgetBridge.types.ACCEPTED, requestId, { conversation_id: session?.conversation_id });
+      } catch (error) {
+        session = null; sessionStorage.removeItem(sessionKey);
+        bridgeReply(widgetBridge.types.REJECTED, requestId, { reason: 'session_rejected' });
+        status.textContent = error.message;
+      }
+    }
+    function handleBridgeDismiss(payload, requestId) {
+      document.querySelector('main').hidden = true;
+      bridgeReply(widgetBridge.types.DISMISSED, requestId, { reason: payload.reason });
     }
     async function start() {
       try {
         session = JSON.parse(sessionStorage.getItem(sessionKey) || 'null');
+        pendingSubmission = JSON.parse(sessionStorage.getItem(`${sessionKey}:pending`) || 'null');
         if (session) {
-          try { await refresh(); }
+          try {
+            await restoreSession(); return;
+          }
           catch { session = null; sessionStorage.removeItem(sessionKey); }
         }
-        if (!session) {
-          session = await call('widget.open', { agent_id: agentId, entry_id: entryId });
+        if (bridgeHandoff?.session) {
+          const handoff = bridgeHandoff;
+          const requestId = bridgeRequestId;
+          bridgeHandoff = null; bridgeRequestId = null;
+          session = handoff.session;
           sessionStorage.setItem(sessionKey, JSON.stringify(session));
+          try {
+            await restoreSession();
+            bridgeReply(widgetBridge.types.ACCEPTED, requestId, { conversation_id: session.conversation_id });
+            return;
+          } catch {
+            session = null; sessionStorage.removeItem(sessionKey);
+            bridgeReply(widgetBridge.types.REJECTED, requestId, { reason: 'session_rejected' });
+          }
         }
-        status.textContent = '已连接';
-        await refresh();
+        showConfiguration(await call('widget.configuration', { agent_id: agentId, entry_id: entryId,
+          ...(contactVersion ? { contact_version_id: contactVersion } : {}) }));
+        if (!configuration.widget.enabled) { status.textContent = t('closed'); return; }
+        if (bridgeHandoff?.session) {
+          const handoff = bridgeHandoff;
+          const requestId = bridgeRequestId;
+          bridgeHandoff = null; bridgeRequestId = null;
+          session = handoff.session;
+          sessionStorage.setItem(sessionKey, JSON.stringify(session));
+          try {
+            await restoreSession();
+            bridgeReply(widgetBridge.types.ACCEPTED, requestId, { conversation_id: session.conversation_id });
+            return;
+          } catch (error) {
+            session = null; sessionStorage.removeItem(sessionKey);
+            bridgeReply(widgetBridge.types.REJECTED, requestId, { reason: 'session_rejected' });
+            throw error;
+          }
+        }
+        if (configuration.widget.fields.length) {
+          const initialFields = visitorFieldsFromBridge(bridgeHandoff?.identity?.fields);
+          renderVisitorProfile(initialFields);
+          if (bridgeHandoff?.identity && requiredVisitorFieldsComplete(initialFields)) {
+            const requestId = bridgeRequestId;
+            bridgeHandoff = null; bridgeRequestId = null;
+            await openConversation(initialFields);
+            bridgeReply(widgetBridge.types.ACCEPTED, requestId, { conversation_id: session.conversation_id });
+            return;
+          }
+          document.querySelector('#visitorProfile').hidden = false; status.textContent = t('details');
+          return;
+        }
+        if (bridgeHandoff?.identity) {
+          const handoff = bridgeHandoff;
+          const requestId = bridgeRequestId;
+          bridgeHandoff = null; bridgeRequestId = null;
+          await openConversation(visitorFieldsFromBridge(handoff.identity?.fields));
+          bridgeReply(widgetBridge.types.ACCEPTED, requestId, { conversation_id: session.conversation_id });
+        } else await openConversation();
       } catch (error) { status.textContent = error.message; send.disabled = true; }
+      finally {
+        bridgeStartComplete = true;
+        if (bridgeHandoff) {
+          const handoff = bridgeHandoff;
+          const requestId = bridgeRequestId;
+          bridgeHandoff = null; bridgeRequestId = null;
+          await handleBridgeHandoff(handoff, requestId);
+        }
+      }
     }
+    widgetBridge = window.__LOOMRISE_WEBVIEW_BRIDGE_CONTRACT__?.create({
+      onSessionHandoff: handleBridgeHandoff, onDismiss: handleBridgeDismiss,
+    });
+    const dismiss = document.querySelector('#dismiss');
+    if (widgetBridge?.enabled) dismiss.hidden = false;
+    dismiss.addEventListener('click', () => {
+      if (widgetBridge?.emit(widgetBridge.types.DISMISSED, { reason: 'user' })) dismiss.disabled = true;
+    });
+    document.querySelector('#visitorProfile').addEventListener('submit', async event => {
+      event.preventDefault();
+      const begin = document.querySelector('#begin'); begin.disabled = true;
+      try { await openConversation(Object.fromEntries(new FormData(event.currentTarget))); }
+      catch (error) { status.textContent = error.message; }
+      finally { begin.disabled = false; }
+    });
     form.addEventListener('submit', async event => {
       event.preventDefault();
       const text = document.querySelector('#text').value.trim();
-      if (!session || !text) return;
+      if (!session || !text || send.disabled) return;
+      if (new TextEncoder().encode(text).length > 24000) {
+        status.textContent = language === 'en' ? 'Message exceeds the 24,000 byte limit.' : '消息超过 24000 字节，请缩短后发送。'; return;
+      }
+      const requestHuman = document.querySelector('#handoff').checked;
+      if (!pendingSubmission || pendingSubmission.text !== text || pendingSubmission.request_human !== requestHuman) {
+        pendingSubmission = { text, request_human: requestHuman, message_id: crypto.randomUUID() };
+      }
+      sessionStorage.setItem(`${sessionKey}:pending`, JSON.stringify(pendingSubmission));
       send.disabled = true;
+      status.textContent = language === 'en' ? 'Sending…' : '正在发送…';
       try {
-        await call('widget.send', {
+        const result = await call('widget.send', {
           conversation_id: session.conversation_id, visitor_token: session.visitor_token,
-          text, request_human: document.querySelector('#handoff').checked
+          ...pendingSubmission
         });
         document.querySelector('#text').value = '';
-        if (document.querySelector('#handoff').checked) status.textContent = '已请求人工客服';
+        pendingSubmission = null; sessionStorage.removeItem(`${sessionKey}:pending`);
+        status.textContent = requestHuman ? t('requested') : t('connected');
+        showReception(result.reception);
         await refresh();
       } catch (error) { status.textContent = error.message; }
       finally { send.disabled = false; }

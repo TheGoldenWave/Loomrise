@@ -9,42 +9,97 @@
     :root { color-scheme: light; font: 14px/1.5 system-ui, sans-serif; color: #243530; background: #f5f7f6; }
     * { box-sizing: border-box; }
     body { margin: 0; height: 100vh; display: grid; grid-template-columns: 310px 1fr; }
-    aside { min-width: 0; border-right: 1px solid #d7e0dc; background: white; display: flex; flex-direction: column; }
+    aside { min-width: 0; min-height: 0; border-right: 1px solid #d7e0dc; background: white; display: flex; flex-direction: column; }
     header { padding: 14px 16px; border-bottom: 1px solid #e1e8e5; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     h1 { font-size: 16px; margin: 0; }
     button { min-height: 36px; padding: 0 12px; border: 0; border-radius: 5px; background: #176b55; color: white; font: inherit; cursor: pointer; }
     button:disabled { opacity: .55; cursor: wait; }
-    button:focus-visible, textarea:focus-visible { outline: 3px solid #d79840; outline-offset: 2px; }
-    #list { overflow: auto; }
+    button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #d79840; outline-offset: 2px; }
+    #list { flex: 1; min-height: 0; overflow: auto; }
     .conversation { width: 100%; min-height: 68px; padding: 10px 14px; text-align: left; border-radius: 0; border-bottom: 1px solid #edf0ee; background: white; color: #243530; }
     .conversation[aria-current="true"] { background: #e8f2ee; box-shadow: inset 3px 0 #176b55; }
     .conversation small { display: block; color: #657771; }
-    main { min-width: 0; display: flex; flex-direction: column; }
+    .conversation { overflow-wrap: anywhere; }
+    .unread { display: inline-block; padding: 1px 6px; margin-top: 4px; border-radius: 4px; background: #e4f0eb; color: #176b55; font-weight: 600; }
+    #unreadSummary, #notificationSettings { margin: 0; padding: 10px 14px; border-bottom: 1px solid #e1e8e5; }
+    .queue-filter { display: grid; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #e1e8e5; }
+    .queue-filter select { width: 100%; }
+    #queueSelectionNote, .queue-empty { margin: 0; padding: 10px 14px; color: #586c66; font-size: 12px; }
+    #notificationSettings summary { cursor: pointer; }
+    #notificationSettings label { display: flex; align-items: flex-start; gap: 6px; margin: 10px 0; }
+    #notificationSettings input { min-height: 0; margin-top: 4px; }
+    #notificationSettings button { width: 100%; margin-top: 8px; padding: 8px; }
+    #notificationSettings p { margin: 8px 0 0; font-size: 12px; color: #586c66; overflow-wrap: anywhere; }
+    main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
     #detail { padding: 12px 18px; min-height: 54px; border-bottom: 1px solid #e1e8e5; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .handoff-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    #release { background: #f5f7f6; color: #243530; border: 1px solid #bac9c3; }
     #status { color: #586c66; }
-    #messages { flex: 1; overflow: auto; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+    #visitorInfo { padding: 8px 18px; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; border-bottom: 1px solid #e1e8e5; }
+    #visitorInfo div { display: flex; gap: 8px; overflow-wrap: anywhere; }
+    #visitorInfo dd { margin: 0; }
+    #handoffAssist { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 18px; border-bottom: 1px solid #e1e8e5; background: white; }
+    #handoffAssist strong { display: block; font-size: 13px; }
+    #handoffAssist p { margin: 2px 0 0; color: #586c66; overflow-wrap: anywhere; }
+    #draftReply { flex: none; background: #f5f7f6; color: #243530; border: 1px solid #bac9c3; }
+    #aiAssist { padding: 8px 18px; border-bottom: 1px solid #e1e8e5; background: white; max-height: 35vh; overflow: auto; }
+    #aiAssist summary { cursor: pointer; font-weight: 600; }
+    .assistance-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    #adoptAssistance { background: #f5f7f6; color: #243530; border: 1px solid #bac9c3; }
+    #aiAssist p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #assistanceStatus, #assistanceCitations { color: #586c66; font-size: 12px; }
+    #assistanceCitations { padding-left: 18px; overflow-wrap: anywhere; }
+    #assistanceProposal strong { font-size: 13px; }
+    #messages { flex: 1; min-height: 0; overflow: auto; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
     .message { max-width: min(680px, 90%); padding: 10px 12px; border: 1px solid #e0e6e3; border-radius: 7px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }
     .visitor { background: #e4f0eb; align-self: flex-end; }
     form { padding: 12px; background: white; border-top: 1px solid #e1e8e5; display: grid; grid-template-columns: 1fr auto; gap: 8px; }
     textarea { min-width: 0; min-height: 64px; resize: vertical; border: 1px solid #bac9c3; border-radius: 5px; padding: 9px; font: inherit; }
     .material-row { min-width: 0; display: flex; gap: 8px; padding: 0 12px 10px; background: white; }
+    .material-row select { flex: 1; }
+    #processMaterial { background: #f5f7f6; color: #243530; border: 1px solid #bac9c3; }
     select, input { min-width: 0; min-height: 36px; border: 1px solid #bac9c3; border-radius: 5px; padding: 6px 8px; font: inherit; }
     .upload { padding: 8px 12px; border-top: 1px solid #e1e8e5; background: white; }
     .upload[open] { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
     .upload[open] summary { grid-column: 1 / -1; }
-    @media (max-width: 640px) { body { grid-template-columns: 130px minmax(0,1fr); } header { padding: 10px; align-items: flex-start; flex-direction: column; } .conversation { padding: 9px; } #detail { padding: 9px; align-items: flex-start; flex-direction: column; } form { grid-template-columns: 1fr; } .material-row { flex-direction: column; } }
+    .upload input, .upload select { width: 100%; max-width: 100%; }
+    @media (max-width: 640px) { body { grid-template-columns: 130px minmax(0,1fr); } header { padding: 10px; align-items: flex-start; flex-direction: column; } .conversation { padding: 9px; } #detail { padding: 9px; align-items: flex-start; flex-direction: column; } .handoff-actions { width: 100%; } form { grid-template-columns: 1fr; } .material-row { flex-direction: column; } }
+    @media (max-width: 640px) { .upload[open] { grid-template-columns: minmax(0,1fr); } button, select, input { min-height: 44px; } }
+    @media (max-width: 640px) { #handoffAssist { flex-direction: column; padding: 9px; gap: 8px; } #draftReply { width: 100%; } #aiAssist { padding: 8px 9px; max-height: 25vh; } }
   </style>
 </head>
 <body data-agent-id="__AGENT_ID__">
   <aside>
     <header><h1>客服收件箱</h1><button id="refresh" type="button">刷新</button></header>
+    <p id="unreadSummary" role="status">正在读取未读消息…</p>
+    <div class="queue-filter"><label for="queueFilter">筛选会话</label><select id="queueFilter" aria-controls="list"><option value="all">全部</option><option value="waiting">待接管</option><option value="mine">由我接管</option><option value="unread">未读</option></select></div>
+    <p id="queueSelectionNote" hidden>当前会话不在此筛选中，右侧保留会话。</p>
+    <details id="notificationSettings"><summary>个人消息提醒</summary>
+      <label><input id="notifyMessages" type="checkbox" disabled>新访客消息提醒</label>
+      <label><input id="notifyHandoff" type="checkbox" disabled>当前待人工提醒</label>
+      <button id="savePreferences" type="button" disabled>保存个人提醒偏好</button>
+      <p id="preferenceStatus" role="status"></p>
+      <button id="notificationPermission" type="button" disabled>开启本页浏览器提醒</button>
+      <p id="notificationStatus" role="status">仅页面开启时检查新消息和当前待人工状态；站内未读始终可用。</p>
+    </details>
     <nav id="list" aria-label="会话列表"></nav>
   </aside>
   <main>
-    <div id="detail"><span id="status" role="status">选择一条会话</span><button id="claim" type="button" disabled>接管会话</button></div>
+    <div id="detail"><span id="status" role="status">选择一条会话</span><div class="handoff-actions"><button id="claim" type="button" disabled>接管会话</button><button id="release" type="button" disabled>释放并恢复 AI</button></div></div>
+    <dl id="visitorInfo" aria-label="访客信息"></dl>
+    <section id="handoffAssist" aria-label="人工接待辅助">
+      <div><strong>会话摘要</strong><p id="conversationSummary">选择会话查看</p></div>
+      <button id="draftReply" type="button" disabled>插入通用回复草稿</button>
+    </section>
+    <details id="aiAssist">
+      <summary>AI 摘要与回复候选</summary>
+      <div class="assistance-actions"><button id="generateAssistance" type="button" disabled>生成摘要与回复候选</button><button id="adoptAssistance" type="button" disabled>采用到回复框</button></div>
+      <p id="assistanceStatus" role="status">本人接管后可生成。采用后请核对并手动发送。</p>
+      <div id="assistanceProposal" hidden><strong>摘要候选</strong><p id="assistanceSummary"></p><strong>回复候选</strong><p id="assistanceReply"></p><ul id="assistanceCitations" aria-label="回复候选的资料引用"></ul></div>
+    </details>
     <section id="messages" aria-live="polite" aria-label="对话记录"></section>
     <form id="form"><textarea id="text" maxlength="20000" placeholder="输入回复" aria-label="回复内容" required></textarea><button id="send" type="submit" disabled>发送</button></form>
-    <div class="material-row"><select id="material" aria-label="选择物料"><option value="">选择物料</option></select><button id="sendMaterial" type="button" disabled>发送物料</button></div>
+    <div class="material-row"><select id="material" aria-label="选择物料"><option value="">选择物料</option></select><button id="processMaterial" type="button" disabled>生成预览与压缩文件</button><button id="sendMaterial" type="button" disabled>发送物料</button></div>
     <details class="upload"><summary>上传物料</summary><input id="file" type="file" accept=".png,.jpg,.jpeg,.webp,.mp4,.webm,.pdf,.txt,.md"><input id="displayName" type="text" placeholder="物料名称" aria-label="物料名称"><select id="authorization" aria-label="授权类型"><option value="owned">自有</option><option value="licensed">已授权使用</option><option value="public_domain">公有领域</option><option value="consented">已获同意</option></select><button id="upload" type="button">上传</button></details>
   </main>
   <script>
@@ -54,95 +109,589 @@
     const status = document.querySelector('#status');
     let selected = null;
     let listSignature = '';
+    let conversations = [];
+    let canMarkRead = false;
+    let selectionGeneration = 0;
+    let detailRequest = 0;
+    let listRequest = 0;
+    let displayedConversation = null;
+    let displayedSignature = '';
+    let displayedThroughSequence = 0;
+    let assistance = null;
+    let assistanceEpoch = 0;
+    let assistanceRequest = null;
+    let notificationScope = '';
+    let preferences = { new_messages: false, handoff: false, can_edit: false };
+    let browserReminders = false;
+    let inboxEventCursor = null;
+    let inboxEventConsumerId = null;
+    let eventFeedReady = false;
+    let inboxEventStream = null;
+    let inboxEventStreamStarting = false;
+    let streamUsingSse = false;
+    let inboxEventQueue = Promise.resolve();
+    let inboxEventQueueGeneration = 0;
+    const queuedInboxEventSequences = new Set();
+    const scheduledInboxEventSequences = new Set();
+    const pendingNotifications = new Map();
+    let refreshing = false;
     let materialSignature = '';
-    async function call(action, payload) {
+    const busy = new Set();
+    async function call(action, payload, signal) {
       const response = await fetch('/api/customer-service', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload }), cache: 'no-store'
+        body: JSON.stringify({ action, payload }), cache: 'no-store', signal
       });
       const body = await response.json();
       if (!response.ok || !body.ok) throw new Error(body.error?.message || '请求失败');
       return body.result;
     }
-    async function loadList() {
+    function stored(key, value) {
       try {
-        const result = await call('inbox.list', { agent_id: agentId });
-        const signature = JSON.stringify(result.items.map(item => [
-          item.conversation_id, item.state, item.assigned_to, item.occupancy_generation,
-          item.updated_at, item.is_assigned_to_me
-        ]));
-        if (signature === listSignature) return result.items;
-        listSignature = signature;
-        list.replaceChildren(...result.items.map(item => {
+        if (value === undefined) return sessionStorage.getItem(key);
+        sessionStorage.setItem(key, value);
+      } catch { /* Personal browser storage is optional; server read state remains authoritative. */ }
+      return null;
+    }
+    function reminderKey() { return `loomrise:inbox:${notificationScope}:enabled`; }
+    function eventConsumerKey() { return `loomrise:inbox:${notificationScope}:consumer`; }
+    function getInboxConsumerId() {
+      if (inboxEventConsumerId) return inboxEventConsumerId;
+      const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
+      const sameTabReload = navigation?.type === 'reload' || window.performance?.navigation?.type === 1;
+      const saved = stored(eventConsumerKey());
+      if (sameTabReload && typeof saved === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(saved)) {
+        inboxEventConsumerId = saved;
+        return saved;
+      }
+      const random = window.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      inboxEventConsumerId = `tab_${random}`.slice(0, 128);
+      stored(eventConsumerKey(), inboxEventConsumerId);
+      return inboxEventConsumerId;
+    }
+    function eventStreamOrigin() { return window.__LOOMRISE_CONFIG_API__ || window.location.origin; }
+    function closeInboxEventStream() {
+      if (inboxEventStream) inboxEventStream.close();
+      inboxEventStream = null; streamUsingSse = false;
+      inboxEventQueueGeneration += 1; inboxEventQueue = Promise.resolve();
+      queuedInboxEventSequences.clear(); scheduledInboxEventSequences.clear();
+      for (const pending of pendingNotifications.values()) clearTimeout(pending.timer);
+      pendingNotifications.clear();
+    }
+    function updateReminderButton() {
+      const button = document.querySelector('#notificationPermission');
+      const feedReady = typeof window.EventSource !== 'function' || eventFeedReady;
+      button.disabled = !preferences.can_edit || typeof window.Notification !== 'function' || !feedReady;
+      button.textContent = browserReminders ? '暂停本页浏览器提醒' : '开启本页浏览器提醒';
+      if (typeof window.Notification !== 'function') document.querySelector('#notificationStatus').textContent = '此浏览器不支持本页提醒，站内未读仍可用。';
+    }
+    function notifyInboxEvent(event) {
+      if (!browserReminders) return;
+      const handoff = event.event_type === 'handoff.requested' && preferences.handoff;
+      const newMessage = event.event_type === 'visitor.message' && preferences.new_messages;
+      if (!handoff && !newMessage) return;
+      try {
+        const notice = new Notification(handoff ? '当前有会话等待人工接管' : '有新的访客消息', {
+          body: '请打开客服收件箱查看。',
+          tag: `loomrise:${notificationScope}:${event.conversation_id}:${event.sequence}`,
+        });
+        notice.onclick = () => {
+          notice.close(); window.focus();
+          select(conversations.find(value => value.conversation_id === event.conversation_id)
+            || { conversation_id: event.conversation_id });
+        };
+      } catch {
+        browserReminders = false; stored(reminderKey(), 'false'); updateReminderButton();
+        document.querySelector('#notificationStatus').textContent = '浏览器提醒未能显示，站内未读仍可用。';
+      }
+    }
+    function queueInboxNotification(event) {
+      const prior = pendingNotifications.get(event.conversation_id);
+      if (event.event_type === 'handoff.requested') {
+        if (!preferences.handoff) return;
+        if (prior) clearTimeout(prior.timer);
+        pendingNotifications.delete(event.conversation_id);
+        notifyInboxEvent(event);
+        return;
+      }
+      if (event.event_type !== 'visitor.message' || !preferences.new_messages) return;
+      if (prior) { prior.event = event; return; }
+      const pending = { event, timer: null };
+      pending.timer = setTimeout(() => {
+        if (pendingNotifications.get(event.conversation_id) !== pending) return;
+        pendingNotifications.delete(event.conversation_id);
+        notifyInboxEvent(pending.event);
+      }, 250);
+      pendingNotifications.set(event.conversation_id, pending);
+    }
+    function rememberScheduledInboxEvent(sequence) {
+      if (scheduledInboxEventSequences.has(sequence)) return false;
+      scheduledInboxEventSequences.add(sequence);
+      if (scheduledInboxEventSequences.size > 256) {
+        scheduledInboxEventSequences.delete(scheduledInboxEventSequences.values().next().value);
+      }
+      return true;
+    }
+    function restartInboxEventStream(stream, scope) {
+      if (scope !== notificationScope) return;
+      if (stream && inboxEventStream !== stream) return;
+      if (stream && inboxEventStream === stream) {
+        stream.close(); inboxEventStream = null; streamUsingSse = false;
+      }
+      inboxEventQueueGeneration += 1; inboxEventQueue = Promise.resolve();
+      queuedInboxEventSequences.clear();
+      setTimeout(() => {
+        if (scope === notificationScope && !inboxEventStream) startInboxEventStream();
+      }, 100);
+    }
+    async function consumeInboxEvent(value, scope, generation) {
+      const sequence = Number(value?.sequence);
+      if (!Number.isSafeInteger(sequence) || !value?.conversation_id || !value?.event_type) {
+        throw new Error('无效的 Inbox 事件');
+      }
+      if (sequence <= (inboxEventCursor ?? 0)) return;
+      if (!Number.isSafeInteger(inboxEventCursor) || sequence !== inboxEventCursor + 1) {
+        throw new Error('Inbox 事件序号不连续');
+      }
+      try {
+        await loadList();
+        if (scope !== notificationScope || generation !== inboxEventQueueGeneration) return;
+        if (selected?.conversation_id === value.conversation_id && !await refreshSelected()) {
+          throw new Error('Inbox 会话投影刷新失败');
+        }
+        if (scope !== notificationScope || generation !== inboxEventQueueGeneration) return;
+        if (eventFeedReady && browserReminders && rememberScheduledInboxEvent(sequence)) {
+          queueInboxNotification(value);
+        }
+        const receipt = await call('inbox.consumer.ack', {
+          agent_id: agentId, consumer_id: getInboxConsumerId(), through_sequence: sequence,
+        });
+        if (!Number.isSafeInteger(receipt.cursor) || receipt.cursor < sequence) {
+          throw new Error('Inbox 消费回执未推进');
+        }
+        if (scope !== notificationScope || generation !== inboxEventQueueGeneration) return;
+        inboxEventCursor = receipt.cursor; eventFeedReady = true;
+      } catch (error) {
+        if (streamUsingSse) restartInboxEventStream(inboxEventStream, scope);
+        throw error;
+      }
+    }
+    function enqueueInboxEvent(value, scope = notificationScope, stream = inboxEventStream) {
+      const sequence = Number(value?.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence <= (inboxEventCursor ?? 0)
+          || queuedInboxEventSequences.has(sequence)) return;
+      queuedInboxEventSequences.add(sequence);
+      const generation = inboxEventQueueGeneration;
+      inboxEventQueue = inboxEventQueue.then(() => {
+        if (generation !== inboxEventQueueGeneration) return;
+        return consumeInboxEvent(value, scope, generation);
+      }).catch(() => {
+        if (generation === inboxEventQueueGeneration && streamUsingSse) {
+          restartInboxEventStream(stream, scope);
+        }
+      }).finally(() => queuedInboxEventSequences.delete(sequence));
+    }
+    async function loadInboxEvents() {
+      if (!notificationScope) return;
+      const scope = notificationScope;
+      const generation = inboxEventQueueGeneration;
+      try {
+        const consumerId = getInboxConsumerId();
+        const receipt = await call('inbox.consumer.cursor', { agent_id: agentId, consumer_id: consumerId });
+        if (scope !== notificationScope || generation !== inboxEventQueueGeneration) return;
+        inboxEventCursor = receipt.cursor; eventFeedReady = true;
+        for (;;) {
+          const page = await call('inbox.events', {
+            agent_id: agentId, after_sequence: inboxEventCursor, limit: 100,
+          });
+          if (scope !== notificationScope || generation !== inboxEventQueueGeneration) return;
+          for (const event of page.events) await consumeInboxEvent(event, scope, generation);
+          if (!page.has_more) break;
+        }
+      } catch {
+        // Leave the durable ack unchanged; the next poll or page load retries.
+      }
+    }
+    async function startInboxEventStream() {
+      if (!notificationScope || typeof window.EventSource !== 'function' || inboxEventStream || inboxEventStreamStarting) return;
+      inboxEventStreamStarting = true;
+      const scope = notificationScope;
+      try {
+        const consumerId = getInboxConsumerId();
+        const receipt = await call('inbox.consumer.cursor', { agent_id: agentId, consumer_id: consumerId });
+        if (scope !== notificationScope) return;
+        if (!Number.isSafeInteger(receipt.cursor) || receipt.cursor < 0) throw new Error('Invalid Inbox consumer cursor');
+        inboxEventCursor = receipt.cursor; eventFeedReady = true;
+        updateReminderButton();
+        const url = `${eventStreamOrigin()}/api/customer-service/inbox/events?agent_id=${encodeURIComponent(agentId)}&consumer_id=${encodeURIComponent(consumerId)}`;
+        const stream = new EventSource(url);
+        inboxEventStream = stream; streamUsingSse = true;
+        stream.addEventListener('inbox', event => {
+          let value;
+          try { value = JSON.parse(event.data); } catch { return; }
+          enqueueInboxEvent(value, scope, stream);
+        });
+        stream.onerror = () => {
+          if (stream.readyState === window.EventSource.CLOSED) restartInboxEventStream(stream, scope);
+        };
+      } catch {
+        eventFeedReady = false;
+        updateReminderButton();
+      } finally {
+        inboxEventStreamStarting = false;
+        if (scope !== notificationScope && !inboxEventStream) startInboxEventStream();
+      }
+    }
+    function updateControls() {
+      const ready = canMarkRead && selected && displayedConversation === selected.conversation_id;
+      document.querySelector('#claim').disabled = busy.has('claim') || !ready || selected.state === 'human';
+      document.querySelector('#release').disabled = busy.has('release') || !ready || selected.state !== 'human' || !selected.is_assigned_to_me;
+      document.querySelector('#send').disabled = busy.has('send') || !ready || selected.state !== 'human' || !selected.is_assigned_to_me;
+      document.querySelector('#draftReply').disabled = busy.has('send') || busy.has('release')
+        || !ready || selected.state !== 'human' || !selected.is_assigned_to_me;
+      const canAssist = !document.querySelector('#draftReply').disabled && displayedThroughSequence > 0
+        && displayedThroughSequence === selected?.latest_sequence;
+      document.querySelector('#generateAssistance').disabled = !canAssist || busy.has('generateAssistance') || busy.has('adoptAssistance');
+      document.querySelector('#generateAssistance').textContent = busy.has('generateAssistance') ? '正在生成候选…' : '生成摘要与回复候选';
+      document.querySelector('#adoptAssistance').disabled = !canAssist || !assistance || busy.has('generateAssistance') || busy.has('adoptAssistance');
+      document.querySelector('#adoptAssistance').textContent = document.querySelector('#text').value.trim() ? '采用并替换回复草稿' : '采用到回复框';
+      document.querySelector('#sendMaterial').disabled = busy.has('sendMaterial') || document.querySelector('#send').disabled || !document.querySelector('#material').value;
+      document.querySelector('#processMaterial').disabled = busy.has('processMaterial') || !canMarkRead || !document.querySelector('#material').value;
+      document.querySelector('#upload').disabled = busy.has('upload') || !canMarkRead;
+    }
+    function resetAssistance(note = '本人接管后可生成。采用后请核对并手动发送。') {
+      assistanceEpoch += 1; assistance = null;
+      if (assistanceRequest) {
+        assistanceRequest.controller.abort();
+        busy.delete(assistanceRequest.action); assistanceRequest = null;
+      }
+      document.querySelector('#assistanceProposal').hidden = true;
+      for (const id of ['assistanceSummary', 'assistanceReply', 'assistanceCitations']) document.querySelector(`#${id}`).replaceChildren();
+      document.querySelector('#assistanceStatus').textContent = note;
+      updateControls();
+    }
+    function startAssistanceRequest(action) {
+      const request = { action, epoch: assistanceEpoch, controller: new AbortController() };
+      assistanceRequest = request; busy.add(action); updateControls();
+      return request;
+    }
+    function finishAssistanceRequest(request) {
+      if (assistanceRequest !== request || request.epoch !== assistanceEpoch) return;
+      assistanceRequest = null; busy.delete(request.action); updateControls();
+    }
+    function assistanceMatches(context) {
+      return notificationScope === context.scope && selected?.conversation_id === context.conversation_id && selected.state === 'human'
+        && selected.is_assigned_to_me && selected.occupancy_generation === context.generation
+        && selected.release_version === context.version_id && displayedConversation === context.conversation_id
+        && displayedThroughSequence === context.through_sequence && selected.latest_sequence === context.through_sequence;
+    }
+    function conversationSummary(items) {
+      const latestVisitor = [...items].reverse().find(message => message.sender === 'visitor' && typeof message.text === 'string');
+      const excerpt = latestVisitor ? Array.from(latestVisitor.text.trim()).slice(0, 160).join('') : '暂无访客消息';
+      return `${items.length} 条消息 · 最近访客：${excerpt || '暂无访客消息'}`;
+    }
+    function renderList() {
+      const unread = conversations.reduce((sum, item) => sum + item.unread_count, 0);
+      const waiting = conversations.filter(item => item.state === 'human_requested').length;
+      const summary = `未读 ${unread} 条 · 当前待人工 ${waiting} 条会话`;
+      if (document.querySelector('#unreadSummary').textContent !== summary) document.querySelector('#unreadSummary').textContent = summary;
+      const filter = document.querySelector('#queueFilter').value;
+      const visible = conversations.filter(item => filter === 'waiting' ? item.state === 'human_requested'
+        : filter === 'mine' ? item.state === 'human' && item.is_assigned_to_me
+          : filter === 'unread' ? item.unread_count > 0 : true);
+      document.querySelector('#queueSelectionNote').hidden = !selected || visible.some(item => item.conversation_id === selected.conversation_id);
+      const signature = JSON.stringify([filter, selected?.conversation_id, visible.map(item => [
+        item.conversation_id, item.state, item.release_version, item.is_assigned_to_me, item.unread_count,
+      ])]);
+      if (signature === listSignature) return;
+      listSignature = signature;
+      const focusedId = document.activeElement?.dataset.conversationId;
+      list.replaceChildren(...visible.map(item => {
           const button = document.createElement('button');
           button.className = 'conversation'; button.type = 'button';
+          button.dataset.conversationId = item.conversation_id;
           button.setAttribute('aria-current', String(selected?.conversation_id === item.conversation_id));
           button.textContent = item.conversation_id;
-          const meta = document.createElement('small'); meta.textContent = `${item.state} · ${item.release_version}`;
+          const states = { bot: '自动接待', human_requested: '当前待人工接管', human: item.is_assigned_to_me ? '由我接管' : '人工已接管' };
+          const meta = document.createElement('small'); meta.textContent = `${states[item.state] || item.state} · ${item.release_version}`;
           button.append(meta); button.onclick = () => select(item);
+          if (item.unread_count) {
+            const badge = document.createElement('span'); badge.className = 'unread'; badge.textContent = `未读 ${item.unread_count}`; button.append(badge);
+          }
           return button;
         }));
-        if (selected) {
-          selected = result.items.find(value => value.conversation_id === selected.conversation_id) || selected;
-          document.querySelector('#sendMaterial').disabled = selected.state !== 'human'
-            || !selected.is_assigned_to_me || !document.querySelector('#material').value;
+      if (!visible.length) {
+        const empty = document.createElement('p'); empty.className = 'queue-empty';
+        empty.setAttribute('role', 'status'); empty.textContent = '当前筛选下没有会话。'; list.append(empty);
+      }
+      if (focusedId) [...list.children].find(button => button.dataset.conversationId === focusedId)?.focus({ preventScroll: true });
+    }
+    async function loadList() {
+      const request = ++listRequest;
+      const result = await call('inbox.list', { agent_id: agentId });
+      if (request !== listRequest) return conversations;
+      if (notificationScope !== result.notification_scope) {
+        closeInboxEventStream();
+        selectionGeneration += 1; detailRequest += 1;
+        selected = null; displayedConversation = null; displayedSignature = ''; displayedThroughSequence = 0;
+        messages.replaceChildren(); document.querySelector('#visitorInfo').replaceChildren();
+        document.querySelector('#text').value = '';
+        document.querySelector('#conversationSummary').textContent = '选择会话查看';
+        status.textContent = '选择一条会话';
+        resetAssistance();
+        notificationScope = result.notification_scope; inboxEventConsumerId = null;
+        inboxEventCursor = null; eventFeedReady = false;
+        browserReminders = stored(reminderKey()) === 'true' && window.Notification?.permission === 'granted';
+        updateReminderButton();
+      }
+      conversations = result.items; canMarkRead = result.can_mark_read;
+      if (selected) {
+        const previous = selected;
+        selected = conversations.find(item => item.conversation_id === selected.conversation_id) || selected;
+        if (['state', 'is_assigned_to_me', 'occupancy_generation', 'release_version', 'latest_sequence'].some(key => selected[key] !== previous[key])) {
+          resetAssistance('会话或消息已变化，请重新生成候选。');
         }
-        return result.items;
-      } catch (error) { status.textContent = error.message; }
+      }
+      renderList(); updateControls();
+      if (!inboxEventStream) startInboxEventStream();
+      return conversations;
+    }
+    function applyPreferences(value) {
+      preferences = value;
+      document.querySelector('#notifyMessages').checked = value.new_messages;
+      document.querySelector('#notifyHandoff').checked = value.handoff;
+      for (const id of ['notifyMessages', 'notifyHandoff', 'savePreferences']) document.querySelector(`#${id}`).disabled = !value.can_edit;
+      updateReminderButton();
+    }
+    async function loadPreferences() {
+      try { applyPreferences(await call('inbox.preferences', { agent_id: agentId })); }
+      catch { document.querySelector('#preferenceStatus').textContent = '提醒偏好读取失败，可继续使用收件箱。'; }
     }
     async function loadMaterials() {
       const result = await call('material.list', { agent_id: agentId });
       const items = result.items.filter(item => item.state === 'active');
-      const signature = JSON.stringify(items.map(item => [item.asset_id, item.current_version_id, item.display_name]));
+      const signature = JSON.stringify(items.map(item => [item.asset_id, item.current_version_id, item.display_name, item.derivatives]));
       if (signature === materialSignature) return;
       materialSignature = signature;
       const select = document.querySelector('#material');
       const value = select.value;
-      select.replaceChildren(new Option('选择物料', ''), ...items.map(item =>
-        new Option(`${item.display_name} · v${item.version}`, `${item.asset_id}:${item.current_version_id}`)));
+      const labels = { image_preview: '预览图', cover: '视频封面', video_optimized: '转码视频' };
+      select.replaceChildren(new Option('选择物料', ''), ...items.flatMap(item => {
+        const reference = { asset_id: item.asset_id, version_id: item.current_version_id };
+        return [new Option(`${item.display_name} · v${item.version} · 原件`, JSON.stringify(reference)),
+          ...(item.derivatives || []).map(derived => new Option(
+            `${item.display_name} · ${labels[derived.kind] || derived.kind} · ${Math.ceil(derived.metadata.output_bytes / 1024)} KiB`,
+            JSON.stringify({ ...reference, derivative_id: derived.derivative_id })))];
+      }));
       if ([...select.options].some(option => option.value === value)) select.value = value;
-      document.querySelector('#sendMaterial').disabled = !selected || selected.state !== 'human'
-        || !selected.is_assigned_to_me || !select.value;
+      updateControls();
     }
     async function select(item) {
-      const latest = await loadList();
-      selected = latest?.find(value => value.conversation_id === item.conversation_id) || item;
-      item = selected;
-      status.textContent = `${item.state} · 版本 ${item.release_version}`;
-      document.querySelector('#claim').disabled = item.state === 'human';
-      document.querySelector('#send').disabled = item.state !== 'human' || !item.is_assigned_to_me;
-      document.querySelector('#sendMaterial').disabled = item.state !== 'human'
-        || !item.is_assigned_to_me || !document.querySelector('#material').value;
-      const result = await call('inbox.messages', { agent_id: agentId, conversation_id: item.conversation_id });
-      messages.replaceChildren(...result.items.map(message => {
-        const node = document.createElement('div'); node.className = `message ${message.sender}`;
-        node.textContent = `${message.sender === 'visitor' ? '访客' : message.actor_id || message.sender}：${message.text}`;
-        return node;
-      }));
-      messages.scrollTop = messages.scrollHeight;
+      if (!item) return;
+      selectionGeneration += 1;
+      selected = conversations.find(value => value.conversation_id === item.conversation_id) || item;
+      displayedThroughSequence = 0;
+      resetAssistance();
+      document.querySelector('#conversationSummary').textContent = '正在读取会话…';
+      updateControls(); renderList();
+      await refreshSelected();
     }
-    document.querySelector('#refresh').onclick = loadList;
-    document.querySelector('#material').onchange = () => {
-      document.querySelector('#sendMaterial').disabled = !selected || selected.state !== 'human'
-        || !selected.is_assigned_to_me || !document.querySelector('#material').value;
+    async function refreshSelected() {
+      if (!selected) return true;
+      const item = selected;
+      const generation = selectionGeneration;
+      const request = ++detailRequest;
+      try {
+        const result = await call('inbox.messages', { agent_id: agentId, conversation_id: item.conversation_id });
+        if (generation !== selectionGeneration || request !== detailRequest || selected?.conversation_id !== item.conversation_id) return true;
+        const sameThread = displayedConversation === item.conversation_id;
+        const follow = !sameThread || messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
+        const previousScroll = messages.scrollTop;
+        const signature = JSON.stringify(result.items);
+        const changed = !sameThread || signature !== displayedSignature;
+        if (changed && (assistance || busy.has('generateAssistance') || busy.has('adoptAssistance'))) resetAssistance('会话或消息已变化，请重新生成候选。');
+        displayedConversation = item.conversation_id; displayedSignature = signature;
+        displayedThroughSequence = result.items.reduce((value, message) => Number.isInteger(message.sequence) ? Math.max(value, message.sequence) : value, 0);
+        const states = { bot: '自动接待', human_requested: '当前待人工接管', human: item.is_assigned_to_me ? '由我接管' : '人工已接管' };
+        status.textContent = `${states[item.state] || item.state} · 版本 ${item.release_version}`;
+        document.querySelector('#conversationSummary').textContent = conversationSummary(result.items);
+        document.querySelector('#visitorInfo').replaceChildren(...Object.entries(item.visitor_fields || {}).map(([key, value]) => {
+          const row = document.createElement('div');
+          const term = document.createElement('dt'); term.textContent = key;
+          const description = document.createElement('dd'); description.textContent = value;
+          row.append(term, description); return row;
+        }));
+        updateControls();
+        if (changed) messages.replaceChildren(...result.items.map(message => {
+          const node = document.createElement('div'); node.className = `message ${message.sender}`;
+          node.textContent = `${message.sender === 'visitor' ? '访客' : message.actor_id || message.sender}：${message.text}`;
+          for (const citation of message.citations || []) {
+            const evidence = document.createElement('small'); evidence.style.display = 'block';
+            evidence.textContent = `${citation.title || citation.source_id} · ${citation.content_hash.slice(0, 12)}\n“${citation.quote}”`;
+            node.append(evidence);
+          }
+          if (message.reception) {
+            const receipt = document.createElement('small'); receipt.style.display = 'block';
+            receipt.textContent = `${message.reception.message}\n请求 ${message.reception.request_id} · 运行 ${message.reception.run_id}`;
+            node.append(receipt);
+          }
+          return node;
+        }));
+        if (changed) messages.scrollTop = follow ? messages.scrollHeight : previousScroll;
+        const through = result.items.reduce((value, message) => Number.isInteger(message.sequence) ? Math.max(value, message.sequence) : value, 0);
+        if (canMarkRead && document.visibilityState === 'visible' && messages.getClientRects().length
+            && generation === selectionGeneration && request === detailRequest && through > (selected.read_sequence || 0)) {
+          try {
+            await call('inbox.read', { agent_id: agentId, conversation_id: item.conversation_id, through_sequence: through });
+            if (generation === selectionGeneration && request === detailRequest) await loadList();
+          } catch (error) {
+            if (generation === selectionGeneration && request === detailRequest) status.textContent = `已显示消息，但已读位置未保存。${error.message}`;
+          }
+        }
+        return true;
+      } catch (error) {
+        if (generation === selectionGeneration && request === detailRequest) {
+          status.textContent = `读取失败，可重试。${error.message}`;
+          document.querySelector('#conversationSummary').textContent = '本会话消息暂不可用';
+        }
+        return false;
+      }
+    }
+    async function refreshAll() {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        await loadList();
+        if (typeof window.EventSource !== 'function') await loadInboxEvents();
+        await refreshSelected();
+      }
+      catch (error) { status.textContent = `读取失败，可重试。${error.message}`; }
+      finally { refreshing = false; }
+    }
+    document.querySelector('#refresh').onclick = refreshAll;
+    document.querySelector('#queueFilter').onchange = renderList;
+    document.querySelector('#text').addEventListener('input', updateControls);
+    document.querySelector('#generateAssistance').onclick = async () => {
+      if (document.querySelector('#generateAssistance').disabled) return;
+      resetAssistance('正在依据当前会话与授权资料生成…');
+      const context = Object.freeze({ scope: notificationScope, conversation_id: selected.conversation_id,
+        generation: selected.occupancy_generation, through_sequence: displayedThroughSequence, version_id: selected.release_version });
+      const request = startAssistanceRequest('generateAssistance');
+      try {
+        const value = await call('inbox.assistance.generate', { agent_id: agentId, conversation_id: context.conversation_id,
+          generation: context.generation, through_sequence: context.through_sequence }, request.controller.signal);
+        if (request.epoch !== assistanceEpoch || !assistanceMatches(context)) return;
+        assistance = Object.freeze({ ...context, ...value });
+        document.querySelector('#assistanceSummary').textContent = value.summary;
+        document.querySelector('#assistanceReply').textContent = value.reply;
+        document.querySelector('#assistanceCitations').replaceChildren(...value.citations.map(citation => {
+          const item = document.createElement('li');
+          item.textContent = `${citation.title || citation.source_id} · ${citation.content_hash.slice(0, 12)}：“${citation.quote}”`;
+          return item;
+        }));
+        document.querySelector('#assistanceProposal').hidden = false;
+        document.querySelector('#assistanceStatus').textContent = '候选尚未发送。核对摘要和引用后，可采用到回复框。';
+      } catch (error) {
+        if (request.epoch === assistanceEpoch) resetAssistance(error.message);
+      } finally { finishAssistanceRequest(request); }
+    };
+    document.querySelector('#adoptAssistance').onclick = async () => {
+      if (document.querySelector('#adoptAssistance').disabled) return;
+      const proposal = assistance;
+      const input = document.querySelector('#text');
+      const previousText = input.value;
+      const request = startAssistanceRequest('adoptAssistance');
+      try {
+        await call('inbox.assistance.check', { agent_id: agentId, conversation_id: proposal.conversation_id,
+          generation: proposal.generation, through_sequence: proposal.through_sequence, snapshot_hash: proposal.snapshot_hash }, request.controller.signal);
+        if (request.epoch !== assistanceEpoch || !assistanceMatches(proposal)) return;
+        if (input.value !== previousText) {
+          document.querySelector('#assistanceStatus').textContent = '回复草稿已修改，已保留输入；可再次采用候选。';
+          return;
+        }
+        input.value = proposal.reply; input.focus(); input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('#assistanceStatus').textContent = '已填入回复草稿，请核对后手动发送。';
+      } catch (error) {
+        if (request.epoch === assistanceEpoch) resetAssistance(error.message);
+      } finally { finishAssistanceRequest(request); }
+    };
+    document.querySelector('#draftReply').onclick = () => {
+      const button = document.querySelector('#draftReply');
+      if (button.disabled) return;
+      const input = document.querySelector('#text');
+      input.value = '您好，已收到您的消息。';
+      input.focus();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    document.querySelector('#savePreferences').onclick = async () => {
+      const button = document.querySelector('#savePreferences'); button.disabled = true;
+      try {
+        const value = await call('inbox.preferences.save', { agent_id: agentId,
+          new_messages: document.querySelector('#notifyMessages').checked, handoff: document.querySelector('#notifyHandoff').checked });
+        applyPreferences(value);
+        if (typeof window.EventSource !== 'function') await loadInboxEvents();
+        document.querySelector('#preferenceStatus').textContent = '个人提醒偏好已保存。';
+      } catch {
+        applyPreferences(preferences); document.querySelector('#preferenceStatus').textContent = '偏好保存失败，原偏好与当前回复内容已保留。';
+      } finally { button.disabled = !preferences.can_edit; }
+    };
+    document.querySelector('#notificationPermission').onclick = async () => {
+      const button = document.querySelector('#notificationPermission'); button.disabled = true;
+      const message = document.querySelector('#notificationStatus');
+      try {
+        if (browserReminders) {
+          browserReminders = false; message.textContent = '本页浏览器提醒已暂停，站内未读仍可用。';
+        } else {
+          const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+          browserReminders = permission === 'granted';
+          if (typeof window.EventSource !== 'function') await loadInboxEvents();
+          message.textContent = browserReminders ? '本页浏览器提醒已开启；仅页面开启时检查。' : '浏览器未允许提醒，站内未读仍可用。';
+        }
+        stored(reminderKey(), String(browserReminders));
+      } catch { browserReminders = false; message.textContent = '浏览器提醒未能开启，站内未读仍可用。'; }
+      finally { updateReminderButton(); }
+    };
+    document.querySelector('#material').onchange = updateControls;
+    document.querySelector('#processMaterial').onclick = async () => {
+      const value = document.querySelector('#material').value;
+      if (!value || busy.has('processMaterial')) return;
+      const reference = JSON.parse(value);
+      busy.add('processMaterial'); updateControls();
+      status.textContent = '正在处理文件，原件保持可用…';
+      try {
+        const result = await call('material.process', { agent_id: agentId, asset_id: reference.asset_id, version_id: reference.version_id });
+        const job = result.derivation?.job;
+        const reasons = { ffmpeg_required: '需要安装媒体处理组件', processing_timeout: '处理超时，请缩小文件后重试',
+          media_decode_or_encode_failed: '文件无法解析或编码', source_changed: '物料版本或授权已改变，已丢弃产物',
+          invalid_or_unsupported_media: '文件格式、尺寸或时长不受支持' };
+        status.textContent = job?.status === 'ready'
+          ? `已生成 ${result.derivation.items.length} 个文件，请选择后人工发送。原件保持不变。`
+          : job ? `${reasons[job.error_code] || '文件处理未完成'}；原件保留。`
+            : result.status === 'ready' ? '已生成待审简介；没有新增文件。' : '内容简介尚未就绪；没有新增文件。';
+        materialSignature = ''; await loadMaterials();
+      } catch (error) { status.textContent = error.message; }
+      finally { busy.delete('processMaterial'); updateControls(); }
     };
     document.querySelector('#sendMaterial').onclick = async () => {
-      if (!selected || !document.querySelector('#material').value) return;
-      const [asset_id, version_id] = document.querySelector('#material').value.split(':');
-      const button = document.querySelector('#sendMaterial'); button.disabled = true;
+      if (!selected || !document.querySelector('#material').value || busy.has('sendMaterial')) return;
+      const target = selected;
+      const generation = selectionGeneration;
+      const reference = JSON.parse(document.querySelector('#material').value);
+      busy.add('sendMaterial'); updateControls();
       try {
-        await call('inbox.send_material', { agent_id: agentId, conversation_id: selected.conversation_id,
-          generation: selected.occupancy_generation, asset_id, version_id });
-        await select(selected); await loadMaterials();
+        await call('inbox.send_material', { agent_id: agentId, conversation_id: target.conversation_id,
+          generation: target.occupancy_generation, ...reference });
+        if (generation === selectionGeneration) await refreshAll();
+        await loadMaterials();
       } catch (error) { status.textContent = error.message; }
-      finally { button.disabled = !selected || selected.state !== 'human'
-        || !selected.is_assigned_to_me || !document.querySelector('#material').value; }
+      finally { busy.delete('sendMaterial'); updateControls(); }
     };
     document.querySelector('#upload').onclick = async () => {
+      if (busy.has('upload')) return;
       const file = document.querySelector('#file').files[0];
       if (!file) { status.textContent = '请选择文件'; return; }
       if (file.size > 10 * 1024 * 1024) { status.textContent = '文件不能超过 10 MiB'; return; }
-      const button = document.querySelector('#upload'); button.disabled = true;
+      busy.add('upload'); updateControls();
       try {
         const dataUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject;
@@ -155,29 +704,52 @@
         document.querySelector('#file').value = ''; document.querySelector('#displayName').value = '';
         materialSignature = ''; await loadMaterials(); status.textContent = '物料已上传';
       } catch (error) { status.textContent = error.message; }
-      finally { button.disabled = false; }
+      finally { busy.delete('upload'); updateControls(); }
     };
     document.querySelector('#claim').onclick = async () => {
-      if (!selected) return;
+      if (!selected || busy.has('claim')) return;
+      const target = selected;
+      const generation = selectionGeneration;
+      busy.add('claim'); updateControls();
       try {
-        await call('inbox.claim', { agent_id: agentId, conversation_id: selected.conversation_id });
-        const latest = await loadList();
-        await select(latest.find(value => value.conversation_id === selected.conversation_id));
+        await call('inbox.claim', { agent_id: agentId, conversation_id: target.conversation_id });
+        if (generation === selectionGeneration) await refreshAll();
       }
       catch (error) { status.textContent = error.message; }
+      finally { busy.delete('claim'); updateControls(); }
+    };
+    document.querySelector('#release').onclick = async () => {
+      if (!selected || busy.has('release')) return;
+      const target = selected;
+      const generation = selectionGeneration;
+      busy.add('release'); updateControls();
+      try {
+        await call('inbox.release', { agent_id: agentId, conversation_id: target.conversation_id,
+          generation: target.occupancy_generation });
+        if (generation === selectionGeneration) await refreshAll();
+      } catch (error) { status.textContent = error.message; }
+      finally { busy.delete('release'); updateControls(); }
     };
     document.querySelector('#form').onsubmit = async event => {
       event.preventDefault();
-      if (!selected) return;
+      if (!selected || busy.has('send')) return;
+      const target = selected;
+      const generation = selectionGeneration;
       const text = document.querySelector('#text').value.trim();
+      busy.add('send'); updateControls();
       try {
-        await call('inbox.reply', { agent_id: agentId, conversation_id: selected.conversation_id,
-          generation: selected.occupancy_generation, text });
-        document.querySelector('#text').value = ''; await select(selected);
+        await call('inbox.reply', { agent_id: agentId, conversation_id: target.conversation_id,
+          generation: target.occupancy_generation, text });
+        if (generation === selectionGeneration) {
+          if (document.querySelector('#text').value.trim() === text) document.querySelector('#text').value = '';
+          await refreshAll();
+        }
       } catch (error) { status.textContent = error.message; }
+      finally { busy.delete('send'); updateControls(); }
     };
-    loadList(); loadMaterials(); setInterval(() => {
-      loadList(); loadMaterials().catch(error => { status.textContent = error.message; });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshAll(); });
+    refreshAll(); loadPreferences(); loadMaterials().catch(error => { status.textContent = error.message; }); setInterval(() => {
+      refreshAll(); loadMaterials().catch(error => { status.textContent = error.message; });
     }, 3000);
   </script>
 </body>

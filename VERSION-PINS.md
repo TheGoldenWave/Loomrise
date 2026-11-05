@@ -1,6 +1,6 @@
-# 版本钉与安装证据 v0.5
+# 版本钉与安装证据 v0.9
 
-状态：实测记录；S1 安装基线记录于 2026-10-12，后续复核时点分节标注，2026-10-26 补充前端 XLSX 依赖。本文件只写**实际装了什么、从哪来、怎么复现**，不写"最新版"。
+状态：实测记录；S1 安装基线记录于 2026-10-12，后续复核时点分节标注，2026-10-26 补充前端 XLSX 依赖，2026-11-02 补充可选 PDF/OCR 边界及 FFmpeg 内嵌字幕实测，2026-11-03 补充可选 macOS DOC 提取工具。本文件只写**实际装了什么、从哪来、怎么复现**，不写"最新版"。
 凡是文档别处出现版本号，都以本文件为准。
 
 **项目自身许可：`Apache-2.0`**（仓库根目录 `LICENSE`，署名见 `NOTICE`）。下表列出的许可证分属**上游依赖**，不是 Loomrise 自己的——`设置 · 系统诊断` 页的许可证清单应同时给出这两类。
@@ -170,6 +170,45 @@ rtk npm --prefix prototypes/console-next ci
 rtk proxy python3 -m http.server 8765 --bind 127.0.0.1 --directory prototypes/console-next
 ```
 
-打开 [本机原型页面](http://127.0.0.1:8765/)。前端没有构建步骤，XLSX 仅在用户选择相应文件时动态导入 `./node_modules/@e965/xlsx/xlsx.mjs`。静态服务必须能读取安装后的 `node_modules/`；只复制 HTML、CSS 和源码不能恢复 XLSX 解析。依赖文件由 `npm ci` 安装，不将 `node_modules/` 提交入仓库。
+打开 [本机原型页面](http://127.0.0.1:8765/)。XLSX 仅在用户选择相应文件时动态导入 `./node_modules/@e965/xlsx/xlsx.mjs`。R3 新增局部画布构建步骤，见下节；`npm ci` 的 postinstall 自动生成画布文件。静态服务必须能读取安装后的 `node_modules/` 与 `dist/`；只复制 HTML、CSS 和源码不能恢复 XLSX 解析或画布。依赖文件由 `npm ci` 安装，不将 `node_modules/`、`dist/` 提交入仓库。
 
 CSV、TSV、TXT 和 Markdown 使用浏览器内解析，不加载该包。PDF、DOCX 与网址抓取仍待后端接入；解析候选不授予资料使用权，也不等于真实知识索引。该依赖不进入 `loomrise/` S1 Python 内核，CG-23 前后端接通仍未实现。运行验证与限制见[配置新布局首轮报告](docs/CONFIG-UI-ROUND1-REPORT.md)。
+
+## 10. R3 局部编排画布（2026-10-30）
+
+范围：`console-next` 服务端版本工作面的流程投影，不迁移整站，不进入 Python 执行内核。所有依赖通过 `prototypes/console-next/package-lock.json` 精确锁定（含 registry URL/integrity）；已核对安装包的版本与 license 声明，不使用 xyflow Pro 示例。
+
+| 直接依赖 | 固定版本 | 许可证 | 用途 |
+|---|---|---|---|
+| react / react-dom | 19.2.0 | MIT | 独立挂载/卸载画布组件 |
+| @xyflow/react | 12.9.2 | MIT | 单层节点/端口/候选边与视图控制 |
+| @dagrejs/dagre | 1.1.5 | MIT | 自动布局；坐标不入草稿 |
+| esbuild（开发依赖） | 0.25.12 | MIT | 构建本地 ESM/CSS，保留依赖法律注释 |
+
+在 `prototypes/console-next` 运行 `rtk proxy npm ci` 自动构建；修改组件后运行 `rtk npm run build:canvas`。输出 `dist/orchestration.js` 与 `dist/orchestration.css` 被 Git 忽略，需随静态部署工件一起提供。画布 JS/CSS 只在服务端版本的“流程”分区按需加载；失败时保留下方原始清单修复入口。运行验证与未实现范围见 [R3 实施计划](docs/superpowers/plans/2026-10-30-r3-development.md)。
+
+## 11. R3 可选媒体处理工具（2026-11-01）
+
+实测使用系统安装的 `ffmpeg` 和 `ffprobe` **8.1**，此轮执行测试的 `.venv` 为 **Python 3.13.12**，不覆盖上文 S1 干净安装的历史环境记录。`ffmpeg -version` 显示启用了 `--enable-gpl`、`--enable-version3` 和 `libx264`。Loomrise 通过子进程调用现有工具，本轮未复制或分发其二进制，也未增加 Python 包。上游工具许可独立于 Loomrise 的 Apache-2.0；发行时需按所选 FFmpeg 构件核对。
+
+2026-11-02 补验：同一 FFmpeg/ffprobe 8.1 构件已实际提取原创 MP4 `mov_text` 与 WebM `webvtt` 双轨样本中的默认中文文本轨。复现为 `rtk proxy .venv/bin/python -W error::ResourceWarning -m unittest tests.test_video_text_processing -q`；真实工具子例在本机未跳过，原件哈希、待人工审核与批准后检索均有断言。这是内嵌字幕节选，不是语音转写、画面 OCR 或全部字幕 codec 兼容证明。
+
+`loomrise/material_derivatives.py` 实测通过 PNG 预览、MP4/H.264 转码和视频封面。缺少工具时返回 unavailable 并保留原件，不把媒体作业标为成功。复现命令为 `rtk proxy .venv/bin/python -m unittest tests.test_material_derivatives tests.test_material_derivative_storage -q`；缺工具的环境会跳过真实编解码测试，不能据跳过结果宣称兼容。完整交付证据及限制见 [R3 实施计划](docs/superpowers/plans/2026-10-30-r3-development.md)。
+
+## 12. R3 可选 PDF 文本提取工具（2026-11-02）
+
+本机实测 `pdftotext` 26.08.0（Poppler）。它是可选系统可执行文件，不由 Python/npm 锁文件安装或随 Loomrise 分发；缺少时物料候选状态为 `unavailable`。提取仅面向有文本层的 PDF，最多前 20 页、输入 10 MiB、stdout 64 KB、15 秒超时；输出始终待人工审核，不包含扫描件 OCR。若发行环境选择分发 Poppler，须单独核对其许可证及构件来源。测试使用模拟子进程，未把本机版本宣称为跨平台验收。
+
+## 13. R3 可选扫描 PDF OCR 工具（2026-11-02）
+
+扫描 PDF 空文本回退可选调用 Poppler 的 `pdfinfo`/`pdftoppm` 与 Tesseract CLI；Tesseract 需安装 `chi_sim` 或 `eng` 语言数据。本机 Poppler 26.08.0 的 `pdfinfo`、`pdftoppm` 可用，但没有 Tesseract 或语言数据，故没有固定 Tesseract 版本，也没有真实 OCR 质量/平台验证。所有都是发行环境外部可执行依赖，不由 Python/npm 锁文件安装或随 Loomrise 分发；安装、二进制来源和 Poppler/Tesseract/语言数据许可证由部署方按所选构件核对。
+
+当前实现仅对前 20 页中 `pdftotext` 输出为空的页面触发 OCR，包括混合 PDF 的空文本页；有原生文字的同页图片区域不识别。单页最长边 2000px、渲染 PNG 12.5 MB 上限，原生文本与 OCR 共用 64 KB 输出和 30 秒时限。候选保持 pending，人工批准前不可检索。自动化验证使用模拟子进程，不代表扫描内容识别质量；未为这次实现安装 Tesseract。
+
+## 14. R3 可选旧 DOC 文本提取工具（2026-11-03）
+
+`loomrise/knowledge_documents.py` 可选通过子进程调用 macOS 自带的 `textutil`，本机系统为 macOS 15.6.1（build 24G90）；`textutil -help` 声明支持 DOC 输入/转换，未提供独立版本号，因此不把系统版本当作独立工具版本钉。本次使用系统已有构件，没有安装、复制或分发其二进制，也没有增加 Python/npm 依赖。
+
+知识 DOC 原件沿用 5 MiB 输入上限；转换为 UTF-8 纯文本，stdout 最多 8 MiB、15 秒超时，复用有界读取器。工具缺失时明确返回 `format_unavailable`，转换失败、超时、非法编码或输出超限不进入索引。复现命令为 `rtk proxy .venv/bin/python -W error::ResourceWarning -m unittest tests.test_knowledge_documents -v`；本机 20/20 通过，原创 RTF→真实 DOC→摄入/检索子例未跳过。该样本由同一系统工具生成，不能外推为 Microsoft Office 真实来源兼容矩阵。
+
+此路径只在 macOS 验证。Linux 等无 `textutil` 的平台尚未提供 DOC 解析器，仍保持不可用；跨平台兼容与 M-B-08 Gate 未通过。知识 DOC 提取不含 OCR，也不替代物料处理的待审候选路径。

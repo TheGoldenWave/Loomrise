@@ -330,8 +330,8 @@ class TestMigration(unittest.TestCase):
                 ).fetchone())
                 expected = list(before)
                 expected[5] = None
-                self.assertEqual(after[:-1], tuple(expected))
-                self.assertIsNone(after[-1])
+                self.assertEqual(after[:len(before)], tuple(expected))
+                self.assertTrue(all(value is None for value in after[len(before):]))
                 mapped = store._conn.execute(
                     "SELECT subject_id, subject_scope FROM requests WHERE request_id='req_mapped'",
                 ).fetchone()

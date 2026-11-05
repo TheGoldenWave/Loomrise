@@ -7,6 +7,7 @@ are never accepted from tool arguments. This module does not expose HTTP MCP.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -24,6 +25,49 @@ class ConfigurationToolResponse(BaseModel):
     ok: bool
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+
+
+DIAGNOSIS_SKILL_URI = "loomrise://skills/diagnose/v1"
+
+
+def create_diagnostics_mcp_server(
+    application: ConfigurationApplication, *, principal: ConfigurationPrincipal,
+) -> FastMCP:
+    """A separate diagnostic tool surface; the application still checks every grant."""
+    server = FastMCP("loomrise-diagnostics", instructions=(
+        "Read the diagnosis Skill resource. Use only an owner-issued permission; "
+        "return evidence-linked proposals and preserve all evidence limitations."
+    ))
+
+    def execute(action: str, payload: dict[str, Any]) -> ConfigurationToolResponse:
+        return ConfigurationToolResponse.model_validate(application.execute(
+            principal=principal, action=action, payload=payload,
+        ))
+
+    @server.resource(DIAGNOSIS_SKILL_URI, mime_type="text/markdown")
+    def diagnosis_skill() -> str:
+        return (Path(__file__).resolve().parents[2] / "skills/loomrise-diagnose/SKILL.md").read_text(encoding="utf-8")
+
+    @server.tool(name="loomrise_diagnosis_evidence", structured_output=True,
+                 description="Read a bounded, redacted snapshot under an unexpired diagnosis permission.")
+    async def evidence(agent_id: str, permission_id: str) -> ConfigurationToolResponse:
+        return execute("diagnostics.evidence", {"agent_id": agent_id, "permission_id": permission_id})
+
+    @server.tool(name="loomrise_diagnosis_report_submit", structured_output=True,
+                 description="Save a proposal with exact snapshot-local evidence references; never change configuration or truth.")
+    async def submit(agent_id: str, permission_id: str, snapshot_id: str,
+                     input_hash: str, report: dict[str, Any]) -> ConfigurationToolResponse:
+        return execute("diagnostics.report.submit", {
+            "agent_id": agent_id, "permission_id": permission_id, "snapshot_id": snapshot_id,
+            "input_hash": input_hash, "report": report,
+        })
+
+    @server.tool(name="loomrise_diagnosis_report_read", structured_output=True,
+                 description="Read a saved proposal while its diagnosis permission remains valid.")
+    async def report_read(agent_id: str, report_id: str) -> ConfigurationToolResponse:
+        return execute("diagnostics.report.read", {"agent_id": agent_id, "report_id": report_id})
+
+    return server
 
 
 def create_configuration_mcp_server(
@@ -314,5 +358,6 @@ __all__ = [
     "CONFIG_SCHEMA_VERSION",
     "ConfigurationToolResponse",
     "create_configuration_mcp_server",
+    "create_diagnostics_mcp_server", "DIAGNOSIS_SKILL_URI",
     "run_configuration_mcp",
 ]

@@ -1,0 +1,168 @@
+{
+  "bounds": {
+    "voice.closed_to_tts_request_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 0.7
+    },
+    "voice.closed_to_tts_request_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 14.1
+    },
+    "voice.closed_to_tts_request_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 46.2
+    },
+    "voice.final_to_closed_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 17.4
+    },
+    "voice.final_to_closed_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 323.8
+    },
+    "voice.final_to_closed_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 1057.4
+    },
+    "voice.first_audio_to_done_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 454.2
+    },
+    "voice.first_audio_to_done_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 981.3
+    },
+    "voice.first_audio_to_done_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 1173.2
+    },
+    "voice.first_audio_to_playback_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 4.9
+    },
+    "voice.first_audio_to_playback_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 4.9
+    },
+    "voice.first_audio_to_playback_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 4.9
+    },
+    "voice.tts_request_to_first_audio_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 364.7
+    },
+    "voice.tts_request_to_first_audio_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 402.2
+    },
+    "voice.tts_request_to_first_audio_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 448.0
+    },
+    "voice.tts_request_to_playback_ms.p50": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 464.4
+    },
+    "voice.tts_request_to_playback_ms.p75": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 464.4
+    },
+    "voice.tts_request_to_playback_ms.p95": {
+      "note": "2026-10-30 重算 2026-10-23 smoke/manual trace；n=1~5，只作回归护栏，不作达标证据",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/voice-metrics.json",
+      "upper": 464.4
+    },
+    "web.loomrise_customer_inbox_html.blocking_scripts": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    },
+    "web.loomrise_customer_inbox_html.critical_path_requests": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 1.0
+    },
+    "web.loomrise_customer_inbox_html.external_origins": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    },
+    "web.loomrise_customer_widget_html.blocking_scripts": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    },
+    "web.loomrise_customer_widget_html.critical_path_requests": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 1.0
+    },
+    "web.loomrise_customer_widget_html.external_origins": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    },
+    "web.loomrise_web_html.blocking_scripts": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    },
+    "web.loomrise_web_html.critical_path_requests": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 1.0
+    },
+    "web.loomrise_web_html.external_origins": {
+      "note": "S1 本地入口与客服页静态扫描；结构计数应为常量",
+      "recorded": "2026-10-30T15:02:48+08:00",
+      "source": "runs/perf/web-metrics.json",
+      "upper": 0.0
+    }
+  },
+  "updated": "2026-10-30T15:02:48+08:00",
+  "version": 1
+}

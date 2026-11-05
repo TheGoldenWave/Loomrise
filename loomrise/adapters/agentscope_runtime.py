@@ -382,7 +382,12 @@ def wrap_tool(
 # --------------------------------------------------------------------------
 
 
-def project_event(evt: Any, emit: Callable[..., Any]) -> str:
+def project_event(
+    evt: Any,
+    emit: Callable[..., Any],
+    *,
+    model_name: str | None = None,
+) -> str:
     """供应商事件 → Loomrise RunEvent。返回事件类型名。"""
     if isinstance(evt, ReplyStartEvent):
         emit("run.reply_started", supplier_reply_id=evt.reply_id)
@@ -420,7 +425,8 @@ def project_event(evt: Any, emit: Callable[..., Any]) -> str:
     if isinstance(evt, ModelCallEndEvent):
         emit(
             "model.call_end",
-            model=getattr(evt, "model_name", None),
+            # 固定版 SDK 的结束事件没有模型名，由实际执行模型提供。
+            model=model_name if model_name is not None else getattr(evt, "model_name", None),
             input_tokens=evt.input_tokens,
             output_tokens=evt.output_tokens,
             finished_reason=str(evt.finished_reason),
@@ -488,7 +494,7 @@ async def drive_reply(
             if isinstance(evt, Msg):
                 yield "reply.final", evt
                 continue
-            etype = project_event(evt, emit)
+            etype = project_event(evt, emit, model_name=agent.model.model)
             if isinstance(evt, RequireUserConfirmEvent):
                 need_confirm = evt
                 break

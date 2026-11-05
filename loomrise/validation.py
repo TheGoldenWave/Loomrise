@@ -48,15 +48,15 @@ def is_llm_leaf(node: Any) -> bool:
 
 
 def _composite_ops(node: Any) -> int:
-    """组合算子的嵌套个数；纯叶子为 0，空或纯 `llm` 为 -1（不构成条件层）。
+    """组合算子的嵌套个数；包括空条件与 `llm` 在内的叶子均为 0。
 
     "层"数的是**组合算子的嵌套**，不是节点的个数：`all:[A, B]` 是 1 层，
     `all:[A, any:[B, C]]` 才是 2 层。叶子与它所在的组合算同一层。
     """
     if not isinstance(node, dict) or not node:
-        return -1
+        return 0
     if is_llm_leaf(node):
-        return -1
+        return 0
     if any(k in node for k in COMPOSITE_KEYS):
         children: list[Any] = []
         for key in COMPOSITE_KEYS:
@@ -64,7 +64,7 @@ def _composite_ops(node: Any) -> int:
                 continue
             value = node[key]
             children.extend(value if isinstance(value, list) else [value])
-        return 1 + max((_composite_ops(c) for c in children), default=-1)
+        return 1 + max((_composite_ops(c) for c in children), default=0)
     return 0
 
 

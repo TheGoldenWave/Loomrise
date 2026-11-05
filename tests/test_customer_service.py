@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import os
 import tempfile
 import unittest
 
-from loomrise.configuration import ConfigurationPrincipal, ConfigurationService
+from loomrise.configuration import ConfigurationPrincipal, ConfigurationService, ConfigurationValidationError
 from loomrise.customer_service import CustomerService, CustomerServiceApplication
 from loomrise.durable_store import SqliteStore
 from tests.test_configuration_service import spec
@@ -49,15 +50,135 @@ class CustomerServiceCase(unittest.TestCase):
     def execute(self, action, payload, principal=None):
         return self.app.execute(principal=principal or self.owner, action=action, payload=payload)
 
+    def test_widget_uses_approved_public_configuration_and_requires_declared_visitor_fields(self):
+        value = spec()
+        value['widget'] = {'title': '虚构课程客服', 'greeting': '欢迎咨询', 'timezone': 'Asia/Shanghai',
+                           'fields': [{'id': 'visitor_name', 'label': '称呼', 'type': 'text', 'required': True}]}
+        saved = self.configuration.save_draft(tenant_id='tenant-a', agent_id='expert-a', expected_revision=1, config=value)
+        candidate = self.configuration.freeze_candidate(tenant_id='tenant-a', agent_id='expert-a',
+            expected_revision=saved['revision'], idempotency_key='widget-config')
+        self.store.approve_release_candidate(tenant_id='tenant-a', agent_id='expert-a',
+            candidate_id=candidate['candidate_id'], content_hash=candidate['content_hash'], environment='sandbox',
+            entry_id='entry-a', version_id='widget-v2', approved_by='owner')
+        self.store.publish_sandbox_candidate(tenant_id='tenant-a', agent_id='expert-a',
+            candidate_id=candidate['candidate_id'], entry_id='entry-a', version_id='widget-v2')
+        view = self.execute('widget.configuration', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})
+        self.assertTrue(view['ok'], view)
+        self.assertEqual(view['result']['widget']['title'], '虚构课程客服')
+        self.assertNotIn('config', view['result'])
+        self.assertFalse(self.execute('widget.open', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})['ok'])
+        self.assertEqual(self.execute('inbox.list', {'agent_id': 'expert-a'})['result']['items'], [])
+        opened = self.execute('widget.open', {'agent_id': 'expert-a', 'entry_id': 'entry-a',
+            'expected_version_id': 'widget-v2', 'visitor_fields': {'visitor_name': '虚构小林'}})
+        self.assertTrue(opened['ok'], opened)
+        conversation = self.execute('inbox.list', {'agent_id': 'expert-a'})['result']['items'][0]
+        self.assertEqual(conversation['visitor_fields'], {'visitor_name': '虚构小林'})
+        self.assertEqual(conversation['release_version'], 'widget-v2')
+        original = next(item for item in self.configuration.list_candidates(tenant_id='tenant-a', agent_id='expert-a')
+                        if item['source_revision'] == 1)
+        self.store.approve_release_candidate(tenant_id='tenant-a', agent_id='expert-a',
+            candidate_id=original['candidate_id'], content_hash=original['content_hash'], environment='sandbox',
+            entry_id='entry-a', version_id='widget-v3', approved_by='owner')
+        self.store.publish_sandbox_candidate(tenant_id='tenant-a', agent_id='expert-a',
+            candidate_id=original['candidate_id'], entry_id='entry-a', version_id='widget-v3')
+        session_view = self.execute('widget.configuration', {'agent_id': 'expert-a', 'entry_id': 'entry-a',
+            'conversation_id': opened['result']['conversation_id'], 'visitor_token': opened['result']['visitor_token']})
+        self.assertEqual(session_view['result']['version_id'], 'widget-v2')
+        self.assertEqual(session_view['result']['widget']['title'], '虚构课程客服')
+        self.assertFalse(self.execute('widget.open', {'agent_id': 'expert-a', 'entry_id': 'entry-a',
+            'expected_version_id': 'widget-v2', 'visitor_fields': {'visitor_name': '虚构小林'}})['ok'])
+        self.assertEqual(len(self.execute('inbox.list', {'agent_id': 'expert-a'})['result']['items']), 1)
+        backup = os.path.join(self.tmp.name, 'profiles-backup.db')
+        self.store.backup_to(backup)
+        restored = SqliteStore(backup)
+        try:
+            self.assertEqual(restored.list_customer_conversations(tenant_id='tenant-a', agent_id='expert-a')[0]['visitor_fields'],
+                             {'visitor_name': '虚构小林'})
+        finally:
+            restored.close()
+
+    def test_widget_projects_bound_faq_questions_without_source_details(self):
+        source = self.configuration.create_knowledge_source(
+            tenant_id='tenant-a', agent_id='expert-a', kind='faq',
+            locator='体验课价格为 19 元。仅供虚构验证。',
+            display_name='私有来源标题', authorization='owned',
+        )
+        ready = self.configuration.ingest_knowledge_source(
+            tenant_id='tenant-a', agent_id='expert-a', source_id=source['source_id'],
+        )
+        source_ref = {'source_id': source['source_id'], 'content_hash': ready['content_hash']}
+        config = spec()
+        config['widget'] = {'title': '虚构课程客服'}
+        config['ai_reception'] = {
+            'enabled': True, 'model_id': 'fixture-model', 'sources': [source_ref],
+            'faq_suggestions': [{'question': '体验课多少钱？', **source_ref}],
+        }
+        saved = self.configuration.save_draft(
+            tenant_id='tenant-a', agent_id='expert-a', expected_revision=1, config=config,
+        )
+        try:
+            candidate = self.configuration.freeze_candidate(
+                tenant_id='tenant-a', agent_id='expert-a', expected_revision=saved['revision'],
+                idempotency_key='widget-faq-suggestions',
+            )
+        except ConfigurationValidationError as exc:
+            self.fail(f'valid FAQ suggestions did not pass version validation: {exc}')
+        self.store.approve_release_candidate(
+            tenant_id='tenant-a', agent_id='expert-a', candidate_id=candidate['candidate_id'],
+            content_hash=candidate['content_hash'], environment='sandbox',
+            entry_id='entry-a', version_id='widget-faq-v2', approved_by='owner',
+        )
+        self.store.publish_sandbox_candidate(
+            tenant_id='tenant-a', agent_id='expert-a', candidate_id=candidate['candidate_id'],
+            entry_id='entry-a', version_id='widget-faq-v2',
+        )
+
+        view = self.execute('widget.configuration', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})
+        self.assertTrue(view['ok'], view)
+        self.assertEqual(view['result']['faq_suggestions'], ['体验课多少钱？'])
+        self.assertEqual(view['result']['version_id'], 'widget-faq-v2')
+        public = str(view['result'])
+        self.assertNotIn(source['source_id'], public)
+        self.assertNotIn(ready['content_hash'], public)
+        self.assertNotIn('私有来源标题', public)
+        self.assertNotIn('体验课价格为 19 元', public)
+
+        self.configuration.revoke_knowledge_source(
+            tenant_id='tenant-a', agent_id='expert-a', source_id=source['source_id'],
+        )
+        stale = self.execute('widget.configuration', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})
+        self.assertFalse(stale['ok'])
+        self.assertEqual(stale['error']['code'], 'release_blocked')
+
+    def test_widget_auto_response_is_opt_in_and_stops_after_human_request(self):
+        opened = self.execute('widget.open', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})['result']
+        result = self.service.visitor_send_with_responder(conversation_id=opened['conversation_id'],
+            visitor_token=opened['visitor_token'], text='你好', responder=lambda text, config: '模拟自动答复')
+        self.assertEqual(result['assistant']['sender'], 'assistant')
+        blocked = self.service.visitor_send_with_responder(conversation_id=opened['conversation_id'],
+            visitor_token=opened['visitor_token'], text='转人工', request_human=True,
+            responder=lambda text, config: '不应生成')
+        self.assertEqual(blocked['assistant'], None)
+        self.assertEqual(blocked['auto_reply'], 'skipped_human')
+        self.assertEqual(len(self.execute('widget.messages', {'conversation_id': opened['conversation_id'],
+            'visitor_token': opened['visitor_token']})['result']['items']), 3)
+
     def test_widget_inbox_round_trip_is_private_and_generation_fenced(self):
         opened = self.execute("widget.open", {"agent_id": "expert-a", "entry_id": "entry-a"})["result"]
         conversation_id = opened["conversation_id"]
         visitor_token = opened["visitor_token"]
-        posted = self.execute("widget.send", {
+        posted = asyncio.run(self.app.execute_async(principal=self.owner, action="widget.send", payload={
             "conversation_id": conversation_id, "visitor_token": visitor_token,
             "text": "请问课程如何报名？", "request_human": True,
-        })
+        }))
         self.assertTrue(posted["ok"])
+        inbound = self.execute('widget.messages', {
+            'conversation_id': conversation_id, 'visitor_token': visitor_token,
+        })['result']['items'][0]['reception']
+        run_id, request_id = inbound['run_id'], inbound['request_id']
+        started = self.store.load_events(run_id)
+        finished = next(event for event in started if event.event_type == 'customer.reception.finished')
+        self.assertTrue(finished.payload.get('handoff_requested'))
         self.assertEqual(self.execute("inbox.list", {"agent_id": "expert-a"})["result"]["items"][0]["state"], "human_requested")
         denied = self.execute("inbox.claim", {"agent_id": "expert-a", "conversation_id": conversation_id}, self.viewer)
         self.assertEqual(denied["error"]["code"], "forbidden")
@@ -75,6 +196,40 @@ class CustomerServiceCase(unittest.TestCase):
             "generation": 1, "text": "我来协助您报名。",
         })
         self.assertTrue(replied["ok"])
+        other_owner = ConfigurationPrincipal(
+            tenant_id='tenant-a', actor_id='other-owner', role='owner', agent_ids=('expert-a',),
+        )
+        wrong_actor = self.execute('inbox.release', {
+            'agent_id': 'expert-a', 'conversation_id': conversation_id, 'generation': 1,
+        }, other_owner)
+        self.assertEqual(wrong_actor['error']['code'], 'state_conflict')
+        stale_release = self.execute('inbox.release', {
+            'agent_id': 'expert-a', 'conversation_id': conversation_id, 'generation': 0,
+        })
+        self.assertEqual(stale_release['error']['code'], 'state_conflict')
+        viewer_release = self.execute('inbox.release', {
+            'agent_id': 'expert-a', 'conversation_id': conversation_id, 'generation': 1,
+        }, self.viewer)
+        self.assertEqual(viewer_release['error']['code'], 'forbidden')
+        released = self.execute('inbox.release', {
+            'agent_id': 'expert-a', 'conversation_id': conversation_id, 'generation': 1,
+        })
+        self.assertTrue(released['ok'], released)
+        self.assertEqual((released['result']['state'], released['result']['occupancy_generation']), ('bot', 2))
+        events = self.store.load_events(run_id)
+        self.assertEqual({event.request_id for event in events}, {request_id})
+        self.assertTrue(self.store.verify_chain(run_id))
+        self.assertEqual([event.event_type for event in events if event.event_type.startswith('customer.handoff.')], [
+            'customer.handoff.claimed', 'customer.handoff.replied', 'customer.handoff.released',
+        ])
+        self.assertEqual([event.payload['occupancy_generation'] for event in events
+                          if event.event_type.startswith('customer.handoff.')], [1, 1, 2])
+        reception_stats = self.execute('customer.statistics', {'agent_id': 'expert-a'})['result']['reception']
+        self.assertEqual((reception_stats['request_count'], reception_stats['run_count']), (1, 1))
+        self.assertEqual(reception_stats['handoff'], {
+            'requested_count': 1, 'request_sample_count': 1, 'request_missing_count': 0,
+            'claimed_count': 1, 'claim_sample_count': 1, 'claim_missing_count': 0, 'reason': None,
+        })
         transcript = self.execute("widget.messages", {
             "conversation_id": conversation_id, "visitor_token": visitor_token,
         })["result"]["items"]
@@ -84,6 +239,25 @@ class CustomerServiceCase(unittest.TestCase):
             "conversation_id": conversation_id, "visitor_token": "wrong-token",
         })
         self.assertEqual(forbidden_read["error"]["code"], "not_found")
+
+    def test_legacy_sync_inbox_transitions_get_independent_audit_runs(self):
+        opened = self.execute('widget.open', {'agent_id': 'expert-a', 'entry_id': 'entry-a'})['result']
+        self.execute('widget.send', {'conversation_id': opened['conversation_id'],
+            'visitor_token': opened['visitor_token'], 'text': '需要人工协助', 'request_human': True})
+        self.execute('inbox.claim', {'agent_id': 'expert-a', 'conversation_id': opened['conversation_id']})
+        self.execute('inbox.reply', {'agent_id': 'expert-a', 'conversation_id': opened['conversation_id'],
+            'generation': 1, 'text': '我来协助您。'})
+        self.execute('inbox.release', {'agent_id': 'expert-a', 'conversation_id': opened['conversation_id'],
+            'generation': 1})
+        transitions = [event for run_id in self.store._conn.execute(
+            "SELECT DISTINCT run_id FROM events WHERE event_type='customer.handoff.audit_started'"
+        ) for event in self.store.load_events(run_id['run_id']) if event.event_type.startswith('customer.handoff.')
+            and event.event_type != 'customer.handoff.audit_started']
+        self.assertEqual(sorted(event.event_type for event in transitions), sorted([
+            'customer.handoff.claimed', 'customer.handoff.replied', 'customer.handoff.released',
+        ]))
+        self.assertEqual(len({event.run_id for event in transitions}), 3)
+        self.assertTrue(all(self.store.verify_chain(event.run_id) for event in transitions))
 
     def test_material_versions_backup_read_and_send_revalidation(self):
         original = b"admission guide v1"
@@ -107,6 +281,11 @@ class CustomerServiceCase(unittest.TestCase):
         self.execute("inbox.claim", {
             "agent_id": "expert-a", "conversation_id": opened["conversation_id"],
         })
+        legacy_claim = self.store._conn.execute(
+            "SELECT run_id FROM events WHERE event_type='customer.handoff.claimed'"
+        ).fetchone()
+        self.assertIsNotNone(legacy_claim)
+        self.assertTrue(self.store.verify_chain(legacy_claim['run_id']))
         generation = 1
         updated = self.execute("material.create", {
             "agent_id": "expert-a", "asset_id": asset_id, "filename": "guide.txt",

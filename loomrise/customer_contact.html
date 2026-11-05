@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>__TITLE__ · 联系页</title>
+  <meta name="referrer" content="no-referrer">
+  <style>
+    :root { color-scheme: light; font: 16px/1.6 system-ui, sans-serif; color: #1d2b27; background: #f4f7f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; padding: 24px 16px; }
+    main { width: min(100%, 760px); margin: 0 auto; background: #fff; border: 1px solid #d7e0dc; border-radius: 12px; padding: clamp(24px, 5vw, 52px); }
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 4vw, 38px); line-height: 1.2; }
+    #description { margin: 0 0 28px; color: #536b65; }
+    .block { padding: 20px 0; border-top: 1px solid #e1e8e5; }
+    .block h2 { margin: 0 0 8px; font-size: 18px; }
+    .block p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .item, details, blockquote { margin: 16px 0 0; min-width: 0; }
+    h1, h2, h3, a, summary { overflow-wrap: anywhere; }
+    h3 { margin: 0 0 4px; font-size: 16px; }
+    .item img, .item video, .item audio { display: block; max-width: 100%; margin-top: 12px; }
+    .item img { max-height: 360px; object-fit: contain; }
+    a { color: #176b55; display: inline-block; min-height: 44px; padding: 10px 0; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid #d79840; outline-offset: 3px; }
+    summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
+    .hint { color: #687a74; font-size: 14px; }
+    .chat { margin-top: 12px; display: inline-flex; min-height: 42px; align-items: center; padding: 0 16px; border-radius: 6px; color: #fff; background: #176b55; text-decoration: none; }
+    .meta { margin-top: 32px; color: #687a74; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main aria-labelledby="title">
+    <h1 id="title">__TITLE__</h1>
+    <p id="description">__DESCRIPTION__</p>
+    <section id="blocks">__BLOCKS__</section>
+    <p class="meta">__META__</p>
+  </main>
+</body>
+</html>

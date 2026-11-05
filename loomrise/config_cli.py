@@ -8,6 +8,7 @@ scope or permissions for an operation.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -38,7 +39,49 @@ def build_parser() -> argparse.ArgumentParser:
     groups = parser.add_subparsers(dest="resource", required=True)
     serve = groups.add_parser("serve", help="启动仅本机可访问的配置 HTTP API")
     serve.add_argument("--port", type=int, default=8766)
-    groups.add_parser("mcp", help="启动绑定本机可信身份的 stdio MCP 服务")
+    mcp = groups.add_parser("mcp", help="启动绑定本机可信身份的 stdio MCP 服务")
+    mcp.add_argument("--diagnostics", action="store_true", help="仅披露受限诊断工具与 Skill")
+
+    diagnostics = groups.add_parser("diagnostics", help="许可范围内的脱敏证据与诊断提案")
+    diagnosis_actions = diagnostics.add_subparsers(dest="action", required=True)
+    for name in ("issue", "revoke", "evidence", "submit", "report", "job"):
+        command = diagnosis_actions.add_parser(name)
+        if name != "job":
+            command.add_argument("--agent-id", required=True)
+            _add_json_flag(command)
+        if name == "issue":
+            command.add_argument("--recipient-actor-id", required=True)
+            command.add_argument("--run-id", action="append", default=[])
+            command.add_argument("--case-id", action="append", default=[])
+            command.add_argument("--expires-in-seconds", type=int, default=900)
+        elif name == "job":
+            job_actions = command.add_subparsers(dest="job_action", required=True)
+            create = job_actions.add_parser("create", help="创建受限诊断作业")
+            create.add_argument("--agent-id", required=True)
+            _add_json_flag(create)
+            create.add_argument("--permission-id", required=True)
+            create.add_argument("--idempotency-key", required=True)
+            create.add_argument("--provider", choices=("agentscope",), required=True)
+            create.add_argument("--max-attempts", type=int, default=1)
+            create.add_argument("--total-seconds", type=int, default=120)
+            create.add_argument("--total-tokens", type=int, default=16000)
+            create.add_argument("--attempt-tokens", type=int, default=8000)
+            create.add_argument("--max-output-bytes", type=int, default=16384)
+            for action in ("run", "read", "cancel", "recover", "retry"):
+                subcommand = job_actions.add_parser(action, help=f"{action} 诊断作业")
+                subcommand.add_argument("--agent-id", required=True)
+                _add_json_flag(subcommand)
+                subcommand.add_argument("--job-id", required=True)
+                if action == "run":
+                    subcommand.add_argument("--provider", choices=("agentscope",), required=True)
+        elif name == "report":
+            command.add_argument("--report-id", required=True)
+        else:
+            command.add_argument("--permission-id", required=True)
+            if name == "submit":
+                command.add_argument("--snapshot-id", required=True)
+                command.add_argument("--input-hash", required=True)
+                command.add_argument("--report", required=True, help="诊断提案 JSON 文件路径")
 
     draft = groups.add_parser("draft", help="配置草稿")
     draft_actions = draft.add_subparsers(dest="action", required=True)
@@ -189,6 +232,23 @@ def _load_json_object(path: str) -> dict[str, Any]:
 def _request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     agent_id = args.agent_id
     resource, action = args.resource, args.action
+    if resource == "diagnostics":
+        payload = {"agent_id": agent_id}
+        if action == "issue":
+            return "diagnostics.permission.issue", {
+                **payload, "recipient_actor_id": args.recipient_actor_id,
+                "run_ids": args.run_id, "case_ids": args.case_id,
+                "expires_in_seconds": args.expires_in_seconds,
+            }
+        if action == "report":
+            return "diagnostics.report.read", {**payload, "report_id": args.report_id}
+        payload["permission_id"] = args.permission_id
+        if action == "submit":
+            return "diagnostics.report.submit", {
+                **payload, "snapshot_id": args.snapshot_id, "input_hash": args.input_hash,
+                "report": _load_json_object(args.report),
+            }
+        return {"revoke": "diagnostics.permission.revoke", "evidence": "diagnostics.evidence"}[action], payload
     if resource == "draft":
         if action == "read":
             return "draft.get", {"agent_id": agent_id}
@@ -268,6 +328,66 @@ def _failure(code: str, message: str) -> dict[str, Any]:
     }
 
 
+def _diagnostics_provider(provider_name: str):
+    if provider_name != "agentscope":
+        raise ValueError("必须显式选择受支持的诊断 Provider")
+    from .local_config import load_config
+
+    try:
+        config = load_config()
+    except (OSError, ValueError, RuntimeError, KeyError):
+        raise RuntimeError("本地诊断 Provider 配置不可用") from None
+    if not config:
+        raise RuntimeError("尚未配置本地诊断 Provider")
+    from .adapters.harness import AgentScopeDiagnosisProvider
+
+    return AgentScopeDiagnosisProvider({"provider_id": "agentscope-openai-chat-v1", **config})
+
+
+def _governance_job_command(args: argparse.Namespace, service: ConfigurationService,
+                            principal) -> dict[str, Any]:
+    from .diagnostics import DiagnosticsService
+    from .governance_jobs import GovernanceJobs
+
+    try:
+        provider = _diagnostics_provider(args.provider) if args.job_action in {"create", "run"} else None
+        jobs = GovernanceJobs(DiagnosticsService(service.store), provider=provider)
+        common = {"principal": principal, "agent_id": args.agent_id}
+        if args.job_action == "create":
+            result = jobs.create(
+                **common,
+                permission_id=args.permission_id,
+                idempotency_key=args.idempotency_key,
+                max_attempts=args.max_attempts,
+                total_seconds=args.total_seconds,
+                total_tokens=args.total_tokens,
+                attempt_tokens=args.attempt_tokens,
+                max_output_bytes=args.max_output_bytes,
+            )
+        elif args.job_action == "run":
+            try:
+                result = asyncio.run(jobs.run(**common, job_id=args.job_id))
+            except KeyboardInterrupt:
+                result = jobs.read(**common, job_id=args.job_id)
+        elif args.job_action == "read":
+            result = jobs.read(**common, job_id=args.job_id)
+        elif args.job_action == "cancel":
+            result = jobs.cancel(**common, job_id=args.job_id)
+        elif args.job_action == "recover":
+            result = jobs.recover(**common, job_id=args.job_id)
+        else:
+            result = jobs.retry(**common, job_id=args.job_id)
+        return {"schema_version": CONFIG_SCHEMA_VERSION, "ok": True, "result": result, "error": None}
+    except PermissionError as exc:
+        return _failure("forbidden", str(exc))
+    except KeyError as exc:
+        return _failure("not_found", str(exc))
+    except (TypeError, ValueError) as exc:
+        return _failure("invalid_request", str(exc))
+    except RuntimeError as exc:
+        return _failure("provider_unavailable", str(exc))
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -291,15 +411,16 @@ def main(
         )
         return _EXIT_OK
     if args.resource == "mcp":
-        from .adapters.mcp import run_configuration_mcp
+        from .adapters.mcp import create_diagnostics_mcp_server, run_configuration_mcp
         principal = load_configuration_principal(trusted_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         store = SqliteStore(str(db_path))
         try:
-            run_configuration_mcp(
-                ConfigurationApplication(ConfigurationService(store)),
-                principal=principal,
-            )
+            application = ConfigurationApplication(ConfigurationService(store))
+            if args.diagnostics:
+                create_diagnostics_mcp_server(application, principal=principal).run("stdio")
+            else:
+                run_configuration_mcp(application, principal=principal)
         finally:
             store.close()
         return _EXIT_OK
@@ -323,6 +444,8 @@ def main(
                         "schema_version": CONFIG_SCHEMA_VERSION, "ok": True,
                         "result": record, "error": None,
                     }
+            elif args.resource == "diagnostics" and args.action == "job":
+                response = _governance_job_command(args, service, principal)
             else:
                 action, payload = _request(args)
                 response = ConfigurationApplication(service).execute(

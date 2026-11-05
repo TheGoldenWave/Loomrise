@@ -13,7 +13,12 @@ from loomrise.config_cli import main
 from loomrise.configuration import (
     CONFIG_SCHEMA_VERSION,
     ConfigurationApplication,
+    ConfigurationPrincipal,
     ConfigurationService,
+)
+from loomrise.diagnostics import (
+    DiagnosticsService, PROVIDER_CONTRACT_HASH, PROVIDER_VERSIONS,
+    PROVIDER_KIND_OFFLINE_SCRIPTED,
 )
 from loomrise.durable_store import SqliteStore
 
@@ -234,6 +239,124 @@ class ConfigurationCliCase(unittest.TestCase):
             parser.parse_args(["publish", "--agent-id", "expert-a"])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["candidate", "approve", "--agent-id", "expert-a"])
+
+    def test_diagnostics_issue_accepts_explicit_case_without_run_ids(self):
+        self.principal_file.write_text(json.dumps({
+            "tenant_id": "tenant-a", "actor_id": "local-owner", "role": "owner",
+            "agent_ids": ["expert-a"],
+        }), encoding="utf-8")
+        if os.name == "posix":
+            self.principal_file.chmod(0o600)
+        code, issued = self.invoke(
+            "diagnostics", "issue", "--agent-id", "expert-a",
+            "--recipient-actor-id", "diagnostician", "--case-id", "c1_consult_success", "--json",
+        )
+        self.assertEqual(code, 0, issued)
+        self.assertTrue(issued["ok"], issued)
+        self.assertEqual(issued["result"]["selection"]["runs"], [])
+        self.assertEqual([case["case_id"] for case in issued["result"]["selection"]["cases"]],
+                         ["c1_consult_success"])
+
+    def test_diagnostics_issue_cli_still_rejects_no_run_or_case_sources(self):
+        self.principal_file.write_text(json.dumps({
+            "tenant_id": "tenant-a", "actor_id": "local-owner", "role": "owner",
+            "agent_ids": ["expert-a"],
+        }), encoding="utf-8")
+        if os.name == "posix":
+            self.principal_file.chmod(0o600)
+        code, rejected = self.invoke(
+            "diagnostics", "issue", "--agent-id", "expert-a",
+            "--recipient-actor-id", "diagnostician", "--json",
+        )
+        self.assertEqual(code, 2)
+        self.assertFalse(rejected["ok"])
+
+    def test_governance_job_cli_requires_provider_and_supports_cancel(self):
+        from loomrise.config_cli import build_parser
+
+        parser = build_parser()
+        create_without_provider = [
+            "diagnostics", "job", "create", "--agent-id", "expert-a",
+            "--permission-id", "permission-1", "--idempotency-key", "job-1",
+        ]
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(create_without_provider)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args([
+                "diagnostics", "job", "run", "--agent-id", "expert-a",
+                "--job-id", "job-1",
+            ])
+
+        for action in ("create", "run", "read", "cancel", "recover", "retry"):
+            argv = [
+                "diagnostics", "job", action, "--agent-id", "expert-a",
+                "--json",
+            ]
+            if action == "create":
+                argv.extend((
+                    "--permission-id", "permission-1",
+                    "--idempotency-key", "job-1", "--provider", "agentscope",
+                ))
+            else:
+                argv.extend(("--job-id", "job-1"))
+            if action == "run":
+                argv.extend(("--provider", "agentscope"))
+            parsed = parser.parse_args(argv)
+            self.assertEqual(parsed.job_action, action)
+            self.assertTrue(parsed.json)
+
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args([
+                "diagnostics", "job", "schedule", "--agent-id", "expert-a",
+            ])
+
+        owner = ConfigurationPrincipal("tenant-a", "local-owner", "owner", ("expert-a",))
+        store = SqliteStore(str(self.db))
+        permission = DiagnosticsService(store).issue(
+            principal=owner,
+            agent_id="expert-a",
+            recipient_actor_id="local-editor",
+            run_ids=[],
+            case_ids=["c1_consult_success"],
+        )
+        store.close()
+
+        class Provider:
+            descriptor = {
+                "provider_id": "agentscope-test",
+                "provider_kind": PROVIDER_KIND_OFFLINE_SCRIPTED,
+                "version": PROVIDER_VERSIONS[PROVIDER_KIND_OFFLINE_SCRIPTED],
+                "contract_hash": PROVIDER_CONTRACT_HASH,
+            }
+
+        with patch("loomrise.config_cli._diagnostics_provider", return_value=Provider()):
+            code, created = self.invoke(
+                "diagnostics", "job", "create", "--agent-id", "expert-a",
+                "--permission-id", permission["permission_id"],
+                "--idempotency-key", "cli-job-1", "--provider", "agentscope", "--json",
+            )
+        self.assertEqual(code, 0, created)
+        self.assertEqual(created["result"]["state"], "queued")
+
+        code, cancelled = self.invoke(
+            "diagnostics", "job", "cancel", "--agent-id", "expert-a",
+            "--job-id", created["result"]["job_id"], "--json",
+        )
+        self.assertEqual(code, 0, cancelled)
+        self.assertEqual(cancelled["result"]["state"], "cancelled")
+
+        with patch(
+            "loomrise.config_cli._diagnostics_provider",
+            side_effect=RuntimeError("provider configuration unavailable"),
+        ):
+            code, unavailable = self.invoke(
+                "diagnostics", "job", "create", "--agent-id", "expert-a",
+                "--permission-id", permission["permission_id"],
+                "--idempotency-key", "cli-job-provider-unavailable",
+                "--provider", "agentscope", "--json",
+            )
+        self.assertEqual(code, 2)
+        self.assertEqual(unavailable["error"]["code"], "provider_unavailable")
 
     def test_mcp_command_uses_the_provisioned_principal_and_shared_database(self):
         with patch("loomrise.adapters.mcp.run_configuration_mcp") as run:

@@ -59,6 +59,7 @@ class RequestState(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     WAITING_CONFIRM = "waiting_confirm"
+    WAITING = "waiting"
     CANCELLING = "cancelling"
     SUCCESS = "success"
     FAILED = "failed"
@@ -173,6 +174,28 @@ class AuthorizationResult:
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class ServiceCycleBinding:
+    """已登记的业务事项绑定；值本身不授予来源登记或执行权限。"""
+
+    cycle_id: str
+    tenant_id: str
+    agent_id: str
+    subject_id: str
+    authority_id: str
+    matter_ref: str
+    source_event_id: str
+    agent_version: str
+    config_hash: str
+
+    def __post_init__(self) -> None:
+        if any(not isinstance(value, str) or not value.strip() for value in asdict(self).values()):
+            raise ValueError('service cycle binding fields must be non-empty strings')
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 @dataclass
 class ServiceRequest:
     request_id: str
@@ -191,8 +214,13 @@ class ServiceRequest:
     outcome: dict[str, Any] | None = None
     result_id: str | None = None
     trigger_event_id: str | None = None
+    service_cycle: ServiceCycleBinding | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.service_cycle, dict):
+            self.service_cycle = ServiceCycleBinding(**self.service_cycle)
+        if self.service_cycle is not None and not isinstance(self.service_cycle, ServiceCycleBinding):
+            raise ValueError('service_cycle must be a resolved binding')
         if self.trigger_event_id is not None and (
             not isinstance(self.trigger_event_id, str) or not self.trigger_event_id.strip()
         ):
@@ -266,6 +294,7 @@ class RunStatus(StrEnum):
     """
 
     RUNNING = "running"
+    WAITING = "waiting"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     INTERRUPTED = "interrupted"
@@ -426,6 +455,8 @@ class AgentVersion:
     context_budget_tokens: int = 4000
     frozen_at: str = field(default_factory=now_iso)
     fingerprints: dict[str, str] = field(default_factory=dict)
+    orchestration: dict[str, Any] | None = None
+    unit_skill_bindings: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "AgentVersion":
@@ -444,6 +475,8 @@ class ScenarioPack:
     rules: list[HardRule]
     fragments: list[ContextFragment]
     routing: dict[str, list[str]] = field(default_factory=dict)
+    orchestration: dict[str, Any] | None = None
+    unit_skill_bindings: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str) -> "ScenarioPack":
@@ -458,6 +491,8 @@ class ScenarioPack:
             rules=[HardRule.from_dict(x) for x in d["rules"]],
             fragments=[ContextFragment.from_dict(x) for x in d["fragments"]],
             routing=d.get("routing", {}),
+            orchestration=d.get("orchestration"),
+            unit_skill_bindings=d.get("unit_skill_bindings", {}),
         )
 
     def skill(self, skill_id: str) -> SkillManifest:

@@ -13,12 +13,31 @@ from urllib.parse import urlparse
 
 from .contracts import new_id
 from .config_validation import validate_configuration
-from .durable_store import SqliteStore
+from .durable_store import SqliteStore, StaleConfigurationRevision
+from .graph_advisories import closed_set_advisory
 from .knowledge_fetch import fetch_https_text
+from .knowledge_documents import (
+    KNOWLEDGE_FILE_SUFFIXES,
+    MAX_FILE_BYTES,
+    KnowledgeFormatUnavailable,
+    extract_knowledge_file_text,
+)
 
 CONFIG_SCHEMA_VERSION = "config-api-v1"
 _WRITE_ROLES = frozenset({"editor", "owner"})
 _READ_ROLES = frozenset({"viewer", "editor", "owner", "external_agent"})
+# 外部 Agent 在诊断命名空间内仅允许以下显式动作；许可签发/撤销与治理作业
+# 一律不在其中，避免 diagnostics.* 的 early return 绕过角色白名单。
+_EXTERNAL_AGENT_DIAGNOSTICS_ACTIONS = frozenset({
+    "diagnostics.evidence", "diagnostics.report.submit", "diagnostics.report.read",
+})
+# 治理作业需要注入本地 Provider 并异步调用外部模型，仅本机 CLI 专用入口可用；
+# HTTP/MCP 不暴露作业能力（不扩大权限）。应用服务在此显式登记并拒绝，使三条
+# 接口共享同一套「作业仅 CLI」合同，不留半成品入口。
+_GOVERNANCE_JOB_ACTIONS = frozenset({
+    "diagnostics.job.create", "diagnostics.job.run", "diagnostics.job.read",
+    "diagnostics.job.cancel", "diagnostics.job.recover", "diagnostics.job.retry",
+})
 _EXTERNAL_SAFE_PATHS = frozenset({
     "persona.name", "persona.goal", "persona.audience", "persona.greeting",
     "persona.scope", "persona.fallback",
@@ -106,6 +125,79 @@ def field_diff(before: Any, after: Any, path: str = "$") -> list[dict[str, Any]]
     if not _same_json_scalar(before, after):
         return [{"path": path, "before": deepcopy(before), "after": deepcopy(after)}]
     return []
+
+
+def object_diff(before: Any, after: Any) -> dict[str, Any]:
+    """Review projection only; stable IDs align objects without changing field_diff."""
+    changes: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, str]] = []
+    collections = {
+        "units": ("unit_id", "unit"), "nodes": ("id", "node"),
+        "edges": ("id", "edge"), "entry_ports": ("port", "entry_port"),
+        "exit_ports": ("port", "exit_port"),
+    }
+
+    def walk(old: Any, new: Any, path: str, member: str = "",
+             context: dict[str, str] | None = None, *, object_boundary: bool = False) -> None:
+        owner = context or {"object_type": "configuration", "object_id": "$"}
+        collection = collections.get(member) if (
+            path == "$.units"
+            or path in {"$.orchestration.nodes", "$.orchestration.edges"}
+            or (owner["object_type"] == "unit" and (
+                (member in {"entry_ports", "exit_ports"} and path.endswith(f"].{member}"))
+                or (member in {"nodes", "edges"} and path.endswith(f"].body.{member}"))
+            ))
+        ) else None
+        if collection:
+            if old is _MISSING and isinstance(new, list):
+                old = []
+            if new is _MISSING and isinstance(old, list):
+                new = []
+        if isinstance(old, list) and isinstance(new, list) and collection:
+            identity, kind = collection
+
+            def index(items: list[Any]) -> dict[str, Any] | None:
+                result = {}
+                for item in items:
+                    key = item.get(identity) if isinstance(item, dict) else None
+                    if not isinstance(key, str) or not key.strip() or key in result:
+                        return None
+                    result[key] = item
+                return result
+
+            left, right = index(old), index(new)
+            if left is None or right is None:
+                diagnostics.append({"path": path, "code": "ambiguous_identity",
+                                    "message": "标识缺失或重复，以下明细仅按数组位置比较，无法对齐对象。"})
+                changes.extend({**item, **owner, "operation": "positional"}
+                               for item in field_diff(old, new, path))
+                return
+            # Only edge array order defines routing priority; other collections are registries.
+            if member == "edges" and list(left) != list(right):
+                changes.append({**owner, "object_type": "edge_order", "path": path,
+                                "operation": "priority", "before": list(left), "after": list(right)})
+            for key in sorted(left.keys() | right.keys()):
+                child = f"{path}[{identity}={json.dumps(key, ensure_ascii=False)}]"
+                child_owner = {"object_type": kind, "object_id": key}
+                walk(left.get(key, _MISSING), right.get(key, _MISSING), child,
+                     context=child_owner, object_boundary=True)
+            return
+        if old is _MISSING or new is _MISSING:
+            changes.extend({**item, **owner,
+                            "operation": ("added" if old is _MISSING else "removed")
+                            if object_boundary else "changed"}
+                           for item in field_diff(old, new, path))
+            return
+        if isinstance(old, dict) and isinstance(new, dict):
+            for key in sorted(old.keys() | new.keys()):
+                walk(old.get(key, _MISSING), new.get(key, _MISSING),
+                     _json_path_member(path, key), key, owner)
+            return
+        changes.extend({**item, **owner, "operation": "changed"}
+                       for item in field_diff(old, new, path))
+
+    walk(before, after, "$")
+    return {"changes": changes, "diagnostics": diagnostics}
 
 
 def _issues(spec: dict[str, Any], *, submitting: bool) -> list[dict[str, Any]]:
@@ -196,6 +288,32 @@ class ConfigurationService:
             raise KeyError("未知配置草稿")
         return row
 
+    def dismiss_graph_advisory(
+        self, *, tenant_id: str, agent_id: str, expected_revision: int,
+        layer_path: list[str], actor_id: str,
+    ) -> dict[str, Any]:
+        self._scope(tenant_id, agent_id)
+        _require_revision(expected_revision)
+        if (not isinstance(layer_path, list) or len(layer_path) > 16
+                or any(not isinstance(item, str) or not item.strip() for item in layer_path)):
+            raise ValueError("layer_path 必须是有效图层路径")
+        if not isinstance(actor_id, str) or not actor_id.strip():
+            raise ValueError("当前身份缺少操作者标识")
+        draft = self.get_draft(tenant_id=tenant_id, agent_id=agent_id)
+        if draft["revision"] != expected_revision:
+            raise RevisionConflict(draft)
+        advisory = closed_set_advisory(draft["config"], layer_path)
+        if advisory is None:
+            raise ValueError("当前草稿图层没有可忽略的闭集提示")
+        try:
+            return self.store.dismiss_config_advisory(
+                tenant_id=tenant_id, agent_id=agent_id, source_revision=expected_revision,
+                advisory_key=advisory["advisory_key"], layer_path=advisory["layer_path"],
+                closed_set_size=advisory["closed_set_size"], actor_id=actor_id,
+            )
+        except StaleConfigurationRevision:
+            raise RevisionConflict(self.get_draft(tenant_id=tenant_id, agent_id=agent_id)) from None
+
     def save_draft(
         self, *, tenant_id: str, agent_id: str, expected_revision: int,
         config: dict[str, Any],
@@ -214,7 +332,7 @@ class ConfigurationService:
         )
         if conflict is not None:
             raise RevisionConflict(conflict)
-        return {**saved, "diff": diff}
+        return {**saved, "diff": diff, "object_diff": object_diff(current["config"], value)}
 
     def patch_draft(
         self, *, tenant_id: str, agent_id: str, expected_revision: int,
@@ -270,7 +388,7 @@ class ConfigurationService:
         if previous is not None:
             if previous["source_revision"] != expected_revision:
                 raise ValueError("幂等键已用于其他草稿 revision")
-            return previous
+            return self._candidate_review(previous)
         current = self.get_draft(tenant_id=tenant_id, agent_id=agent_id)
         if current["revision"] != expected_revision:
             raise RevisionConflict(current)
@@ -290,7 +408,14 @@ class ConfigurationService:
         )
         if conflict is not None:
             raise RevisionConflict(conflict)
-        return candidate
+        return self._candidate_review(candidate)
+
+    def _candidate_review(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        base = self.get_stable_version(
+            tenant_id=candidate["tenant_id"], agent_id=candidate["agent_id"],
+            version_id=candidate["base_version_id"],
+        )["config"] if candidate["base_version_id"] else {}
+        return {**candidate, "object_diff": object_diff(base, candidate["config"])}
 
     def get_candidate(
         self, *, tenant_id: str, agent_id: str, candidate_id: str,
@@ -303,11 +428,41 @@ class ConfigurationService:
         )
         if row is None:
             raise KeyError("未知冻结候选")
-        return row
+        return self._candidate_review(row)
 
     def list_candidates(self, *, tenant_id: str, agent_id: str) -> list[dict[str, Any]]:
         self._scope(tenant_id, agent_id)
-        return self.store.list_config_candidates(tenant_id=tenant_id, agent_id=agent_id)
+        return [self._candidate_review(row) for row in self.store.list_config_candidates(
+            tenant_id=tenant_id, agent_id=agent_id,
+        )]
+
+    def compare_snapshots(
+        self, *, tenant_id: str, agent_id: str,
+        before: dict[str, str], after: dict[str, str],
+    ) -> dict[str, Any]:
+        self._scope(tenant_id, agent_id)
+
+        def resolve(reference: dict[str, str]) -> dict[str, Any]:
+            if (not isinstance(reference, dict) or set(reference) != {'kind', 'id'}
+                    or reference.get('kind') not in ('stable', 'candidate')
+                    or not isinstance(reference.get('id'), str) or not reference['id'].strip()):
+                raise ValueError('比较对象必须是明确的 stable 或 candidate 标识')
+            if reference['kind'] == 'stable':
+                snapshot = self.get_stable_version(
+                    tenant_id=tenant_id, agent_id=agent_id, version_id=reference['id'],
+                )
+            else:
+                snapshot = self.get_candidate(
+                    tenant_id=tenant_id, agent_id=agent_id, candidate_id=reference['id'],
+                )
+            return {**reference, 'config': snapshot['config'], 'content_hash': snapshot['content_hash']}
+
+        left, right = resolve(before), resolve(after)
+        return {
+            'before': left, 'after': right,
+            'diff': field_diff(left['config'], right['config']),
+            'object_diff': object_diff(left['config'], right['config']),
+        }
 
     def release_checklist(
         self, *, tenant_id: str, agent_id: str, candidate_id: str,
@@ -457,6 +612,17 @@ class ConfigurationService:
             raise KeyError("未知沙盒入口")
         return value
 
+    def list_sandbox_entries(
+        self, *, tenant_id: str, agent_id: str,
+    ) -> list[dict[str, Any]]:
+        self._scope(tenant_id, agent_id)
+        entries = self.store.list_sandbox_entries(tenant_id=tenant_id, agent_id=agent_id)
+        return [{
+            "entry_id": entry["entry_id"], "version_id": entry["version_id"],
+            "environment": entry["environment"], "knowledge_state": entry["knowledge_state"],
+            "updated_at": entry["updated_at"],
+        } for entry in entries]
+
     def resolve_sandbox_entry(
         self, *, tenant_id: str, agent_id: str, entry_id: str,
     ) -> dict[str, Any]:
@@ -482,8 +648,8 @@ class ConfigurationService:
             if not locator.strip():
                 raise ValueError("FAQ 内容不能为空")
         elif kind == "file":
-            if Path(locator).suffix.lower() not in {".txt", ".md", ".csv", ".json"}:
-                raise ValueError("仅支持 TXT、MD、CSV、JSON 文本文件")
+            if Path(locator).suffix.lower() not in KNOWLEDGE_FILE_SUFFIXES:
+                raise ValueError("仅支持 TXT、MD、CSV、JSON、HTML、DOCX、XLSX、PDF、DOC 文件")
         else:
             raise ValueError("知识来源类型仅支持 FAQ、URL、文件")
         return self.store.create_knowledge_source(
@@ -504,9 +670,13 @@ class ConfigurationService:
                 content = source["locator"]
             elif source["kind"] == "file":
                 path = Path(source["locator"]).expanduser().resolve(strict=True)
-                if not path.is_file() or path.stat().st_size > 5 * 1024 * 1024:
+                if not path.is_file() or path.stat().st_size > MAX_FILE_BYTES:
                     raise ValueError("文件不存在、不是普通文件或超过 5 MB")
-                content = path.read_text(encoding="utf-8")
+                with path.open("rb") as file:
+                    data = file.read(MAX_FILE_BYTES + 1)
+                if len(data) > MAX_FILE_BYTES:
+                    raise ValueError("文件超过 5 MB")
+                content = extract_knowledge_file_text(path.name, data)
             else:
                 content = fetch_https_text(source["locator"])
             if not content.strip():
@@ -515,6 +685,11 @@ class ConfigurationService:
             return self.store.finish_knowledge_ingestion(
                 tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
                 content=content, chunks=chunks,
+            )
+        except KnowledgeFormatUnavailable as exc:
+            return self.store.finish_knowledge_ingestion(
+                tenant_id=tenant_id, agent_id=agent_id, source_id=source_id,
+                error_code="format_unavailable", error_message=str(exc),
             )
         except (OSError, UnicodeError, ValueError) as exc:
             return self.store.finish_knowledge_ingestion(
@@ -699,9 +874,18 @@ class ConfigurationApplication:
         if "tenant_id" in payload and payload["tenant_id"] != principal.tenant_id:
             raise PermissionError("请求租户与可信身份不一致")
         payload = {key: value for key, value in payload.items() if key != "tenant_id"}
+        if action.startswith("diagnostics."):
+            # 白名单语义统一：外部 Agent 的诊断动作在此显式允许/拒绝，先于诊断
+            # 分发表，避免 early return 绕过角色白名单（可审计、单一事实来源）。
+            if (principal.role == "external_agent"
+                    and action not in _EXTERNAL_AGENT_DIAGNOSTICS_ACTIONS):
+                raise PermissionError("外部 Agent 只能读取或提交受限诊断证据与提案")
+            return self._diagnostics(principal=principal, action=action, payload=payload)
         if action in {"draft.create", "draft.save", "draft.patch", "candidate.freeze"}:
             if principal.role not in _WRITE_ROLES | {"external_agent"}:
                 raise PermissionError("角色无草稿写入权限")
+        if action == "advisory.dismiss" and principal.role not in _WRITE_ROLES:
+            raise PermissionError("闭集提示忽略留痕仅限 editor 或 owner")
         if action in {"release.approve", "release.publish"} and principal.role != "owner":
             raise PermissionError("批准和发布仅限授权 owner")
         knowledge_write_actions = {
@@ -712,13 +896,30 @@ class ConfigurationApplication:
         if principal.role == "external_agent" and action not in {
             "draft.get", "draft.create", "draft.patch", "candidate.freeze",
             "candidate.get", "candidate.list", "draft.validate", "stable.list",
-            "stable.get", "release.checklist", "knowledge.source.list", "knowledge.search",
+            "stable.get", "configuration.compare", "release.checklist", "release.entry.list",
+            "knowledge.source.list", "knowledge.search",
         }:
             raise PermissionError("外部 Agent 只能读取或创建受限草稿/候选")
-        if action == "run.status" and principal.role not in {"owner", "editor"}:
+        if action in {"run.status", "run.overlay", "run.diagnostics"} and principal.role not in {"owner", "editor"}:
             raise PermissionError("运行状态仅限 owner 或 editor 查询")
 
         tenant_id = principal.tenant_id
+        if action == 'model.connection':
+            _keys(payload, {'agent_id'})
+            from .local_config import load_config
+            try:
+                connection = load_config()
+            except (OSError, ValueError, RuntimeError, KeyError):
+                return {'configured': False, 'model_id': None, 'status': 'invalid_local_configuration', 'tested': False}
+            return {'configured': connection is not None,
+                    'model_id': connection['model'] if connection else None,
+                    'status': 'configured' if connection else 'not_configured', 'tested': False}
+        if action == 'configuration.compare':
+            _keys(payload, {'agent_id', 'before', 'after'})
+            return self.service.compare_snapshots(
+                tenant_id=tenant_id, agent_id=agent_id,
+                before=payload['before'], after=payload['after'],
+            )
         if action == "run.status":
             _keys(payload, {"agent_id", "run_id"})
             status = self.service.store.read_run_status(
@@ -727,9 +928,47 @@ class ConfigurationApplication:
             if status is None:
                 raise KeyError("未找到授权范围内的运行")
             return status
+        if action == "run.diagnostics":
+            allowed = {"agent_id", "run_id", "after_sequence", "limit"}
+            unknown = set(payload) - allowed
+            missing = {"agent_id", "run_id"} - set(payload)
+            if unknown or missing:
+                raise ValueError("run.diagnostics 请求字段不完整或包含未知字段")
+            diagnostics = self.service.store.read_run_diagnostics(
+                tenant_id=tenant_id, agent_id=agent_id, run_id=payload["run_id"],
+                after_sequence=payload.get("after_sequence", -1), limit=payload.get("limit", 100),
+            )
+            if diagnostics is None:
+                raise KeyError("未找到授权范围内的运行")
+            return diagnostics
+        if action == "advisory.dismiss":
+            _keys(payload, {"agent_id", "expected_revision", "layer_path"})
+            return self.service.dismiss_graph_advisory(
+                tenant_id=tenant_id, agent_id=agent_id,
+                expected_revision=payload["expected_revision"], layer_path=payload["layer_path"],
+                actor_id=principal.actor_id,
+            )
+        if action == "run.overlay":
+            allowed = {"agent_id", "version_id", "from", "to", "channel"}
+            unknown = set(payload) - allowed
+            missing = {"agent_id", "version_id", "from", "to"} - set(payload)
+            if unknown or missing:
+                raise ValueError("run.overlay 请求字段不完整或包含未知字段")
+            channel = payload.get("channel")
+            if channel is not None and channel not in {"text", "voice"}:
+                raise ValueError("channel 必须是 text、voice 或省略")
+            return self.service.store.read_graph_overlay(
+                tenant_id=tenant_id, agent_id=agent_id,
+                version_id=payload["version_id"], from_ts=payload["from"],
+                to_ts=payload["to"], channel=channel,
+            )
         if action == "draft.get":
             _keys(payload, {"agent_id"})
-            return self.service.get_draft(tenant_id=tenant_id, agent_id=agent_id)
+            draft = self.service.get_draft(tenant_id=tenant_id, agent_id=agent_id)
+            draft["advisory_dismissals"] = self.service.store.list_config_advisory_dismissals(
+                tenant_id=tenant_id, agent_id=agent_id, source_revision=draft["revision"],
+            )
+            return draft
         if action == "stable.list":
             _keys(payload, {"agent_id"})
             return {"items": self.service.list_stable_versions(
@@ -818,6 +1057,11 @@ class ConfigurationApplication:
             return self.service.get_sandbox_entry(
                 tenant_id=tenant_id, agent_id=agent_id, entry_id=payload["entry_id"],
             )
+        if action == "release.entry.list":
+            _keys(payload, {"agent_id"})
+            return {"items": self.service.list_sandbox_entries(
+                tenant_id=tenant_id, agent_id=agent_id,
+            )}
         if action == "release.entry.resolve":
             _keys(payload, {"agent_id", "entry_id"})
             return self.service.resolve_sandbox_entry(
@@ -855,6 +1099,31 @@ class ConfigurationApplication:
                 query=payload["query"], limit=payload.get("limit", 10),
             )}
         raise ValueError("未知配置用例")
+
+    def _diagnostics(self, *, principal: ConfigurationPrincipal, action: str,
+                     payload: dict[str, Any]) -> dict[str, Any]:
+        # 治理作业必须注入本地 Provider 并异步调用外部模型，仅本机 CLI 专用入口
+        # 可用。应用服务在此显式登记并拒绝，使 HTTP/MCP 不暴露作业能力。
+        if action in _GOVERNANCE_JOB_ACTIONS:
+            raise PermissionError("治理作业仅本机 CLI 可用，HTTP/MCP 不暴露作业入口")
+        from .diagnostics import DiagnosticsService
+
+        service = DiagnosticsService(self.service.store)
+        fields = {
+            "diagnostics.permission.issue": ({"agent_id", "recipient_actor_id", "run_ids"},
+                                              {"case_ids", "expires_in_seconds"}, service.issue),
+            "diagnostics.permission.revoke": ({"agent_id", "permission_id"}, set(), service.revoke),
+            "diagnostics.evidence": ({"agent_id", "permission_id"}, set(), service.read_evidence),
+            "diagnostics.report.submit": ({"agent_id", "permission_id", "snapshot_id", "input_hash", "report"},
+                                          set(), service.submit_report),
+            "diagnostics.report.read": ({"agent_id", "report_id"}, set(), service.read_report),
+        }
+        if action not in fields:
+            raise ValueError("未知诊断用例")
+        required, optional, method = fields[action]
+        if required - payload.keys() or payload.keys() - (required | optional):
+            raise ValueError("诊断请求字段不完整或包含未知字段")
+        return method(principal=principal, **payload)
 
 
 def _keys(payload: dict[str, Any], allowed: set[str]) -> None:

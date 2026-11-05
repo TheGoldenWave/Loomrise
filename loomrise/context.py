@@ -192,6 +192,22 @@ class ContextLedger:
             default_reason=trigger,
         )
 
+    def available_skill_ids(self) -> set[str]:
+        """Candidate filtering is read-only; actual loading rechecks these facts."""
+        return {f.applies_to for f in self.fragments.values()
+                if f.scope == ContextScope.SKILL and f.applies_to
+                and _fragment_scope_failure(f, subject_id=self.subject_id, subject_scope=self.subject_scope) is None
+                and _fragment_validity_failure(f) is None}
+
+    def stage_concurrent(self, skill_ids: list[str]) -> list[ContextFragment]:
+        loaded = {decision.fragment_id for decision in self.decisions if decision.status == LoadStatus.LOADED}
+        return self._select(
+            stage="concurrent",
+            candidates=[f for f in self.fragments.values() if f.scope == ContextScope.SKILL
+                        and f.applies_to in skill_ids and f.fragment_id not in loaded],
+            default_reason="本轮并发能力召回；不改变主请求与工具权限",
+        )
+
     # -- 内部 --------------------------------------------------------------
     def _select(
         self,

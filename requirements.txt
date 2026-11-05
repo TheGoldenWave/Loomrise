@@ -17,6 +17,10 @@ pydantic==2.13.5
 # 最小本机网页/HTTP-SSE 入口（仅 loopback 试用，不是公开服务）
 aiohttp==3.14.3
 
+# R3 结构化模型 Provider；沿用离线锁中已安装的版本。
+openai==3.19.2
+httpx==0.28.1
+
 # 语音 Worker 单独环境安装，不要混进核心环境：
 #   pip install "pipecat-ai[tracing]==1.12.0"
 # 安装前置：docopt 只有源码分发，受限环境需手工预置，见 VERSION-PINS.md §3
