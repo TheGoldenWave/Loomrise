@@ -1,4 +1,40 @@
-# 版本切分与核心交付 v0.24
+# 版本切分与核心交付 v0.47
+
+> **v0.47 变更（2026-11-05）**：登记 **Kimi Hosted Agents** 为参考项目 P0-12（文档级 A-，**未调用 API、未开户、未走查控制台**），新增 §5.2 把 10 项借鉴落到版本。**不改阶段范围、不改任何父 Gate、不新增平行业务状态**：KHA-01（触发器语义：计划≠完成、重叠 `skipped`、恢复不补跑）落 R4 主动服务；KHA-02（记忆整理 = 一次受治理运行、批次可撤销）落 R4-WP6；KHA-03（`load_mode` 取舍）落 R0/R1 支持矩阵，**保留「固定最小子集」不回退全量**；KHA-04/05/06（裁决单值化、`stop_reason`、SSE 双 ID）落 R1–R3 事件与投影；KHA-07（运行环境版本进 `AgentVersion` 依赖快照）落 R1 合同字段；KHA-08/09/10 落 R3/R4 接入、上下文与凭据边界。另一处架构增量是 [ARCHITECTURE](ARCHITECTURE.md) 新增「自持／可外包切分线」。详见[Kimi Hosted Agents 分析](KIMI-HOSTED-AGENTS-ANALYSIS.md)。
+
+> **v0.46 变更（2026-11-04）**：R3 开发侧四个工作包收口。AGI-07/08 代码、5 个确凿缺口修复、12 项新测试及独立规格／代码质量审查工件均已交付（专项 61 项通过）；服务周期新增 `close/adjudicate/migrate` 与 10 项生命周期测试，`changed_to` 判定不可行并保留明确拒绝与 6 项反例；Contact Page 补 9 项完整批准／发布／停用／分享端到端证据；WebView 桥补 8 项生命周期静态合同断言。`SCHEMA_VERSION = 23`：v21/v22 为 AGI-07/08 诊断许可/证据/报告/Worker 作业四表的同事务迁移，v23 为服务周期生命周期的 generation/state/closure/lineage 审计增量（含旧库条件式 ALTER 兼容）。真实 harness Provider / host Skill 联调与质量对照仍无证据，不记为通过。最终实测 Python 全量 739 项（`ResourceWarning` 为错误）、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；`M-B-01…14` 在跑、`M-B-15` 未开始，0/15 正式关闭，R2/R3 Gate 不变。真实渠道/Push、移动 WebView 实机、OCR/视频理解质量、多样本模型质量、生产服务周期来源与目标角色基线仍需外部环境。详见 [R3 实施计划 v0.55](superpowers/plans/2026-10-30-r3-development.md)、[R3 证据登记](reports/R3-EVIDENCE.md) 与 [R3 收口与验收对照](reports/R3-ACCEPTANCE-2026-11-04.md)。
+
+> **v0.45 变更（2026-11-03）**：补充 AI 接待营业时间的代表性周内隔夜、星期归属、周日跨周一及 `[start,end)` 边界回归；现含 DST 的专项测试。全量 Python 609/609（`ResourceWarning` 为错误），前端 323/323、Canvas 构建与 S1 自检通过。未覆盖完整访客字段/整周矩阵，不改变 M-B-02/M-B-06 或 R2/R3 Gate 状态；详见 [R3 实施计划 v0.52](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.44 变更（2026-11-03）**：Inbox 增加基于持久消息投影的会话计数/最近访客摘要，以及仅对本人已接管会话开放的通用确认草稿；草稿只填入可编辑框，显式提交仍沿用原 `inbox.reply`。确定性 loopback 浏览器检查覆盖权限状态、无自动发送和 1440/390px 布局，客服服务专项 44/44 通过。该实现不等同于模型生成摘要/草稿、完整转人工策略或 M-B-11 验收；R2/R3 Gate 不变，详见 [R3 实施计划 v0.51](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.43 变更（2026-11-03）**：R3 画布补齐边界事件/等待结构化编辑、路由条件摘要、会话内拖动/自动布局/专注视图与服务端校验对象定位；坐标不进入配置或版本差异。Inbox 持久事件流及 consumer 应用 ack 状态与 OS Push/真实送达分开登记。合并验证 Python 608 项（ResourceWarning 按错误）、前端 323 项、Canvas 构建和 S1 自检通过。画布目标角色基线、真实渠道/通知/移动平台及 R2/R3 Gate 仍未通过，详见 [R3 实施计划 v0.50](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.42 变更（2026-11-03）**：补齐 R3 `ai_reception.mode=offline` 的 Widget→Inbox 浏览器路径、双访客浏览器上下文隔离/交叉凭据拒绝，以及 `ExecutionService`→SQLite 重开→授权 `run.diagnostics` HTTP 分页/归属/脱敏端到端证据。合并验证 Python 608 项、前端 308 项、Canvas 构建与 S1 自检通过。访客身份检查仅为 loopback fixture，不涵盖坐席身份或生产认证。仍缺真实渠道/平台与模型质量、目标角色基线、R2 技术 Gate 和完整 R3 客服矩阵；R2/R3 Gate 状态不变，详见 [R3 实施计划 v0.49](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.41 变更（2026-11-03）**：Contact Page 21 类 fixture 增加 `href` 新窗口安全属性与空 `social/link/booking` 隐藏检查；隔离 loopback 浏览器矩阵通过，前端 308 项、Contact Python 专项 36 项与 Canvas 构建通过。Widget `hours: []` 离线入口留言续接浏览器断言亦已通过，但不覆盖 `ai_reception.mode=offline` 服务分支。真实外站预约、完整时段/客服矩阵、真实通知/渠道、移动 WebView 和目标角色基线仍缺；R2/R3 Gate 不变，详见 [R3 实施计划 v0.48](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.37 变更（2026-11-03）**：R3 FAQ 建议现随 AI 接待版本绑定精确授权来源哈希，访客只接收问题文本并通过普通 Widget 检索；配置工作台新增、去重、Unicode 长度、移除和保存刷新已有后端/前端测试及确定性浏览器 fixture。SQLite schema 仍为 v19；WP4 闭集提示忽略审计由服务端重算闭集大小，记录可信操作者和源 revision，冻结时纳入候选审阅快照，画布/候选历史可见；`matches` 表单保留正则文本、隐藏值类型切换。Python 593 项、npm 307 项及 Canvas 构建本轮通过。以上不关闭任何 Gate；真实 Push/渠道、OCR 质量、移动 WebView、召回诊断的权威运行上下文与角色基线仍缺。当前实施状态见 [R3 实施计划 v0.44](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.35 变更（2026-11-02）**：R3 本地可信周期切片已落地：schema v17 固定受信授权器的租户/专家/来源绑定、请求不可变周期关联及跨请求原子防环预留；生产来源签发、周期生命周期和迁移仍未接入。Inbox schema v18 持久化按 tenant/agent 排序、脱敏事件，`inbox.events` 提供受限游标分页；页面以作用域游标重放并合并提醒，轮询间已结束的接管变化仍可见。1440/390px 浏览器检查通过，page errors 0；2 条 console errors 对应预期失败注入。Python 全量 526 项、前端 286 项、Canvas 构建、S1 与合同语义自检通过。该回放不是 Web Push/系统送达/后台生命周期或每操作者服务端 ack 证据；R2/R3 Gate 不变。当前工件和边界见 [R3 实施计划 v0.40](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.33 变更（2026-11-02）**：SQLite schema v16 新增每坐席单调已读游标与默认关闭的个人提醒偏好，访客未读按消息序号投影；确认已读不接管，范围、并发、v15 迁移/回滚和重开/备份已验证，前台提醒 UI 正在集成。MP4/WebM 增加内嵌文本字幕单流待审节选，原创双轨视频经真实 FFmpeg 解码、人工批准后可检索；不覆盖语音转写、画面 OCR 或多模态理解。Python 全量 486 项、Canvas 构建通过，指定后端独立审查通过。完整 Web Push/Telegram 通知、原生 WebView、真实渠道和角色验收仍缺；HTTP 仍为固定本机 principal，不声明逐浏览器身份隔离。当前状态见 [R3 实施计划 v0.38](superpowers/plans/2026-10-30-r3-development.md)；下方历史计数保留，R2/R3 Gate 不变。
+
+> **v0.32 变更（2026-11-02）**：联系页新增可选 AI 起草，严格 Schema 覆盖 21 类块、生成只开放必填条目字段；候选须明确采用后单独保存，不批准或发布。一次真实模型虚构样本与 SQLite 重开核验通过，不代表生成质量矩阵。21 类预置批准快照已验证 1440/390px 公开渲染，保留原单块 fixture，生产批准 Gate 不变。混合 PDF 可仅对空文本页回退 OCR，按页序合并并共用输出/时间预算；本机无 Tesseract，真实 OCR 质量仍待验证。Python 全量 467 项、前端 282 项、Canvas 构建、S1 与合同语义自检通过；当前证据和剩余项见 [R3 实施计划 v0.37](superpowers/plans/2026-10-30-r3-development.md)。下方版本记录保留当时状态，R2/R3 Gate 不变。
+
+> **v0.31 变更（2026-11-02）**：图边正向非空 `llm.prompt` 支持本层 `llm/hybrid` 闭集与结构化表单；否定子树及确定性裁决面继续拒绝模型叶。共享深度修复纯模型/空叶外的三层组合漏检。默认真实 Provider 已接入图路由、completion 与同轮召回，双候选路由/召回固定样本完成持久执行；生成事件记录实际模型，SQLite 重开后 27 条事件与哈希链核验通过，零业务写入。Python 全量 450 项、前端 277 项、Canvas 构建、S1 与合同语义自检通过；单个样本不证明质量矩阵或完整回放。联系页 21 类矩阵限草稿/预览，含增删排序，批准公开 fixture 只有一个块；2 条 console errors 已对应预期 `contact.get/not_found/404`、`contact.save/revision_conflict/409`。下方按版本保留历史证据，当前边界见 [R3 实施计划 v0.36](superpowers/plans/2026-10-30-r3-development.md)，R2/R3 Gate 不变。
+
+> **v0.30 变更（2026-11-02）**：R3-WP5 为纯扫描 PDF 增加有界 OCR 候选：仅 `pdftotext` 空结果时使用 Poppler/Tesseract，最多 20 页、单页最长边 2000px、每页 12.5 MB、累计 OCR 输出 64 KB、总时限 30 秒，候选仍须人工批准。混合 PDF 不回退扫描页；本机无 Tesseract，真实识别质量未验证。材料处理/检索专项 25 项、Python 全量 443 项通过；Gate 状态不变，详见 [R3 实施计划 v0.34](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.29 变更（2026-11-02）**：`ExecutionService` 对 reply-generation 普通异常补脱敏失败事件和耐久 Run 收尾；保留此前或本轮已提交业务结果，并透传 SQLite 收尾错误。新增 3 项回归；Provider/恢复相关 41 项、Python 全量 434 项、前端 275 项与 Canvas 构建通过。完整客服、真实 Provider 稳定性及目标角色验收仍缺，R2/R3 Gate 不变，详见 [R3 实施计划 v0.33](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.28 变更（2026-11-02）**：WP6 将实际解释器 Unit body 执行耗时及样本数、满足顺序约束的终止节点计数接入节点角标；标注不含跨调用挂起/访客等待，嵌套父图耗时包含子图时段。Contact Page 图片/视频/音频编辑、持久化、刷新与本机媒体解码 fixture 通过，存在 2 条未核实 console errors（page errors 0）。键盘画布焦点保持与统计遥测浏览器检查通过；`npm test` 275 项、Canvas 构建及 Python 全量 430 项通过。完整客服矩阵、目标角色基线和 R2/R3 Gate 不变，详见 [R3 实施计划 v0.32](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.27 变更（2026-11-02）**：Contact Page 图片媒体块新增本机 fixture 编辑、保存、刷新与预览浏览器证据；只覆盖图片一种媒体类型。画布检视器草稿提交改为原位更新 React Flow root，加入焦点保持断言，但 Playwright CLI 启动挂起，尚无浏览器验证。Python 430 项、前端 275 项及 Canvas 构建通过；R2/R3 Gate、21 类客服交互矩阵、角色验收状态不变，详见 [R3 实施计划 v0.31](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.26 变更（2026-11-02）**：R3-WP5 物料处理新增可选本机 `pdftotext` 原生 PDF 文本候选：前 20 页、10 MiB 原件上限、64 KB stdout 上限、15 秒超时，且必须人工批准后才可检索。不是扫描件 OCR 或视频内容理解。画布 Escape 返回已补实现；本轮浏览器检查被 Playwright CLI 启动故障阻断，键盘任务矩阵仍未验。R2/R3 Gate、真实渠道、客服覆盖和目标角色验收状态不变，详见 [R3 实施计划 v0.30](superpowers/plans/2026-10-30-r3-development.md)。
+
+> **v0.25 变更（2026-11-02）**：登记 R3 当前实现状态：客服统计 UI 已消费既有 `customer.statistics` 服务，但仅显示全时段累计/沙盒计数，未接入请求、接管、真实时延、模型用量或送达指标；WP6 节点停留与终止遥测已实现，终止目标需匹配先前节点进入和最后有效路由步骤。客服统计与画布键盘检查已登记在本机浏览器 runner 并通过；R2/R3 Gate 和目标角色任务基线不变。详细工件及剩余项见 [R3 实施计划](superpowers/plans/2026-10-30-r3-development.md)。
 
 > **v0.23 变更（2026-10-30）**：补记 R2-WP3/4 真实浏览器附件往返（Inbox 上传 README、选择并发送、Widget 下载），console 0 errors；后端全量测试 151/151、S1 自检与固定案例 11/11 通过。附件链路仍只是本地 loopback fixture 证据；不改变 M-A-14/15 或 R2 Gate 状态，发布门禁及 WP5 关键能力仍未完成。
 
@@ -291,6 +327,8 @@ WP9 是本次 R1 的明确交付范围，不是另一个原型轮次或新产品
 
 ### R3 · 能扩（S2-b）
 
+> **2026-11-03 当前实施状态**：画布编辑、版本差异和正向模型条件表单已实现；边界事件/等待结构化编辑、节点条件摘要及仅会话态的拖动/自动布局/专注视图通过本机键盘与窄屏浏览器回归。默认真实 Provider 双候选闭集路由/召回的固定虚构样本完成持久执行和 SQLite 重开核验。WP4 忽略审计保存服务端重算大小、操作者、revision，候选冻结摘要及画布/历史显示已接入；`matches` 正则表单限制 128 字符，比较文本上限提示为 1024 字符。知识文档 PDF 现支持有界原生文本提取（5 MiB 输入、前 20 页、可选 `pdftotext`、15 秒、8 MiB 输出），扫描 PDF 无 OCR、旧 `.doc` 不可用。服务时段有开闭、DST、代表性隔夜/周跨边界及七天 `offline` 服务矩阵；访客字段服务端和 Widget 浏览器 fixture 覆盖必填 text、选填 email/tel、空值、长度边界与 Inbox 投影。`hours: []` 留言续接及开放时段下 `ai_reception.mode=offline` 的 Widget→Inbox 浏览器检查通过。本机 fixture 不关闭 M-B-02/M-B-06。WP3/WP4 已有确定性虚构版本经 `ExecutionService`、SQLite 重开和授权诊断 HTTP 的分页/归属/脱敏证据，不代表真实模型质量。独立浏览器上下文的双访客会话隔离与交叉凭据拒绝已在 loopback fixture 验证，不代表生产身份验收。Contact Page 21 类 fixture 验证外链新窗口安全属性与空社交/链接/预约隐藏；本机 fixture 不覆盖真实外站/渠道或完整 M-B 矩阵。Inbox 人工接待提供本地消息计数/最近访客摘要及手动通用确认草稿，仍缺模型生成摘要/草稿与完整转人工辅助验收。SQLite schema v23（v21/v22 为 AGI-07/08 诊断许可/证据/报告与 Worker 作业四表同事务迁移；v23 为服务周期生命周期 generation/state/lineage 审计增量）；Inbox 有 durable SSE 与 consumer ack 本机验证，不代表 OS Push 或真实送达。所有服务周期绑定仅为本机虚构来源。最终合并验证 Python 739 项（`ResourceWarning` 按错误）、前端 340 项、Canvas 构建、S1 自检与合同语义自检通过；AGI-07/08 专项 61 项，客服接待/Widget/客服服务专项 58 项。AGI-07/08 五缺口修复、12 项新测试与两份独立审查工件已落地；服务周期 close/adjudicate/migrate、Contact 9 项完整批准路径、WebView 桥 8 项生命周期合同均已收口；changed_to 判定不可行并保留明确拒绝。真实 harness Provider / host 联调与生产服务周期来源签发无证据。真实系统 Push/渠道、OCR 质量、视频理解、移动 WebView、目标角色基线和完整客服/执行回放仍缺；R2/R3 Gate 未通过。详见 [R3 实施计划 v0.55](superpowers/plans/2026-10-30-r3-development.md)。
+
 **入口条件**：R2 完成 + **画布开工合格标准**（下）。
 
 **画布开工合格标准（v0.2 新增，替代"真实配置跑过一轮"）**——五条全中才允许开画布实现：
@@ -422,6 +460,25 @@ WP9 是本次 R1 的明确交付范围，不是另一个原型轮次或新产品
 | AGI-11 | 自有云可选 Worker 发行 | P1 / S3 | **R5a** | 随发行包，Worker 故障不影响在线 |
 
 **两句话的结论**：**MCP 在 R1（入向、只建草稿）；CLI 也在 R1，但只是 P1 的最小命令集**。出向 MCP 尚未定版本，见 §8 `P-6`。
+
+### 5.2 外部形态参照（Kimi Hosted Agents）落版本
+
+[Kimi Hosted Agents 分析](KIMI-HOSTED-AGENTS-ANALYSIS.md) 的 10 项借鉴原来只有编号，没给版本号。补在此处——**只排批次与落点，不改任何父 Gate**，逐项验收仍回到既有 `M-A-*` / `M-B-*` / `M-C-*` 行。
+
+| 编号 | 借鉴内容 | 版本 | 落点与动作 | 证据位 |
+|---|---|---|---|---|
+| **KHA-01** | 触发器语义分层：`completed` ≠ 任务完成；重叠记 `skipped`；恢复不补跑；计划时间可预览 | **R4** | Task §7.3 已写入三条区分；主动服务状态投影增「已派发未完成」，与 §6.1 五值并列而不合并 | `M-C-05`、`M-C-06` 的调度证据细化 |
+| **KHA-02** | 记忆整理 = 一次普通 `Run`；产物是候选差异；批次可撤销 | **R4-WP6** | 用户上下文 §8.1 已写入四条；整理运行产生 `RunEvent`，变更集带批次 ID | `M-C-06` 的抽取/遗忘证据细化 |
+| **KHA-03** | `load_mode` 两级配置（工具集默认 + 单工具覆盖）与按名展开 | **R0 / R1（AGI-02/03）** | AGI §1.2 已记分歧：**保留最小子集，不回退全量**；支持矩阵逐 Adapter 标「不支持轮内动态装配」 | AGI-02/03 验收 + 支持矩阵 |
+| **KHA-04** | 权限裁决单值化（`evaluated_permission`），规则依据另存 | **R1–R2** | 工具事件增 `evaluated_policy` 单值字段；完整规则原文以引用方式保留 | `M-A-05`、`M-A-07` |
+| **KHA-05** | `stop_reason` 结构化等待（`end_turn` / `requires_action` + 待办 ID） | **R2-WP5 / R3** | `ServiceRequest` 等待态投影增结构化终止原因；前端可答「在等谁、等什么」 | `M-A-11`、`M-B-*` 投影证据 |
+| **KHA-06** | SSE 双 ID（恢复游标 ≠ 业务事件 ID）、增量只实时、完整事件替换增量 | **R2-WP4 / R3** | AG-UI 投影层与运行日志前端统一按此实现；断线重放按事件 ID 去重 | `M-A-11`、SSE 回归 |
+| **KHA-07** | 环境版本冻结与 `build_status` 三值 + 失败回退最近 ready | **R1** | `AgentVersion` 依赖快照补「运行环境版本」；不要求照抄 `build_status` 枚举 | R1 合同字段 + `M-A-12` 前置检查 |
+| **KHA-08** | `SKILL.md` 文件包只读挂载，仅注入名称/描述/路径 | **R3（AGI-03/04）** | 外部 `SKILL.md` 按此接入；内部 `SkillManifest` 保持同 ID 可演进、可回滚（**不借换 ID 换版本线**） | AGI-03/04 验收 |
+| **KHA-09** | baseline 层「索引常驻 + 内容按需」 | **R4** | 仅用于 baseline 摘要层；客服知识仍走索引服务，不以索引文件替代检索 | `M-C-06` 上下文装配证据 |
+| **KHA-10** | 凭据只写不回显、创建时绑定、**注入范围有限** | **R2** | 连接引用补「注入范围」维度（主机/端口/路径），不只记「已授权」 | `M-A-16`、`M-A-17` |
+
+**共同边界**：以上均为**实现方式的细化**，不新增阶段、不新增父 Gate、不引入 KHA 作为运行依赖、不改变「执行内核自持裁决」的切分线（[ARCHITECTURE](ARCHITECTURE.md) §自持／可外包）。任一项落地时，若与既有合同冲突，**以既有合同为准**并在分析文档登记冲突，而不是按上游改写。
 
 ---
 

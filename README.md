@@ -1,5 +1,7 @@
 # Loomrise
 
+2026-11-04：R3 开发侧四个工作包全部收口，**退出 Gate 未通过**。SQLite schema v23（v21/v22 为 AGI-07/08 诊断许可/证据/报告与 Worker 作业四表；v23 为服务周期生命周期的 generation/state/lineage 审计增量）。AGI-07/08 只读诊断与 Worker 首链代码、5 个确凿缺口修复、12 项新测试及独立规格／代码质量审查工件均已落地，专项 61 项通过，但真实 harness Provider 与 host Skill 联调、质量对照仍无证据。服务周期新增 `close/adjudicate/migrate` 与 10 项生命周期测试；`changed_to` 因缺「服务端签发、调用方不可自报」的 previous-value 来源判定不可行，保留明确拒绝与 6 项反例。Contact Page 补齐 9 项完整批准／发布／停用／分享端到端证据（未改生产代码、未放宽校验）；WebView 桥补 8 项生命周期静态合同断言。最终实测：Python 全量 739 项、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；AGI 专项 61 项、Contact／周期／算子专项 190 项、桥合同 12 项均通过。Gate 矩阵 `M-B-01…14` 在跑、`M-B-15` 未开始，**0/15 通过**；R2/R3 Gate 均保持未通过，按授权跳过的只是 R2 用户快速验收，不是技术 Gate。真实渠道/Push、实机 WebView、真实 OCR/视频理解质量、多样本模型质量、生产服务周期来源与目标角色基线仍需外部环境，本机 fixture 不替代。工件与证据边界见 [R3 实施计划](docs/superpowers/plans/2026-10-30-r3-development.md)、[R3 证据登记](docs/reports/R3-EVIDENCE.md) 与 [R3 收口与验收对照](docs/reports/R3-ACCEPTANCE-2026-11-04.md)。
+
 **新会话入口**：[Agent 协作指南](AGENTS.md) · [文档总索引](docs/context/INDEX.md) · [开发路线与 Gate](docs/ROADMAP.md)。导航整理：2026-10-14；专题状态以文件正文和实际证据为准。
 
 > **状态（2026-10-29，产品口径 v0.15）：完整网页客服、业务执行与受控改进、自有云快捷交付方向已确认；新增能力仍按 Gate 验收。** S0 文档 Gate 已完成；S1 与 R1 退出 Gate 仍未全部通过。R2 已有部分真实服务端切片：沙盒候选批准/入口绑定、知识摄入/撤回、物料原件版本与人工发送重验、最小 Widget/Inbox，以及工具副作用意图持久化；固定样例执行、确认等待恢复、未知结果对账和只读运行状态服务尚未完成，因此 R2 Gate 未通过。详见[R2 证据摘要](docs/reports/R2-EVIDENCE.md)、[版本切分](docs/RELEASE-PLAN.md)和[Gate 矩阵](docs/RELEASE-GATE-MATRIX.md)。S1 语音证据见 [S1 交付与验收](docs/S1-BUILD-REPORT.md)，版本钉见 [VERSION-PINS.md](VERSION-PINS.md)。
@@ -32,7 +34,7 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 |---|---|---|
 | S1 | 最小咨询/模拟预约切片及剩余音频、SSE Gate | 已有实现和限定验收证据，退出 Gate 未全通过 |
 | S2-a | 持久化、配置版本、知识摄入、独立物料资产与最小人工文件交付、沙盒发布和 Widget—Inbox 闭环 | R1/R2 后端已有部分实现；父 Gate 未通过，详见 R1/R2 证据 |
-| S2-b | 完整网页客服覆盖：联系页、渠道、通知、统计、移动接入及物料后处理/已审简介检索 | 规划 |
+| S2-b | 完整网页客服覆盖：联系页、渠道、通知、统计、移动接入及物料后处理/已审简介检索 | R3 部分实现，完整覆盖与退出 Gate 未通过 |
 | S2-c | 业务工具沙盒、策略化 Agent 文件发送、评测与改进、审批回滚及完整文字/语音应用验收 | 规划 |
 | S3 | 标准发行与首个用户自有云快捷交付，验证恢复与升级 | 规划 |
 | S4 | 多云模板扩展，其他渠道、多租户或电话独立验收 | 规划 |
@@ -53,11 +55,12 @@ Loomrise 是一个面向**客服、销售**的开源 Agent 交付平台，服务
 | 跨会话任务、主动服务、记忆与画像 | [Task 与用户上下文联合计划](docs/TASK-MEMORY-INTEGRATION-PLAN.md) | 专家内版本蓝图、初始化/受限决策首片，主体/事件/调度与 Provider Gate |
 | 跨用户经验（专家记忆）、Hy Memory 能复用什么 | [专家-用户记忆体系](docs/EXPERT-USER-MEMORY-SYSTEM.md)、[Hy Memory 三层裁决](docs/HY-MEMORY-LAYERED-ANALYSIS.md) | 三种记忆分工、五个身份合同、MEM-0–5 路线；两个记忆候选并列对照与采用/排除裁决 |
 | MCP／Skills／CLI 与后台通用 Agent | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | AGI-01–11、摄入合同、权限与客户端验证 |
-| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.22**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills 与执行耐久 Adapter 落版本；R2 工作包实现状态与 Gate 证据 |
+| 语音首响、网页首屏怎么量、怎么防退步 | [性能与延迟方法](docs/PERFORMANCE-LATENCY-METHOD.md) | 六段拆解、确定性计数、棘轮与 Gate 阈值分工、Agent 优化线程协议；基线见[重算报告](docs/reports/PERF-BASELINE-2026-10-30.md) |
+| 后续版本怎么切、每版做什么 | [版本切分与核心交付](docs/RELEASE-PLAN.md)（**v0.47**） | R0 合同对齐 → R1 能配 → R2 能跑 → R3 能扩 → R4 能改 → R5a 能装机 → R5b 能扩云；每版工作包与退出判据；**产品能力／前端／后端三层视图**；MCP/CLI/Skills、执行耐久 Adapter 与当前版本状态 |
 | 马上要做的 R0 怎么做 | [R0 合同对齐开工清单](docs/superpowers/plans/2026-10-23-r0-contract-alignment.md) | 预检命令、证据两层约定、语音阈值登记表、WP0–WP6 复选框与 DoD；合同不合主干 |
-| 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.4**） | S1／S2-a／S2-c／S3-S4 父 Gate 与工件映射；耐久子项用于细化故障证据，不新增独立退出条件；**追溯表，不是 Gate 权威** |
+| 某条 Gate 由什么证明、证据在哪 | [版本 Gate 追溯矩阵](docs/RELEASE-GATE-MATRIX.md)（**v0.8**） | S1／S2-a／S2-c／S3-S4 父 Gate 与工件映射；耐久子项用于细化故障证据，不新增独立退出条件；**追溯表，不是 Gate 权威** |
 | 上一轮评审改了什么、还剩什么 | [评审处置台账](docs/RELEASE-PLAN-REVIEW-RESPONSE.md) | 15 条意见的采纳/部分采纳/不采纳与落点；5 项未关闭 |
-| 编排图在后台怎么落地 | [编排视图前端方案](docs/S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 流程 tab 三投影（图/清单/规则）；`@xyflow/react` v12；坐标不持久化；九条校验的界面落点 |
+| 编排图在后台怎么落地 | [编排视图前端方案](docs/S2-ORCHESTRATION-UI.md)（**设计提案 v0.2，R3 部分实现**） | 流程 tab 三投影（图/清单/规则）；`@xyflow/react` v12；坐标不持久化；检视器、条件表单、版本差异与运行叠加；完整边界见实施计划 |
 | 客服/销售的路由策略怎么配 | [路由与能力单元](docs/ROUTE-GRAPH-AND-UNITS.md)（**已采纳合同 v1.0**） | 单元＝契约层＋内容层，收起是节点、展开是图；跨层只走**端口**（跳步）与**边界事件**（异常）；LLM 在闭集里选 + margin 与可校验依据；九条保存前校验；R1 最小实现、R3 嵌套与画布 |
 | 评测、候选改进、审批与回滚 | [S2 治理设计](docs/S2-DESIGN.md) | 范围决策与评测提案的已定／待定部分 |
 | 已实现什么、怎样复现 | [S1 交付与验收](docs/S1-BUILD-REPORT.md)、[版本钉](VERSION-PINS.md) | 代码、测试、安装与运行证据；各轮原型看对应报告 |

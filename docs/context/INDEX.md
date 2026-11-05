@@ -1,6 +1,6 @@
-# Loomrise 文档总索引 v0.17
+# Loomrise 文档总索引 v0.29
 
-日期：2026-10-30（同步 R2 附件浏览器走查与 152 项后端回归证据）。状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
+日期：2026-11-04（同步 R3 开发侧收口：schema v23、AGI-07/08 五缺口修复与两份审查工件、服务周期生命周期、Contact 完整批准路径、WebView 桥生命周期合同；最终回归 739/340 与 Gate 证据位置；补登 [R3 收口与验收对照](../reports/R3-ACCEPTANCE-2026-11-04.md)；Agent Autoloop 研究参照与自迭代长线规划均已登记，两者均为提案、未安装未联调）。**2026-11-05 补登 [Kimi Hosted Agents 分析](../KIMI-HOSTED-AGENTS-ANALYSIS.md)（参考项目 P0-12，文档级 A-，未调用 API；含自持／可外包切分线与 10 项借鉴／7 项不借）。** 状态：文档导航与分类；**不新增产品决策或实现证据**。文件自身的状态、适用范围和验收记录优先于本索引摘要。新 Agent 先读 [协作指南](../../AGENTS.md)，人类入口见 [README](../../README.md)。
 
 ## 1. 先定位问题与权威文件
 
@@ -18,7 +18,9 @@
 | 用户记忆、画像与上下文怎样治理 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 主体、字段证据、派生视图、装配/压缩、撤销及Provider对照；模块方向确认，未实现 |
 | 跨用户经验（专家记忆）怎样独立于用户记忆 | [专家-用户记忆体系](../EXPERT-USER-MEMORY-SYSTEM.md) | 三种记忆分工、五个身份合同、写入红线、版本兼容矩阵与 MEM-0–5 路线；方向与规划，未实现 |
 | 语音交互架构怎么定的、全双工指标怎么进门禁 | [语音架构决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) | D-01–D-05 五项已定判断与理由；指标操作表在验证计划，媒体通道协议在 `web.py:voice_ws` |
+| 延迟/性能怎么持续优化、棘轮与 Gate 阈值怎么分工 | [性能与延迟的工程化优化方法](../PERFORMANCE-LATENCY-METHOD.md) · [基线重算](../reports/PERF-BASELINE-2026-10-30.md) | 三档口径、语音分段与测量缺口、Agent 优化线程协议；**不改阶段范围与 Gate**，棘轮只作回归护栏 |
 | Qwen Audio 这套 harness 能借什么、不能借什么 | [Qwen-Audio-Agent 源码研读](../QWEN-AUDIO-AGENT-HARNESS-STUDY.md) | 六组机制借鉴清单与证据分级（代码/文档/论文/演示）、不借五条、Q6–Q10；未安装未联调 |
+| Kimi 托管 harness 能借什么、我们必须自持什么 | [Kimi Hosted Agents 分析](../KIMI-HOSTED-AGENTS-ANALYSIS.md) | 执行底座商品化（P0-12）；**自持／可外包切分线**、10 项借鉴（KHA-01…10）、7 项不借、KHA-Q1–Q6；文档级 A-，**未调用 API、未走查控制台**；不改阶段与 Gate |
 | Hy Memory 三层能复用什么、不能用什么 | [Hy Memory 三层裁决](../HY-MEMORY-LAYERED-ANALYSIS.md) | 框架/模型/应用逐层实测与采用裁决；并列具名候选，未安装未联调 |
 | 三方 Agent、MCP／Skills／CLI 怎么排期 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | AGI-01–11 的优先级、依赖与验收；规划未实现 |
 | 执行状态怎样持久化、重启如何恢复、durable 借什么 | [架构](../ARCHITECTURE.md) · [R1 证据摘要](../reports/R1-EVIDENCE.md) · [DurableRunAdapter 实施计划](../superpowers/plans/2026-10-23-durable-run-adapter.md) · [持久执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md) | SQLite `DurableRunAdapter` 已部分实现；旧本地 running 尝试失败、待确认事实保留但不自动续跑；TaskItem 撤销与完整恢复 Gate 未通过；R3/R4 才做 Worker/parking，未引入默认依赖；评审列出 DC-01–08 缺口，属意见不构成 Gate |
@@ -43,8 +45,9 @@
 | **选 STT/TTS 与写语音通道** | [阿里云语音选型](../ALIYUN-VOICE-SELECTION.md) → R0 开工清单 WP1 | 云端阿里、北京地域；ASR 选带日期快照的，TTS 只能钉别名（风险须声明）；**音频上传通道目前不存在，要新建** |
 | 实施配置后台 Task/Harness 前端增量 | [前端开发计划](../superpowers/plans/2026-10-19-console-task-harness-frontend.md) → Kickoff §8 → UX §12 → IA §8 | 仅 `console-next` 本地投影；CT-00–06、分工边界和前端验收；不替代 Task 服务、正式权限、调度、渠道或发布 Gate |
 | 实现 MCP／CLI／Skills | Agent 接入开发计划 → [初始化与摄入](../INTAKE-AND-INITIALIZATION.md) → ARCHITECTURE → [参考项目](../REFERENCE-PROJECTS.md) | 同一应用服务、来源授权、revision／幂等、host 支持矩阵、无直接发布权 |
-| 设计评测、候选改进与治理 | [S2 范围决策](../S2-SCOPE-DECISIONS.md) → [S2 治理设计](../S2-DESIGN.md) → [评测提案](../S2-EVAL-GATE-PROPOSAL.md) → AGI-07–10 | blind 与作者隔离；已定 Gate Reserve 和待定预算／状态机分别核对 |
+| 设计评测、候选改进与治理 | [S2 范围决策](../S2-SCOPE-DECISIONS.md) → [S2 治理设计](../S2-DESIGN.md) → [评测提案](../S2-EVAL-GATE-PROPOSAL.md) → [自迭代长线规划](../AGENT-SELF-ITERATION-ROADMAP.md) → AGI-07–10 | blind 与作者隔离；已定 Gate Reserve 和待定预算／状态机分别核对；泛化门与单元边界是提案，不改现有 Gate |
 | 修改执行合同、规则或依赖 | ARCHITECTURE → 六层合同 → S1 交付与验收 → VERSION-PINS → 对应代码／测试 | 先读 [硬规则提案](../HARD-RULE-MODEL.md) 的状态；目标合同不代表现有代码 |
+| **做语音时延或网页首屏优化** | [性能与延迟方法](../PERFORMANCE-LATENCY-METHOD.md) → [基线重算](../reports/PERF-BASELINE-2026-10-30.md) → [语音架构决策](../VOICE-ARCHITECTURE-DECISIONS.md) / [验证计划](../VOICE-COORDINATION-VALIDATION.md) | 先有基线再改；棘轮 ≠ Gate 阈值；服务端首包不等于已送达 |
 | 研究记忆、语音或新的 Provider | 参考项目 → 对应研究／验证提案或[决策记录](../VOICE-ARCHITECTURE-DECISIONS.md) → 既有 Adapter 与阶段 Gate | 上游能力、源码核查、安装、真实联调是不同证据等级；记忆候选现为 TDAI 与 Hy Memory 两个并列，先合同后实测 |
 | 查旧设计或复现旧结果 | [历史归档索引](../archive/README.md) → 原文及其后继 | 核对记录时点，不把旧阶段名或原型菜单当现行规范 |
 
@@ -61,10 +64,14 @@
 | [ARCHITECTURE](../ARCHITECTURE.md) | 领域权威、数据与适配边界 | 区分 S1 最小实现与目标合同 |
 | [六层配置合同](../CONFIGURATION-LAYERS.md) | Context／Routing／Skill／Rule／Tool／Outcome | S1 部分实现，完整配置规划 |
 | [ROADMAP](../ROADMAP.md) | 阶段总表、优先顺序、Gate | 不承诺日期；实现状态要有验收依据 |
-| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.22**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**和 R2 WP1–WP5 服务端切片状态 | **不改阶段范围与父 Gate**；用户授权跳过 R1/R2 角色复核与签核流程，但不等于技术 Gate 通过；R1 与 R2 Gate 状态仍以矩阵为准 |
+| [版本切分与核心交付](../RELEASE-PLAN.md)（**v0.47**） | 阶段内的版本切分 R0 / R1 / R2 / R3 / R4 / R5a / R5b：每版入口条件、工作包（WP）、明确不做、退出判据；**三层视图**（产品能力／前端／后端）；**角色→任务→页面→证据**映射；EL 30 项、**AGI-01–11（MCP/CLI/Skills/Worker）**、**KHA-01–10 外部形态借鉴**和各版本当前状态 | **不改阶段范围与父 Gate**；只跳过授权的用户快速验收，不代表技术 Gate 通过；R2/R3 仍实施中 |
 | [R1 证据摘要](../reports/R1-EVIDENCE.md) | R1 后端代码、测试样本与限制：SQLite（含在线备份）、恢复/outbox、配置服务/HTTP/MCP/CLI、校验、可运行发布预检及 WP9 本机浏览器联调 | **进行中**；M-A-04 与 M-A-16 已通过；M-A-12 R1 前半可运行但完整检查仍缺 R2 证据；M-A-03/17/18 待签核，R1 父 Gate 未退出 |
 | [R2 证据摘要](../reports/R2-EVIDENCE.md) | 本次 R2 开工授权例外、工作包实现状态、可复现验证与未完成项 | **实施中**；WP1–WP4 有部分服务端切片，WP5 有工具意图/未知操作阻断首片；发布固定样例检查、确认等待恢复、未知结果收敛与运行状态服务仍缺；授权跳过角色复核不等于技术 Gate 通过 |
-| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.7**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；M-A-04 与 M-A-16 已通过，M-A-12 部分证据已登记，R1 仍有父 Gate 未全绿 |
+| [R3 能力证据登记](../reports/R3-EVIDENCE.md)（**v1.6**） | `M-B-01…15` 逐项本机工件索引、AGI-07/08 诊断／Worker 首链专节、验证计数与 schema 状态 | **实施中**；当前客服矩阵工件索引，不是 Gate 通过报告；真实渠道/实机 WebView/多样本质量与真实 Provider 联调均无证据 |
+| [R3 开发收口与验收对照 2026-11-04](../reports/R3-ACCEPTANCE-2026-11-04.md)（**v1.1**） | 开发侧收口 + QA 对照：权威 S2-b Gate 原文、本机/外部条件分类、`M-B-01…15` 逐条对照、验证命令、阻塞项与所需外部凭据/设备、状态文档同步清单 | **不新增或修改退出判据**；0/15 通过，R2 技术 Gate 与 R3 退出 Gate 均未通过 |
+| [R3 整体验收复核 2026-11-05](../reports/R3-REVIEW-2026-11-05.md)（**v1.0**） | 独立复核：739/340/61/190/12 全部复现；21 路由 × 1440/390 走查（0 console error、0 横向溢出）；4 个 P1/P2 问题（画布首屏不可见、画布浏览器脚本与新实现脱节、统计页工程术语直出、收件箱双轨）与 184 项未提交改动风险 | **不是 Gate 证据**；结论为「开发完成度可接受、收尾未完成」，0/15 状态不变 |
+| [AGI-07/08 独立规格审查](../superpowers/specs/2026-11-04-agi-0708-spec-review.md) · [代码质量审查](../superpowers/reviews/2026-11-04-agi-0708-code-quality-review.md) | 对照 R3 实施计划最小合同六条与 :45 九类场景，逐条给实现位置、验证命令、结论；先规格后代码质量两步 | **本机 fixture 证据**；真实 harness Provider / host Skill 激活 / 质量对照均未联调，不记为通过 |
+| [版本 Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)（**v0.8**） | 每条父 Gate → 归属版本 → 工件 → 正反例 → 通过条件 → 证据位置 → 状态；M-A-19…21 与 M-C-11…12 为耐久证据细化 | **追溯表，不是 Gate 权威**；子项不独立决定版本退出；M-A-04 与 M-A-16 已通过，M-A-12 部分证据已登记，R1 仍有父 Gate 未全绿 |
 | [RELEASE-PLAN 与当前产品方向评审记录](../RELEASE-PLAN-REVIEW.md)（**v0.1**） | 产品、市场、架构、平台、交付管理与设计六个视角的综合评审；记录优势、风险优先级、知识库启发和待决事项 | 评审意见，不是产品/架构决策或实现证据；不替代 ROADMAP 与客服交付方案 Gate |
 | [评审处置台账](../RELEASE-PLAN-REVIEW-RESPONSE.md)（**v0.1**） | 15 条评审意见的采纳/部分采纳/不采纳、改动落点、被修正的事实前提、5 项未关闭 | 只记处置，不重复原文；未关闭项是下轮评审入口 |
 | [持久可恢复执行设计评审](../reports/DURABLE-EXEC-REVIEW-2026-10-29.md)（**v0.1**） | 对照 Durable Agent 四项能力的现状盘查、四条方向裁定、DC-01–08 缺口（意图先于执行/确认持久化/resume 驱动/阶段边界/replay 策略）、不照搬清单与 R2 增项建议 | **评审意见**；不改 Gate、阶段范围或实现状态；建议落点只引用既有 M-A-* 与 R2-WP5 |
@@ -77,7 +84,7 @@
 | 文件 | 负责内容 | 状态与下游 |
 |---|---|---|
 | [客服交付建设方案](../CUSTOMER-SERVICE-DELIVERY-PLAN.md) | Knocket 客服覆盖矩阵、增强能力、云部署生命周期 | 方向／范围已确认，新增能力规划；约束 S2 与 S3/S4 |
-| [物料库与文件发送](../MATERIAL-LIBRARY-AND-DELIVERY.md) | 独立图片/视频/文档资产、真实后处理目标、已审简介检索、人工与 Agent 自动发送 | 方向已确认；本地前端扩展按第二轮报告验收，真实服务未实现；约束 S2-a/b/c 和 S3 恢复 |
+| [物料库与文件发送](../MATERIAL-LIBRARY-AND-DELIVERY.md)（v0.8） | 独立图片/视频/文档资产、真实后处理目标、已审简介检索、人工与 Agent 自动发送 | 方向已确认；R3 有限切片含图片 OCR、FFmpeg 派生、原生 PDF、混合 PDF 空文本页回退和 MP4/WebM 内嵌字幕单流节选，均有界且待人工审核；真实双轨字幕样本已解码/审核检索。本机缺 Tesseract，真实 OCR 质量、同页图片区域、视频语音/画面理解与真实渠道仍缺，约束 S2-a/b/c 和 S3 恢复 |
 | [Agent 接入开发计划](../AGENT-INTEGRATION-PLAN.md) | 共用 API、MCP／Skills、可选 CLI、后台 Worker 与最小工具/渐进披露 | 高优先级 AGI-01–11 已登记；任务/Skill/Schema 快照、角色隔离与 host 降级待验证 |
 | [初始化与摄入](../INTAKE-AND-INITIALIZATION.md) | 来源、网页／本地摄入、受限外部创建 | 方向已确认；接口命名、参数与部分措辞待定 |
 | [配置后台体验优化](../CONFIGURATION-UX-OPTIMIZATION.md) | 可选助手、完整手动路径、渐进式配置；§12 专家任务/Harness 后台设计与 UX-17–24 | UX-01–16 按原提案/逐轮采用核对；新增模块交互已落方案、未实现，不新建策略库 |
@@ -96,9 +103,11 @@
 | [S2 界面约束](../S2-UI-DESIGN.md) | 证据分离、状态、内容维护；§9 补事项/披露/迁移约束 | 保留现行治理；新增规划未实现，原 §2 导航已归档 |
 | [配置后台启动方案](../S2-CONSOLE-KICKOFF.md) | 旧 K0/D3/K1 缺口；§8 为 CT-00–06 投影/蓝图/事项/证据/Diff 与联调交接 | 新工作包全待实施，沿用原生模块；CT/B/T 编号均不是新产品阶段，前端不关闭 TM/AGI Gate |
 | [前端设计启动简报](../S2-FRONTEND-DESIGN-BRIEF.md) | 当前基线、关系与 §11 Task/Harness 增量设计输入 | 旧 23 面仅职责对照；新工作面设计不等于页面或服务已交付 |
-| [编排视图前端方案](../S2-ORCHESTRATION-UI.md)（**提案 v0.1**） | 「流程」tab 三投影（图/清单/规则）的画布实现：技术选型 `@xyflow/react` v12（含四条理由与不选 X6/LogicFlow 的原因）、四视图态、端口与边界事件的画法、**九条**校验的界面落点、视图模型与组件树、无障碍；**RG-F1–RG-F12 已全部定案** | **未实施**；不新增二级页（修正 RG-1 的「17→18」）；依赖须登记 `VERSION-PINS` |
+| [编排视图前端方案](../S2-ORCHESTRATION-UI.md)（**设计提案 v0.2；R3 部分实现**） | 「流程」tab 三投影、嵌套检视器、端口/边/模型条件表单、并发托盘、版本差异与运行叠加；技术选型 `@xyflow/react` v12、坐标不持久化、九条校验落点与键盘等价路径 | **R3 进行中**；WP4 忽略审计与受限 `matches` 编辑已实现，Inbox SSE 有本机基线/优先级 fixture；真实服务周期来源、完整客服和目标角色基线仍缺；不新增二级页，依赖见 `prototypes/console-next/package.json` 与 `VERSION-PINS` |
+| [R3 开发实施与接力计划](../superpowers/plans/2026-10-30-r3-development.md)（v0.55） | R3-WP1–WP6 工件与缺口、AGI-07/08 只读诊断与 Worker 首链、ElevenLabs 配置化参考边界；schema v23；共享草稿画布、WP4 忽略审计、正则条件表单、持久执行/周期、Contact/Widget/Inbox、媒体与统计/遥测 | **实施中**；闭集忽略由服务端重算并随候选快照/画布历史显示，`matches` 模式 ≤128 字符且比较文本 ≤1024 字符；Unit 事件/等待结构化编辑与画布会话布局已做浏览器回归；新增 `ExecutionService`→SQLite 重开→授权诊断 HTTP 端到端分页/脱敏验证；offline Widget→Inbox、双访客跨上下文隔离、隔夜时段与 Inbox 本地接管摘要/手动回复草稿均有本机 fixture 证据。AGI-07/08 五缺口修复与两份审查工件已落地（专项 61 项、诊断四表 v21/v22），真实 harness Provider / host 联调无证据；本机最终全量 739/340；服务周期 close/adjudicate/migrate 与 10 项生命周期测试已落地，changed_to 保留明确拒绝；Contact 完整批准路径与 WebView 桥生命周期合同已补证。所有周期来源仍为本机虚构 authority_id，生产签发未接入；真实 Push/渠道、OCR 质量、视频理解、坐席身份/公网 WebView、角色基线和 R2/R3 Gate 均未通过 |
 | [硬规则表达模型](../HARD-RULE-MODEL.md) | 条件算子、裁决、冲突与字段形状；**v0.2 已裁决**：裁决/授权/路由去向/事项状态四层分开、条件深度 2 层（含边条件）、`state` 四窗口（`cycle` 默认） | 六问已闭合（§9），D3 与 K1 阻塞解除；**代码已同步**（2026-10-23，`contracts.py` 的 `Verdict` 四值、`AuthorizationResult`、`StateWindow`、`validation.py` 第九条） |
 | [S2 评测门禁提案](../S2-EVAL-GATE-PROPOSAL.md) | Gate Reserve、配对评估、预算与状态机 | §2 已确认且并入治理设计；§3–§5 仍待确认 |
+| [Agent 自迭代长效方案与分期规划](../AGENT-SELF-ITERATION-ROADMAP.md)（v0.1） | 三层 Loop 缺口诊断；E0–E5 六阶段（基座／诊断／候选／审批／记忆／外层复盘）与退出判据；八道门（含泛化门、单元完整性前置）；七个进化单元；`ChangeProposal`／`ImprovementRun`／`EvalResult`／`Release` 字段级增量与新增 `RejectedEdit`；七组度量 + 门体检 | **方案提案，未实现**；不改 ROADMAP 阶段、Gate 与六层合同；诊断协议与泛化审查是补强，冲突时以 S2 治理设计为准；他处实践只作设计输入，非本项目效果证据 |
 | [Task 体系设计](../TASK-SYSTEM-DESIGN.md) | 专家内版本蓝图、默认初始化、双来源事项、受限决策、迁移与工作集 | 方案已确定；§9 后台设计后继已登记，UI/服务未实现；ServiceRequest 不变，无共享策略库 |
 | [用户上下文设计](../USER-CONTEXT-DESIGN.md) | 记忆/画像/上下文模块职责及治理、身份、检索/压缩、遗忘 | 模块方向已确认；接口/字段/Provider提案未实现，六层不变 |
 | [Task 与上下文联合计划](../TASK-MEMORY-INTEGRATION-PLAN.md) | 两条研究归并、TM-01–14、DurableRunAdapter 分期、首片/AGI依赖，§7 后台 CT 采纳入口 | 方案/顺序与 UI 设计已登记；旧 running Attempt 失败/新尝试规则不变；服务/新增 UI 未实现，不改变原型和 S1 验收状态 |
@@ -119,7 +128,9 @@
 | 文件／工件 | 用途 | 证据边界 |
 |---|---|---|
 | [S1 交付与验收](../S1-BUILD-REPORT.md) | 代码交付物、逐项 Gate 与运行证据 | 真实模型与确定性回放分别留证；音频与真实模型 SSE 等仍缺 |
+| [R3 能力证据登记](../reports/R3-EVIDENCE.md)（v1.2） | 映射客服能力矩阵 M-B-01…15 的服务、测试与浏览器 fixture 入口，并记录 WP1 画布与 WP3/WP4 诊断专项证据 | R3 实施中；FAQ 来源版本、Widget 离线行为、隔夜时段、访客跨上下文隔离、Contact 外链隔离、Inbox 接管辅助、结构化画布交互与运行时诊断 HTTP 均有本机 fixture 证据；只登记本机证据及缺口，不是 Gate 通过报告；真实渠道、系统 Push、坐席身份/公网 WebView 与目标角色基线仍缺 |
 | [VERSION-PINS](../../VERSION-PINS.md) | 实际构件、依赖与安装恢复 | 安装／恢复证据不替代媒体或生产验收 |
+| [性能基线重算 2026-10-30](../reports/PERF-BASELINE-2026-10-30.md) | 从既有 9 个语音 trace、12 轮采样 CSV 与 3 个本地页面重算的分段时延、确定性计数与网页结构计数；含测量缺口证伪记录与首批线程优先级 | **证据重算，非新增采样**；n=1～12，只作棘轮初始上限，不作达标或验收证据 |
 | [S1 适配验证快照](../S1-VALIDATION-AND-ADAPTATION.md) | 源码／安装级检查、版本选择与适配理由 | 2026-09-27 的验证时点；后续真实模型证据读 S1 交付报告 |
 | [首轮原型规范](../S2-PROTOTYPE-SPEC.md) · [页面索引](../../prototypes/s2-console/index.html) | 15 页本地工作台的规格与复现入口 | 旧轮次保留对照；不含真实 S2 后台 |
 | [首轮 UI 走查报告](../UI-WALKTHROUGH-REPORT.md) | S1 页面与首轮原型的逐页检查 | 样本／视窗／断言限于原报告，不移用到第二轮 |
@@ -144,13 +155,14 @@
 | [Delight.ai 专题卷](../competitive/delight/00-INDEX.md)（1 卷） | 企业客服/销售竞品的**配置模型与实现**：工作区共享资产 + 资产级版本 + Dev/Prod 选择性部署；`Actionbook` 作为一等 SOP 资产的形态、三视图与执行语义；测试集来源、outcome 断言、ZTI 四级自治；与六层逐层对照、可借 7 项 / 不借 5 项 | 官方文档站私有，**无 A-/B+**，上限 B+C；`Actionbook = 结构化提示` 为交叉推断（B-）非原文；不能据此推断其工具约束、发布门禁强度或中文效果 |
 | [竞争格局与差异化定位](../COMPETITIVE-LANDSCAPE.md) | ElevenLabs / Delight / Knocket（腾讯云 TRTC）三家同轴对比：定位光谱、五点相似、六点差别、四家对比大表、**四个可守差异（可验收 / 可拥有 / 任务账本 / 记忆治理）+ 三个必须补的短板（SOP 可维护性 / 测试语料来源 / 上线速度）** | 跨列只比「形态是否存在」不比「实现质量」；§7 对外话术为**内部候选**，未经批准不得外发；不改 PRODUCT 定位与 ROADMAP 阶段 |
 | [Hindsight 迭代机制分析](../HINDSIGHT-ITERATION-ANALYSIS.md) | 来源记忆、经验沉淀与改进假设的机制研究 | 已核源码不等于已联调、已选替代内核或效果提升 |
+| [Kimi Hosted Agents 分析](../KIMI-HOSTED-AGENTS-ANALYSIS.md)（v0.1，**P0-12**） | 把 Harness 作为云服务卖的外部形态：Agent/Session/Environment/Vault/MemoryStore/Trigger 对象模型与版本冻结链、事件流双 ID、`permission_policy` 两档、`load_mode` 两级、梦境整理、cron 触发器与运行记录；**自持／可外包切分线**、10 项借鉴、7 项不借 | **文档级 A-**（14 页 API 契约）；**未开户、未调用 API、未走查控制台、未实测长程任务与触发器、未测中文客服效果**；它是**执行层间接竞品**、非同交付面竞品；不构成 Provider 选型决定（KHA-Q1） |
 | [历史归档索引](../archive/README.md) | 被替代设计的原文、时点与后继关系 | 归档内容不得作为新实现默认规格 |
 
 ## 4. 方案之间如何关联
 
 - **产品到交付**：PRODUCT 定义用户与价值 → 客服交付计划列能力 → ARCHITECTURE 定义事实与职责 → ROADMAP 安排阶段 Gate。
 - **配置到初始化**：六层合同确定对象职责 → 初始化与摄入规定来源 → 体验优化规定低门槛与详细视图 → IA／前端合同展开页面。助手和手动路径都回到同一版本。
-- **第三方 Agent 到改进**：Agent 接入计划的 AGI-01–06 先建立共用服务与受限创建 → AGI-07–08 诊断／Worker → AGI-09–10 候选与授权治理 → S2 设计／评测规则决定能否采用与发布。
+- **第三方 Agent 到改进**：Agent 接入计划的 AGI-01–06 先建立共用服务与受限创建 → AGI-07–08 诊断／Worker → AGI-09–10 候选与授权治理 → S2 设计／评测规则决定能否采用与发布。（2026-11-04 状态注：AGI-07–08 的 R3 简版代码、五缺口修复、专项 61 项与独立规格／代码质量审查工件已落地，真实 harness Provider / host 联调未做；设计链路与版本归属不变。）
 - **任务到用户上下文**：Task 设计确定专家蓝图/版本、初始化、受限决策及义务/执行分权 → 首片先验内部账本/工作集 → 用户上下文设计提供有效事实/画像 → 联合计划对齐 TM/AGI 与阶段 Gate；Provider 不持业务权威，渐进披露不授予权限。
 - **任务到配置后台**：Task/AGI 合同 → 体验 §12 的版本内规则/用户实例/证据分面 → IA §8 的归属/命名 → 简报 §11 与启动方案 CT-00–06 → 后续原型/正式服务分别验收；不把新增设计倒写为第二轮已实现。
 - **证据到结论**：S1 交付报告与各轮 UI 报告记录实际测试 → ROADMAP 更新可公开进度 → Gate 追溯矩阵登记逐条工件与证据位置。上游研究与本地原型不能替代真实服务证据。
@@ -177,6 +189,7 @@
 | Task体系 = 原ServiceRequest改回裸Task或上游待办类 | NAMING + TASK-SYSTEM-DESIGN | 产品可称Task体系，事项合同暂称TaskItem；请求与RuntimeTask/PlanTask分离 |
 | 高优先级接入／前端演示 = MCP、后台 Worker、云服务已支持 | AGI 计划 + 实际服务联调证据 | 当前为计划或本地原型，不增加兼容性声明 |
 | ElevenLabs 有分支／灰度／测试／护栏 = 等价于 Loomrise 的评测与审批门禁 | [ElevenLabs 分析](../ELEVENLABS-AGENTS-ANALYSIS.md) §3.3 / §4.4 / §5.1 · [治理卷](../competitive/elevenlabs/07-GOVERNANCE-COMPLIANCE.md) §3 | 它有版本与灰度机制，**有提案评审装置但不是强制门**（管理员可绕过，且合并不要求测试通过）；护栏是自然语言 + 轻量模型的概率判定且不校验工具参数，不能替代模型外确定性裁决 |
+| Kimi 托管智能体的 `completed` = 任务已完成；其归档／技能修订 = 可回滚 | [Kimi 分析](../KIMI-HOSTED-AGENTS-ANALYSIS.md) §2 / §5 | 上游 `completed` 只表示「会话已创建、初始事件被接受」，**不代表任务完成**；归档不可逆、技能修订须换 ID 换版本线，与 `rolled_back` 冲突，已列入不借 KHA-X01 |
 
 ## 6. 新资料落点、归档与会话接力
 

@@ -53,6 +53,27 @@ Telegram/邮箱 → 渠道适配 ┤                       │
 
 AgentScope `RealtimeAgent` 与 Qwen Audio Agent 仅作为限时语音对照，不同时维护三条生产链路。Octop、Dify、Langflow 作为应用体验参照，不作为默认底座。框架状态通过 Adapter 关联，前端不绑定上游私有数据类型。
 
+### 自持 / 可外包切分线（2026-11-05 定）
+
+Kimi Hosted Agents 等产品已把 **Harness 作为云服务**售卖：云沙箱、会话、SSE 分发、工具循环、记忆存储、定时触发器、多智能体委派，均可用 API 直接获得。执行底座商品化不改变本项目的权威边界，但需要一条明确切分线，避免两类错误：把可外包的工程当差异化投入，或把不可外包的权威交给外部系统。
+
+| 必须自持（业务语义与裁决） | 可以外包（无业务语义的算力与管道） |
+|---|---|
+| `AgentVersion` 冻结与依赖快照 | 沙箱镜像构建、依赖安装、`shell`/`ipython` 执行 |
+| `HardRule` 模型外裁决 | 长程会话持久化与断线续读 |
+| `ToolPolicy`：确认、幂等键、预算、执行前重验 | SSE／事件流分发与游标管理 |
+| `Outcome` 与外部结果 ID | 记忆文件的物理存储（读取路径仍经我方装配） |
+| `RunEvent` 账本与序号/哈希链 | **时钟**（cron 触发信号） |
+| `TaskItem` 义务、触达许可、`TaskAttempt` 代次 | 子任务并行执行的调度槽位 |
+| 发布审批、回滚与证据保留 | 媒体转码等无业务判定的后处理 |
+
+两条硬边界：
+
+1. **外部触发器只作时钟信号源。** 不得让外部 `trigger` 到点直接创建并执行会话——那等于把 `OutreachPolicy` 的执行权交给一个不认识授权与义务的系统。时间信号必须回到 Loomrise，由 `TaskAttempt` 裁决是否派发、是否取得许可。
+2. **外部会话状态只是执行证据。** 外部 `session` 的 `idle`／`completed` 不得映射为 `Outcome` 或业务完成；Adapter 必须把外部事件翻译为 `RunEvent`，且不得让外部状态成为第二套权威。外部 `completed` 的常见语义只是「会话已创建、初始事件被接受」，与「生成 / 送达 / 业务完成」三分的最后一层无关。
+
+这条切分线也是 [REFERENCE-PROJECTS](REFERENCE-PROJECTS.md) P0-12 的采用边界；逐项借鉴与不借见[Kimi Hosted Agents 分析](KIMI-HOSTED-AGENTS-ANALYSIS.md) §3.2 / §4 / §5。
+
 渠道/媒体适配、Agent 运行适配、信息源适配、知识检索适配、业务工具适配和事件导出是不同边界。网页语音的媒体交互可以异步进行，但业务请求仍进入同一 `ExecutionService`；AgentScope 是运行 SDK 候选，不是“文字专属业务内核”。新供应商优先实现现有适配合同，不增加平行任务状态或另一套发布流程。
 
 ## 官方客服应用、会话与接管（规划未实现）
@@ -199,7 +220,7 @@ pi durable 的存储实现不能直接当作 Loomrise 的生产持久化承诺�
 
 `loomrise/contracts.py` 已实现 `ServiceRequest`、`RunEvent`、`AgentVersion`、`ScenarioPack`、`ToolManifest`、`SkillManifest` 与 `Case` 的最小合同。下列完整字段与生命周期仍是目标规范，不能从状态枚举推断对应流程已完成；独立 `AgentSpec`、`EvalSet/EvalResult`、`DecisionResult` 和领域 `ChangeProposal` 合同尚未实现。未注入 store 的 S1 执行仍使用进程内请求/幂等状态并可导出 JSONL；R1 已新增 SQLite 耐久入口与配置候选存储，配置工作面也已完成本机 fixture HTTP 联调；完整 TaskItem、恢复 Gate、真实写入撤销和生产身份仍待补齐。
 
-- `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、专家内 `task_blueprints`、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置、依赖引用和合同版本，不携带凭据；任务蓝图不引用共享可变策略，动态事实/授权须保留每次重验的来源/版本证据。当前 S1 的可变 AgentVersion dataclass 尚未实现完整冻结和蓝图校验。
+- `AgentSpec@v1`：稳定 ID、场景目标、授权资料及连接引用、SOP／安全锁定段、可改段、线索字段、Skill/工具及权限引用、专家内 `task_blueprints`、模型、预算、审批策略和评测集引用。`AgentVersion` 冻结这些配置、依赖引用和合同版本，不携带凭据；**依赖快照须包含运行环境版本**（沙箱镜像或等价的环境配置摘要，使同一版本在两个镜像上运行时可被识别为不同条件），任务蓝图不引用共享可变策略，动态事实/授权须保留每次重验的来源/版本证据。当前 S1 的可变 AgentVersion dataclass 尚未实现完整冻结、蓝图校验与环境版本字段（2026-11-05 登记，落 R1 合同）。
 - `Unit@v1`（**已采纳合同；R1 落最小实现，R3 落嵌套与画布**）：契约层九字段 + 内容层（子图或原子）。路由三层：G0 确定性闸门 → G1 在**闭集**内选 → G2 兜底；连接五类：同层边、端口边、边界事件可用，组合环与裸跨层边不可；条件引用只允许已声明字段，深度 ≤2 层。它是 `RequestRouting` 与 `Skill/SOP` 的组织形态，**不是第七层**。R1 只实现清单投影所需字段与九条校验函数，嵌套/端口/边界事件的能力实现见 [RELEASE-PLAN](RELEASE-PLAN.md) §3 R3。
 - `ServiceRequest@v1`：业务请求可跨多轮与多端；状态至少包含排队、运行、等待确认、取消中、成功、失败和已取消；可记录 `trigger_kind` 与 `trigger_ref`，S1 仅使用入站消息来源。AgentScope 的 `state.Task` 是运行时子任务清单，适配器内部只以 `RuntimeTask`/`PlanTask` 称呼，不进入本合同。
 - `Run@v1`（目标合同）：一次 Loomrise 执行尝试，绑定 `ServiceRequest`、`AgentVersion`、上下文/工具/策略快照、预算、占用代次和生命周期；可关联 `TaskAttempt`，Adapter 句柄仅存内部映射。已持久等待可沿原 `Run` 唤醒，本地 `running` 崩溃须保留中断事实，获准重试时新建 `Run` 并保留 lineage；安全 checkpoint 的复用不能抹去旧尝试失败。外部结果未知先对账，不自动重写。
