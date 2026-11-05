@@ -3,13 +3,24 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:canvas": "node orchestration/build.mjs",
+    "postinstall": "npm run build:canvas",
     "test": "node --test tests/*.test.js",
     "test:browser": "node tests/run-browser-check.js config-ui-browser-check.js",
     "test:navigation": "node tests/run-browser-check.js navigation-browser-check.js",
     "test:sidebar": "node tests/run-browser-check.js sidebar-collapse-browser-check.js",
+    "test:orchestration": "node tests/run-browser-check.js orchestration-browser-check.js",
+    "test:contact": "node tests/run-browser-check.js contact-editor-browser-check.js",
     "check:terms": "node tests/run-browser-check.js terminology-browser-check.js"
   },
   "dependencies": {
-    "@e965/xlsx": "0.20.3"
+    "@dagrejs/dagre": "1.1.5",
+    "@e965/xlsx": "0.20.3",
+    "@xyflow/react": "12.9.2",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
   }
 }

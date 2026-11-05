@@ -1,0 +1,17 @@
+.orch-comparison-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-block: 0 12px; font-size: 12px; }
+.orch-diff-added { color: var(--success, #247348); }
+.orch-diff-removed { color: var(--danger, #b4232f); }
+.orch-diff-changed { color: var(--warning, #825e13); }
+.orch-node.is-diff-added { border: 2px solid #247348; }
+.orch-node.is-diff-removed { border: 2px dashed #b4232f; }
+.orch-node.is-diff-changed { border: 2px solid #825e13; }
+.orch-node .orch-diff-status { display: block; margin: 0 14px 8px; font-size: 11px; }
+.orch-port.is-diff-added { background: #edf7f0; color: #247348; }
+.orch-port.is-diff-removed { background: #fff0f1; color: #a01e29; text-decoration: line-through; }
+.orch-port.is-diff-changed { background: #fff8e8; color: #75510b; }
+.orch-port small { display: block; font: inherit; }
+.orch-comparison-change { border-top: 1px solid var(--border-soft); padding-top: 10px; margin-top: 16px; min-width: 0; }
+.orch-comparison-change h4 { margin: 0 0 6px; font-size: 13px; overflow-wrap: anywhere; }
+.orch-comparison-change code { display: block; font-size: 11px; overflow-wrap: anywhere; }
+.orch-comparison-change p { color: var(--muted); font-size: 11px; margin: 10px 0 4px; }
+.orch-comparison-change pre { background: var(--surface); padding: 8px; max-height: 260px; overflow: auto; }

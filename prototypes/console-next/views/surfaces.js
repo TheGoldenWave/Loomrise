@@ -2,6 +2,7 @@ import { escapeHtml, attr, badge, button, field, section, emptyState, formatTime
 import { renderMaterialPicker, renderMaterialAttachments } from './materials.js';
 import { renderVisitorConversation, renderVisitorEvidence, renderVisitorRunEvidence } from './visitor.js';
 import { materialAllowed } from '../material-domain.js';
+import { renderContactService } from './contact-service.js';
 export { renderKnowledge } from './knowledge.js';
 
 const e = escapeHtml;
@@ -23,6 +24,20 @@ const time = value => value ? formatTime(value) : '尚未记录';
 const bindingLabel = binding => !binding ? '未绑定' : typeof binding === 'string' ? binding : binding.versionId || binding.id || binding.version || '已绑定本地版本';
 const revisionLabel = revision => `草稿 r${revision ?? 1}`;
 const safeColor = value => /^#[\da-f]{6}$/i.test(value || '') ? value : '#2563eb';
+const validWidgetPublicId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+const localServiceOrigin = value => {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ? url.origin : '';
+  } catch { return ''; }
+};
+const safeHttpsUrl = value => {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname && !url.username && !url.password ? url.href : '';
+  } catch { return ''; }
+};
 const agentRecords = (state, key, agent) => list(state[key]).filter(record => record.agentId === agent.id);
 const sourceRefs = sources => list(sources).length ? `<div class="message-sources"><span class="muted">依据资料</span> ${sources.map(source => `<span class="inline">${badge(`${source.title || source.id || '资料'} · v${source.version || 1}`, 'neutral')}${button('source-open', '查看来源', { id: source.id || '', disabled: !source.id, variant: 'ghost' })}</span>`).join(' ')}</div>` : '';
 const chatMessages = messages => list(messages).map(message => {
@@ -51,12 +66,35 @@ export function renderTrial(ctx) {
   const connection = list(state.connections).find(item => item.id === agent.config.model.connectionId);
   const materials = list(state.materials).filter(asset => materialAllowed(asset, agent.id) && asset.autoSendAllowed === true && asset.original?.available && asset.original?.blobKey);
   const policy = agent.config.materialPolicy || {};
-  return pageHeading('客服试用', '以访客身份提问、索取文件，查看收到的图片、视频和文档。每轮使用当前草稿的固定快照。', button('navigate', '查看运行记录', { page: 'runs' })) + readonlyNote(readonly) + simulation('答疑与物料检索采用确定性本地脚本，原件从当前浏览器读取。收件、查看和下载可在这里体验；真实模型与外部送达待接入。') + '<div class="split-layout"><div class="editor-main">' + section('访客对话', renderVisitorConversation(ctx) + renderVisitorEvidence(ctx), { description: '当前草稿的独立试用会话；不会写入人工会话。' }) + '</div><aside class="side-panel">' + section('当前试用快照', detailList([['专家', agent.name], ['配置', revisionLabel(agent.revision)], ['方式', '本地脚本模拟'], ['知识资料', (ready.knowledgeCount || 0) + ' 条就绪资料'], ['自动发送', policy.enabled ? '当前草稿已启用' : '默认关闭'], ['可索取物料', materials.length + ' 份']])) + section('准备与后续调整', '<details class="visitor-preparation"><summary>配置答疑与文件发送</summary><p class="helper">文件索取可单独试用，不要求先配置常见问答。业务自行录入物料，审阅简介并发布后，按需启用当前专家的自动发送策略。</p><div class="button-group">' + button('navigate', '录入与授权物料', { page: 'materials', variant: 'primary' }) + button('navigate', '管理答疑资料', { page: 'knowledge' }) + '</div>' + (!ready.canTrial ? '<p class="helper">普通答疑的准备项仍未齐全，不影响体验文件索取的策略拒发。</p><ul class="summary-list">' + list(ready.issues).map(issue => '<li>' + e(issue) + '</li>').join('') + '</ul>' : '') + detailList([['答疑连接', connection?.name || '未选择可用连接'], ['知识就绪', ready.canTrial ? '本地脚本条件已满足' : '尚有准备项']]) + '</details><details><summary>试用后怎么改进</summary><ul class="summary-list"><li>回答缺事实：补充资料并重新审阅。</li><li>找不到文件：检查物料名称、标签、已审简介与授权范围。</li><li>文件不能发送：展开试用证据检查策略或缓存。</li><li>人工出口不明确：调整业务配置中的承接条件。</li></ul><div class="button-group">' + button('navigate', '业务配置', { page: 'configuration' }) + button('navigate', '版本与绑定', { page: 'versions' }) + '</div></details>') + '</aside></div>';
+  const localRevision = agent.revision ?? 1;
+  const serverRevision = serverDraftRevision(ctx, agent);
+  const revisionDetail = serverRevision == null
+    ? `本地草稿 r${localRevision}（服务端修订未读取）`
+    : `本地草稿 r${localRevision} · 服务端草稿 r${serverRevision}`;
+  const revisionNote = serverRevision == null
+    ? '本地修订是浏览器内的编辑计数；读取配置服务后可对照服务端草稿修订。'
+    : '本地修订是浏览器内的编辑计数；服务端草稿修订来自配置服务。两套计数独立，数值不同不代表内容冲突。';
+  return pageHeading('客服试用', '以访客身份提问、索取文件，查看收到的图片、视频和文档。每轮使用当前草稿的固定快照。', button('navigate', '查看运行记录', { page: 'runs' })) + readonlyNote(readonly) + simulation('答疑与物料检索采用确定性本地脚本，原件从当前浏览器读取。收件、查看和下载可在这里体验；真实模型与外部送达待接入。') + '<div class="split-layout"><div class="editor-main">' + section('访客对话', renderVisitorConversation(ctx) + renderVisitorEvidence(ctx), { description: '当前草稿的独立试用会话；不会写入人工会话。' }) + '</div><aside class="side-panel">' + section('当前试用快照', detailList([['专家', agent.name], ['配置', revisionDetail], ['方式', '本地脚本模拟'], ['知识资料', (ready.knowledgeCount || 0) + ' 条就绪资料'], ['自动发送', policy.enabled ? '当前草稿已启用' : '默认关闭'], ['可索取物料', materials.length + ' 份']]) + `<p class="helper">${e(revisionNote)}</p>`) + section('准备与后续调整', '<details class="visitor-preparation"><summary>配置答疑与文件发送</summary><p class="helper">文件索取可单独试用，不要求先配置常见问答。业务自行录入物料，审阅简介并发布后，按需启用当前专家的自动发送策略。</p><div class="button-group">' + button('navigate', '录入与授权物料', { page: 'materials', variant: 'primary' }) + button('navigate', '管理答疑资料', { page: 'knowledge' }) + '</div>' + (!ready.canTrial ? '<p class="helper">普通答疑的准备项仍未齐全，不影响体验文件索取的策略拒发。</p><ul class="summary-list">' + list(ready.issues).map(issue => '<li>' + e(issue) + '</li>').join('') + '</ul>' : '') + detailList([['答疑连接', connection?.name || '未选择可用连接'], ['知识就绪', ready.canTrial ? '本地脚本条件已满足' : '尚有准备项']]) + '</details><details><summary>试用后怎么改进</summary><ul class="summary-list"><li>回答缺事实：补充资料并重新审阅。</li><li>找不到文件：检查物料名称、标签、已审简介与授权范围。</li><li>文件不能发送：展开试用证据检查策略或缓存。</li><li>人工出口不明确：调整业务配置中的承接条件。</li></ul><div class="button-group">' + button('navigate', '业务配置', { page: 'configuration' }) + button('navigate', '版本与绑定', { page: 'versions' }) + '</div></details>') + '</aside></div>';
 }
 
 function conversationInfo(conversation) {
   const ownership = conversation.ownership || (conversation.owner === 'human' ? 'human' : conversation.status === 'handoff' ? 'waiting' : 'ai');
   return { ownership, label: ownership === 'human' ? '人工接待中' : ownership === 'waiting' ? '等待人工承接' : 'AI 接待（模拟）', tone: ownership === 'human' ? 'success' : ownership === 'waiting' ? 'warning' : 'neutral' };
+}
+
+// 业务请求状态只在界面上翻译；存储值和筛选逻辑保持原样。
+const requestStatusLabel = status => ({
+  waiting: '待处理', handoff: '待人工承接', resolved: '已解决', unknown: '未解决 / 待确认',
+}[status] || (status ? `未识别状态（${status}）` : '未解决 / 待确认'));
+
+// 试用台显示的是浏览器本地修订计数（agent.revision）；服务端草稿修订来自配置服务的
+// draft.get（r1Configuration.state.draft.revision）。两套计数独立，不可互相替代。
+function serverDraftRevision(ctx, agent) {
+  const workspace = ctx.r1Configuration?.state;
+  if (workspace?.status === 'ready' && workspace.agentId === agent.id && Number.isInteger(workspace.draft?.revision)) return workspace.draft.revision;
+  const contact = ctx.contactWorkspace?.state;
+  if (contact?.status === 'ready' && contact.agentId === agent.id && Number.isInteger(contact.revision)) return contact.revision;
+  return null;
 }
 
 function selectedMaterialList(ctx, conversation) {
@@ -91,17 +129,129 @@ export function renderInbox(ctx) {
   const filteredConversations = conversations.filter(conversation => inboxFilter === 'all' || conversationInfo(conversation).ownership === inboxFilter);
   const active = conversations.find(conversation => conversation.id === state.ui.activeConversation);
   const info = active ? conversationInfo(active) : null;
-  const thread = active ? `${section(active.subject || '当前会话', `<div class="inline">${badge(info.label, info.tone)}${badge('本地会话', 'warning')}</div>${detailList([['访客', active.visitorName || (typeof active.visitor === 'string' ? active.visitor : active.visitor?.name) || '模拟访客'], ['承接人', active.recipient || agent.config.handoff.recipient || '未配置'], ['业务请求状态', active.requestStatus || '未解决 / 待确认'], ['入口版本', active.versionId || bindingLabel(agent.bindings.widget)]])}<div class="button-group">${info.ownership !== 'human' ? button('inbox-handoff', '人工接管', { id: active.id, disabled: readonly, variant: 'primary' }) : button('inbox-release', '释放并恢复脚本接待', { id: active.id, disabled: readonly })}${button('navigate', '查看运行证据', { page: 'runs' })}</div><p class="helper">接管只改变接待所有权。它不取消业务请求，也不代表访客问题已解决。</p>`)}<div class="chat inbox-thread" role="log" aria-live="polite" aria-label="人工会话消息">${chatMessages(active.messages)}</div><form data-form="inbox" class="stack"><input type="hidden" name="agentId" value="${a(agent.id)}"><input type="hidden" name="conversationId" value="${a(active.id)}"><input type="hidden" name="generation" value="${a(active.generation)}"><input type="hidden" name="attachments" value="${a(JSON.stringify(list(state.ui.materials?.selected)))}">${control('人工回复（可选）', 'message', '', { type: 'textarea', rows: 3, readonly: readonly || info.ownership !== 'human', placeholder: info.ownership === 'human' ? '填写回复，或只选择附件发送到本地模拟会话' : '先接管会话再回复或发送物料' })}${selectedMaterialList(ctx, active)}<div class="button-group">${button('material-picker-open', '选择物料', { disabled: readonly || info.ownership !== 'human' })}${submit('记录本地回复 / 附件', readonly || info.ownership !== 'human')}</div><p class="helper">文字和附件可单独发送。此回复只保存在浏览器，外部送达未知。</p></form>${renderMaterialPicker(ctx)}${materialAutoTest(ctx, active, info.ownership)}` : emptyState('选择一条会话', '在左侧选择会话查看消息与业务状态。没有会话时，可以创建本地模拟访客。', button('inbox-simulate', '模拟访客发起会话', { variant: 'primary', disabled: readonly }));
-  return pageHeading('人工会话', '人工承接与配置治理分开；会话、业务请求和处理结果各自留证。', button('inbox-simulate', '模拟访客', { disabled: readonly, variant: 'primary' })) + readonlyNote(readonly) + simulation('访客、接管和回复均为本地模拟。真实访客连接、消息送达、通知与多客服协作待接后端。') + `<div class="inbox-layout"><aside class="inbox-list"><h2>会话队列 <span class="muted">${filteredConversations.length}</span></h2>${control('筛选接待状态', 'inbox-filter', inboxFilter, { extra: 'data-ui-bind="filter"', options: [{ value: 'all', label: '全部会话' }, { value: 'ai', label: 'AI 接待' }, { value: 'waiting', label: '待人工承接' }, { value: 'human', label: '人工接待' }] })}${filteredConversations.length ? filteredConversations.map(conversation => { const item = conversationInfo(conversation); return `<button type="button" class="conversation-item ${active?.id === conversation.id ? 'is-active' : ''}" data-action="inbox-select" data-id="${a(conversation.id)}" aria-pressed="${active?.id === conversation.id}"><strong>${e(conversation.visitorName || (typeof conversation.visitor === 'string' ? conversation.visitor : conversation.visitor?.name) || '模拟访客')}</strong>${badge(item.label, item.tone)}<span>${e(conversation.subject || conversation.summary || list(conversation.messages).at(-1)?.text || '等待回复')}</span><small>${e(time(conversation.updatedAt || conversation.createdAt))}</small></button>`; }).join('') : '<p class="helper">当前筛选没有会话。调整筛选，或创建模拟访客体验接管和回复。</p>'}</aside><div class="editor-main">${thread}</div></div>`;
+  // 真实收件箱由配置服务提供（GET {origin}/inbox/{agent_id}）。只有拿到有效 origin 才给出链接，避免生成坏链。
+  const inboxOrigin = (() => {
+    try {
+      const url = new URL(String(ctx.configurationApiOrigin || ''));
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.origin : '';
+    } catch { return ''; }
+  })();
+  const realInboxLink = inboxOrigin
+    ? ` <a class="btn btn-secondary" href="${a(`${inboxOrigin}/inbox/${encodeURIComponent(agent.id)}`)}" target="_blank" rel="noopener noreferrer">打开真实收件箱</a>`
+    : '';
+  const inboxNotice = `<p class="notice">本页是浏览器内的本地模拟收件箱，只用于体验接管与回复，不代表真实送达。真实收件箱由配置服务提供，可在服务端页面按「全部 / 待接管 / 由我接管 / 未读」筛选并接收新消息。${realInboxLink || ' 配置服务启动后，入口在服务端页面的收件箱地址。'}</p>`;
+  const thread = active ? `${section(active.subject || '当前会话', `<div class="inline">${badge(info.label, info.tone)}${badge('本地会话', 'warning')}</div>${detailList([['访客', active.visitorName || (typeof active.visitor === 'string' ? active.visitor : active.visitor?.name) || '模拟访客'], ['承接人', active.recipient || agent.config.handoff.recipient || '未配置'], ['业务请求状态', requestStatusLabel(active.requestStatus)], ['入口版本', active.versionId || bindingLabel(agent.bindings.widget)]])}<div class="button-group">${info.ownership !== 'human' ? button('inbox-handoff', '人工接管', { id: active.id, disabled: readonly, variant: 'primary' }) : button('inbox-release', '释放并恢复脚本接待', { id: active.id, disabled: readonly })}${button('navigate', '查看运行证据', { page: 'runs' })}</div><p class="helper">接管只改变接待所有权。它不取消业务请求，也不代表访客问题已解决。</p>`)}<div class="chat inbox-thread" role="log" aria-live="polite" aria-label="人工会话消息">${chatMessages(active.messages)}</div><form data-form="inbox" class="stack"><input type="hidden" name="agentId" value="${a(agent.id)}"><input type="hidden" name="conversationId" value="${a(active.id)}"><input type="hidden" name="generation" value="${a(active.generation)}"><input type="hidden" name="attachments" value="${a(JSON.stringify(list(state.ui.materials?.selected)))}">${control('人工回复（可选）', 'message', '', { type: 'textarea', rows: 3, readonly: readonly || info.ownership !== 'human', placeholder: info.ownership === 'human' ? '填写回复，或只选择附件发送到本地模拟会话' : '先接管会话再回复或发送物料' })}${selectedMaterialList(ctx, active)}<div class="button-group">${button('material-picker-open', '选择物料', { disabled: readonly || info.ownership !== 'human' })}${submit('记录本地回复 / 附件', readonly || info.ownership !== 'human')}</div><p class="helper">文字和附件可单独发送。此回复只保存在浏览器，外部送达未知。</p></form>${renderMaterialPicker(ctx)}${materialAutoTest(ctx, active, info.ownership)}` : emptyState('选择一条会话', '在左侧选择会话查看消息与业务状态。没有会话时，可以创建本地模拟访客。', button('inbox-simulate', '模拟访客发起会话', { variant: 'primary', disabled: readonly }));
+  return pageHeading('人工会话', '人工承接与配置治理分开；会话、业务请求和处理结果各自留证。', `<div class="button-group">${button('navigate', '客服统计', { page: 'customer-statistics', variant: 'ghost' })}${button('inbox-simulate', '模拟访客', { disabled: readonly, variant: 'primary' })}</div>`) + readonlyNote(readonly) + simulation('访客、接管和回复均为本地模拟。真实访客连接、消息送达、通知与多客服协作待接后端。') + inboxNotice + `<div class="inbox-layout"><aside class="inbox-list"><h2>会话队列 <span class="muted">${filteredConversations.length}</span></h2>${control('筛选接待状态', 'inbox-filter', inboxFilter, { extra: 'data-ui-bind="filter"', options: [{ value: 'all', label: '全部会话' }, { value: 'ai', label: 'AI 接待' }, { value: 'waiting', label: '待人工承接' }, { value: 'human', label: '人工接待' }] })}${filteredConversations.length ? filteredConversations.map(conversation => { const item = conversationInfo(conversation); return `<button type="button" class="conversation-item ${active?.id === conversation.id ? 'is-active' : ''}" data-action="inbox-select" data-id="${a(conversation.id)}" aria-pressed="${active?.id === conversation.id}"><strong>${e(conversation.visitorName || (typeof conversation.visitor === 'string' ? conversation.visitor : conversation.visitor?.name) || '模拟访客')}</strong>${badge(item.label, item.tone)}<span>${e(conversation.subject || conversation.summary || list(conversation.messages).at(-1)?.text || '等待回复')}</span><small>${e(time(conversation.updatedAt || conversation.createdAt))}</small></button>`; }).join('') : '<p class="helper">当前筛选没有会话。调整筛选，或创建本地模拟访客体验接管和回复。</p>'}</aside><div class="editor-main">${thread}</div></div>`;
+}
+
+const formatStatistic = value => Number.isInteger(value) && value >= 0 ? new Intl.NumberFormat('zh-CN').format(value) : '未测';
+const formatObservedCount = value => Number.isInteger(value) && value >= 0 ? new Intl.NumberFormat('zh-CN').format(value) : '未知';
+const formatLatency = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
+  ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value) : '未知';
+function statisticRows(values, labels = {}, formatter = formatStatistic) {
+  const rows = Object.entries(values || {}).sort(([left], [right]) => left.localeCompare(right));
+  return rows.length ? rows.map(([key, value]) => `<tr><th scope="row">${e(labels[key] || key)}</th><td>${formatter(value)}</td></tr>`).join('') : '<tr><td colspan="2">暂无记录</td></tr>';
+}
+// 服务端枚举只做界面翻译；原始值保留在各卡片的「原始字段」折叠区，口径不变。
+const latencyBoundaryLabel = value => value === 'customer.reception.started -> customer.reception.finished'
+  ? '从接待开始到接待结束' : value ? '按服务端定义（见原始字段）' : '未知';
+const latencyClockLabel = value => value === 'server_event_wall_clock'
+  ? '服务端事件时间' : value ? '按服务端定义（见原始字段）' : '未知';
+const usageBasisLabel = value => value === 'validated customer.reception.generated provider usage only'
+  ? '仅统计通过校验的接待生成事件用量；缺失值不作零处理。'
+  : value ? '用量口径以服务端返回为准（见原始字段）；缺失值不作零处理。' : '仅统计通过校验的接待生成事件用量；缺失值不作零处理。';
+const coverageSourceLabel = value => value === 'retained customer reception records'
+  ? '保留的客服接待记录' : value ? '服务端返回的接待数据来源（见原始字段）' : '保留的客服接待记录';
+const channelLabel = value => value === 'text' ? '文字' : value === 'voice' ? '语音' : value;
+const receptionOutcomeLabels = {
+  answered: '已答复', handoff: '请求人工承接', human_requested: '访客请求人工',
+  disabled: '接待已停用', outside_schedule: '非服务时间', not_configured: '接待未配置',
+  model_changed: '模型已变更', knowledge_unavailable: '知识不可用',
+  provider_error: '模型服务返回错误', invalid_response: '响应无效',
+};
+function receptionWindow(reception) {
+  const scope = reception.scope || {};
+  const latency = reception.processing_latency || {};
+  const usage = reception.model_usage || {};
+  const handoff = reception.handoff || {};
+  const coverage = reception.coverage || {};
+  const channel = scope.channel === 'text' ? '文字' : scope.channel === 'voice' ? '语音' : '全部渠道';
+  const timeScope = scope.from && scope.to
+    ? `窗口 [${scope.from}, ${scope.to}) UTC · 按接待开始时间归组`
+    : `全部保留接待记录 · 按接待开始时间归组 · 观察截至 ${scope.as_of || '未知'}`;
+  const version = scope.version_id ? ` · 版本 ${scope.version_id}` : '';
+  const reason = handoff.reason === 'historical_transition_events_not_recorded'
+    ? '历史接管变化未作为事件保存' : handoff.reason || '历史变化没有可用记录';
+  const channelCoverage = coverage.requested_channel_supported === false
+    ? '<p class="notice notice-warning">当前客服接待数据源尚未接入语音；此范围的空结果不代表全站无语音接待。</p>' : '';
+  const latencyValue = latency.mean_ms == null ? '未知' : `${formatLatency(latency.mean_ms)} ms`;
+  const usageCoverage = (samples, missing) => `${formatStatistic(samples)} 个接待轮次有记录 · ${formatStatistic(missing)} 个接待轮次未观测`;
+  const usageRows = list(usage.by_model).map(item => `<tr><th scope="row">${e(item.model || '未知模型')}</th><td>${formatObservedCount(item.input_tokens)}</td><td>${formatObservedCount(item.output_tokens)}</td><td>${formatStatistic(item.run_count)}</td></tr>`).join('');
+  return `<div class="customer-statistics-window"><div class="section-heading"><div><h2>所选接待范围</h2></div></div><p class="helper" data-statistics-scope>${e(`${timeScope} · ${channel}${version} · 统计截至 ${scope.as_of || '未知'}`)}</p>${channelCoverage}
+    <div class="grid-2">
+      ${section('接待规模与结果', detailList([
+        ['业务请求数', formatStatistic(reception.request_count)], ['接待轮次', formatStatistic(reception.run_count)],
+        ['答复已生成', formatStatistic(reception.generated_count)], ['答复已保存', formatStatistic(reception.published_count)],
+        ['历史人工请求', handoff.requested_count == null ? `未知 · ${reason}` : formatStatistic(handoff.requested_count)],
+        ['曾人工承接的请求', handoff.claimed_count == null ? `未知 · ${reason}` : formatStatistic(handoff.claimed_count)],
+        ['访客可见时延', reception.visitor_latency_ms == null ? '未知' : `${formatLatency(reception.visitor_latency_ms)} ms`],
+        ['访客送达', reception.delivery === 'unknown' ? '未知 · 已保存不等于送达' : String(reception.delivery || '未知')],
+      ]))}
+      ${section('服务端接待处理区间', detailList([
+        ['平均时延', latencyValue], ['有效样本', formatStatistic(latency.sample_count)],
+        ['缺失 / 排除', formatStatistic(latency.missing_count)], ['测量边界', latencyBoundaryLabel(latency.boundary)],
+        ['时钟依据', latencyClockLabel(latency.clock)],
+      ]) + `<details class="statistics-raw-fields"><summary>原始字段</summary>${detailList([['测量边界（原始值）', latency.boundary || '未返回'], ['时钟依据（原始值）', latency.clock || '未返回']])}</details>`)}
+      ${section('模型用量记录', detailList([
+        ['输入用量（Token）', formatObservedCount(usage.input_tokens)], ['输入覆盖', usageCoverage(usage.input_sample_count, usage.input_missing_count)],
+        ['输出用量（Token）', formatObservedCount(usage.output_tokens)], ['输出覆盖', usageCoverage(usage.output_sample_count, usage.output_missing_count)],
+        ['无用量记录的接待轮次', formatStatistic(usage.runs_without_usage)],
+      ]) + `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">模型</th><th scope="col">输入用量（Token）</th><th scope="col">输出用量（Token）</th><th scope="col">接待轮次</th></tr></thead><tbody>${usageRows || '<tr><td colspan="4">暂无用量记录</td></tr>'}</tbody></table></div><p class="helper">${e(usageBasisLabel(usage.basis))}</p><details class="statistics-raw-fields"><summary>原始字段</summary>${detailList([['用量口径（原始值）', usage.basis || '未返回'], ['字段名', 'input_tokens / output_tokens / run_count']])}</details>`)}
+      ${section('接待结果分布', `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">结果</th><th scope="col">接待轮次</th></tr></thead><tbody>${statisticRows(reception.reception_outcomes, receptionOutcomeLabels)}</tbody></table></div>`)}
+      ${section('入口与版本分布', `<h3>入口</h3><div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">入口 ID</th><th scope="col">请求数</th></tr></thead><tbody>${statisticRows(reception.entries)}</tbody></table></div><h3>版本</h3><div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">版本 ID</th><th scope="col">请求数</th></tr></thead><tbody>${statisticRows(reception.versions)}</tbody></table></div>`)}
+    </div><p class="helper">来源：${e(coverageSourceLabel(coverage.source))} · 支持渠道：${e(list(coverage.supported_channels).map(channelLabel).join('、') || '未知')} · 忽略或冲突记录：${formatStatistic(coverage.ignored_record_count)}</p><details class="statistics-raw-fields"><summary>原始字段</summary>${detailList([['来源（原始值）', coverage.source || '未返回'], ['支持渠道（原始值）', list(coverage.supported_channels).join(', ') || '未返回']])}</details></div>`;
+}
+
+export function renderCustomerStatistics(ctx) {
+  if (!ctx.agent) return unavailable();
+  const state = ctx.customerStatistics || { status: 'idle' };
+  const filters = ctx.customerStatisticsFilters || { period: 'all', channel: 'all' };
+  const filterBar = `<div class="toolbar customer-statistics-filters">${control('时间范围', 'customer-statistics-period', filters.period, {
+    options: [{ value: 'all', label: '全部保留' }, { value: '24h', label: '近 24 小时' }, { value: '7d', label: '近 7 天' }],
+    extra: 'data-customer-statistics-filter="period"',
+  })}${control('接待渠道', 'customer-statistics-channel', filters.channel, {
+    options: [{ value: 'all', label: '全部渠道' }, { value: 'text', label: '文字' }, { value: 'voice', label: '语音' }],
+    extra: 'data-customer-statistics-filter="channel"',
+  })}</div>`;
+  const actions = `<div class="button-group">${button('customer-statistics-refresh', state.status === 'loading' ? '读取中…' : '刷新统计', { disabled: state.status === 'loading' })}${button('navigate', '会话收件箱', { page: 'inbox', variant: 'ghost' })}</div>`;
+  const heading = pageHeading('客服统计', '当前专家的持久会话与渠道记录。', actions);
+  if (state.status === 'loading' || state.status === 'idle') return `${heading}${filterBar}<p role="status">正在读取统计数据…</p>`;
+  if (state.status === 'error') return `${heading}${filterBar}${emptyState('统计暂时不可用', state.error || '请确认客服服务已启动后重试。', button('customer-statistics-refresh', '重试', { variant: 'primary' }))}`;
+
+  const data = state.data || {};
+  const totalConversations = formatStatistic(data.conversation_count);
+  const totalMessages = formatStatistic(data.message_count);
+  return `${heading}${filterBar}${receptionWindow(data.reception || {})}<p class="helper">累计范围：当前专家全部保留记录，不随上方时间和渠道筛选变化。会话状态是当前快照，消息和渠道记录按原累计接口口径统计。</p>
+    <div class="grid-2">
+      ${section('当前累计记录', detailList([
+        ['会话记录', totalConversations], ['消息记录', totalMessages],
+        ['累计接口响应时延', data.response_latency_ms == null ? '未测' : `${formatLatency(data.response_latency_ms)} ms`],
+      ]))}
+      ${section('会话状态', `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">当前状态</th><th scope="col">会话数</th></tr></thead><tbody>${statisticRows(data.states, { bot: 'AI 接待中', human_requested: '等待人工', human: '人工接待中' })}</tbody></table></div><p class="helper">当前状态不是历史接管次数，也不表示问题已解决。</p>`)}
+      ${section('消息记录', `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">记录方</th><th scope="col">消息数</th></tr></thead><tbody>${statisticRows(data.messages_by_sender, { visitor: '访客', assistant: 'AI', operator: '坐席' })}</tbody></table></div><p class="helper">已保存消息数量不等于已送达数量。</p>`)}
+      ${section('渠道沙盒消息', `<div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">渠道</th><th scope="col">消息记录</th></tr></thead><tbody>${statisticRows(data.channel_messages)}</tbody></table></div><p class="helper">仅为本地授权沙盒账本计数；真实渠道服务商的收发与送达回执仍未知。</p>`)}
+    </div><p class="notice notice-warning">已生成或保存不代表访客已收到；真实渠道送达仍未知。接待统计窗口与累计会话、消息、状态快照使用不同口径。</p>`;
 }
 
 export function widgetPreview(agent, ctx = null) {
   const widget = agent.config.widget;
+  const bookingUrl = safeHttpsUrl(widget.bookingUrl);
   const fields = list(agent.config.fields).filter(item => item.source === 'visitor');
   const faqs = list(agent.config.sources).filter(source => source.type === 'FAQ' && source.status === 'indexed' && source.rights && source.expires >= new Date().toISOString().slice(0, 10)).slice(0, 3);
   const interactive = Boolean(ctx?.state);
   const faqContent = widget.showFaq && faqs.length ? '<div class="stack widget-faq-list">' + faqs.map(source => interactive ? '<button type="button" class="widget-faq widget-faq-button" data-action="widget-trial-example" data-question="' + a(source.question || source.title) + '"' + (ctx.readonly ? ' disabled' : '') + '>' + e(source.question || source.title) + '</button>' : '<div class="widget-faq">' + e(source.question || source.title) + '</div>').join('') + '</div>' : '';
-  return '<div class="widget-preview' + (interactive ? ' widget-preview-interactive' : '') + '" style="--widget-color:' + a(safeColor(widget.color)) + '" aria-label="网站客服窗访客预览"><div class="widget-top"><strong>' + e(widget.title || agent.name) + '</strong><span>' + e(widget.hours || '服务时间未设置') + '</span></div><div class="widget-body"><p>' + e(agent.config.greeting || '你好，有什么可以帮助你？') + '</p>' + faqContent + (widget.formMode !== 'none' && fields.length ? '<details class="widget-field-preview"><summary>访客表单预览</summary><div class="stack">' + fields.map(item => '<div><span>' + e(item.label) + (item.required ? '（必填）' : '') + '</span><div class="widget-input">访客填写区域</div></div>').join('') + '</div><p class="helper">本轮表单字段只展示外观，不提交联系方式。</p></details>' : '') + (widget.bookingUrl ? '<div class="widget-faq">预约入口（外链预览）</div>' : '') + (interactive ? renderVisitorConversation({ ...ctx, agent }, { surface: 'widget', compact: true }) + renderVisitorEvidence(ctx, 'widget') : '<div class="widget-input">请输入消息…</div><p class="helper">仅预览外观，不发送消息</p>') + '</div></div>';
+  const booking = bookingUrl ? `<div class="widget-booking"><a class="widget-faq widget-booking-link" href="${a(bookingUrl)}" target="_blank" rel="noopener noreferrer">前往外部预约页面</a><p class="helper">打开链接不代表已预约成功；请以外部页面结果为准。</p></div>` : '';
+  return '<div class="widget-preview' + (interactive ? ' widget-preview-interactive' : '') + '" style="--widget-color:' + a(safeColor(widget.color)) + '" aria-label="网站客服窗访客预览"><div class="widget-top"><strong>' + e(widget.title || agent.name) + '</strong><span>' + e(widget.hours || '服务时间未设置') + '</span></div><div class="widget-body"><p>' + e(agent.config.greeting || '你好，有什么可以帮助你？') + '</p>' + faqContent + (widget.formMode !== 'none' && fields.length ? '<details class="widget-field-preview"><summary>访客表单预览</summary><div class="stack">' + fields.map(item => '<div><span>' + e(item.label) + (item.required ? '（必填）' : '') + '</span><div class="widget-input">访客填写区域</div></div>').join('') + '</div><p class="helper">本轮表单字段只展示外观，不提交联系方式。</p></details>' : '') + booking + (interactive ? renderVisitorConversation({ ...ctx, agent }, { surface: 'widget', compact: true }) + renderVisitorEvidence(ctx, 'widget') : '<div class="widget-input">请输入消息…</div><p class="helper">仅预览外观，不发送消息</p>') + '</div></div>';
 }
 
 export function renderWidget(ctx) {
@@ -110,8 +260,29 @@ export function renderWidget(ctx) {
   const widget = agent.config.widget;
   const checks = list(state.ui.widgetChecks);
   const defaults = [{ id: 'script', label: '脚本加载' }, { id: 'request', label: '请求抵达' }, { id: 'event', label: '事件返回' }, { id: 'delivery', label: '消息送达' }];
-  const code = `<script src="https://widget.example.invalid/loomrise.js" data-agent="${agent.id}" data-version="${bindingLabel(agent.bindings.widget)}"></script>`;
-  return pageHeading('网站客服窗', '编辑草稿外观，预览接待入口；网站绑定始终引用指定版本。', button('navigate', '版本与绑定', { page: 'versions' })) + readonlyNote(readonly) + simulation('访客预览使用当前草稿，可在本地索取、接收和查看文件。安装代码为不可运行的示例；分项检测没有真实网站或外部送达证据。') + `<div class="split-layout widget-visitor-layout"><div class="editor-main">${section('接待入口', `<div class="grid-2">${field('客服窗标题', 'widget.title', widget.title, { readonly })}${field('品牌色', 'widget.color', safeColor(widget.color), { type: 'color', readonly })}${field('语言', 'widget.language', widget.language || 'zh-CN', { readonly, type: 'select', options: [{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: '英语' }] })}${field('时区', 'widget.timezone', widget.timezone || 'Asia/Shanghai', { readonly, type: 'select', options: [{ value: 'Asia/Shanghai', label: '中国标准时间' }, { value: 'UTC', label: 'UTC' }] })}</div>${field('服务时间', 'widget.hours', widget.hours, { readonly, placeholder: '例如：周一至周五 09:00–18:00' })}${field('欢迎语', 'greeting', agent.config.greeting, { readonly, type: 'textarea', rows: 3 })}${field('访客表单', 'widget.formMode', widget.formMode || 'offline', { readonly, type: 'select', options: [{ value: 'none', label: '不显示表单' }, { value: 'offline', label: '离线时收集联系方式' }, { value: 'optional', label: '咨询前选填' }, { value: 'required', label: '咨询前填写必填字段' }] })}<label class="checkbox-field"><input type="checkbox" data-bind="widget.showFaq"${widget.showFaq ? ' checked' : ''}${readonly ? ' disabled' : ''}> 展示已就绪常见问答</label>${field('预约外链（可选）', 'widget.bookingUrl', widget.bookingUrl || '', { readonly, type: 'url', help: '这里只预览入口；不会访问或替访客提交预约。' })}<div class="button-group">${button('navigate', '编辑访客字段', { page: 'configuration', section: 'fields' })}<span class="helper">外观修改已自动保存；不会改变入口绑定。</span></div>`)}${section('安装与检查', detailList([['当前绑定', bindingLabel(agent.bindings.widget)], ['当前草稿', revisionLabel(agent.revision)], ['环境', '本地演示 / 未真实安装']]) + `<pre class="install-code code-block"><code>${e(code)}</code></pre><div class="button-group">${button('widget-copy', '复制示例代码')}${button('widget-check', '运行分项检测（模拟）', { disabled: readonly, variant: 'primary' })}</div><div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">检查项</th><th scope="col">状态</th><th scope="col">依据</th></tr></thead><tbody>${defaults.map(item => { const value = checks.find(check => check.id === item.id || (item.id === 'script' && check.id === 'load')); const status = value?.status; return `<tr><td>${e(item.label)}</td><td>${badge(['pass', 'ok', 'simulation'].includes(status) ? '模拟通过' : status === 'failed' || status === 'fail' ? '模拟失败' : status === 'running' ? '模拟检测中' : status === 'missing' ? '缺少证据' : '待检测', ['pass', 'ok', 'simulation'].includes(status) ? 'success' : status === 'failed' || status === 'fail' ? 'danger' : 'neutral')}</td><td>${e(value?.detail || '无真实网站证据；后端接入后按项目留证。')}</td></tr>`; }).join('')}</tbody></table></div><p class="helper">复制代码、保存外观和检测模拟通过都不改变入口版本绑定。</p>`)}</div><aside class="side-panel visitor-preview-panel">${section('访客即时预览', widgetPreview(agent, ctx), { description: `当前草稿 r${agent.revision} · 本地访客会话`, className: 'widget-visitor-preview' })}</aside></div>`;
+  const installer = ctx.widgetInstall || { status: 'idle', entries: [], selectedEntryId: '', error: null };
+  const entries = list(installer.entries);
+  const selected = validWidgetPublicId(agent.id)
+    ? entries.find(entry => validWidgetPublicId(entry.entry_id)
+      && entry.entry_id === installer.selectedEntryId && entry.knowledge_state === 'ready')
+    : null;
+  const serviceOrigin = localServiceOrigin(ctx.configurationApiOrigin);
+  const code = selected && serviceOrigin
+    ? `<script src="${serviceOrigin}/widget.js?agent_id=${encodeURIComponent(agent.id)}&entry_id=${encodeURIComponent(selected.entry_id)}"></script>`
+    : '';
+  const entryOptions = [{ value: '', label: '选择已发布的沙盒入口' }, ...entries.map(entry => ({
+    value: entry.entry_id,
+    label: `${entry.entry_id} · ${entry.version_id}${entry.knowledge_state !== 'ready' ? ' · 待重新验收' : ''}${validWidgetPublicId(agent.id) && validWidgetPublicId(entry.entry_id) ? '' : ' · 标识不受支持'}`,
+    disabled: entry.knowledge_state !== 'ready' || !validWidgetPublicId(agent.id) || !validWidgetPublicId(entry.entry_id),
+  }))];
+  const installerStatus = installer.status === 'loading' ? '<p class="helper" role="status">正在读取已发布入口…</p>'
+    : installer.status === 'error' ? `<p class="notice notice-warning" role="status">${e(installer.error || '未能读取配置服务')}</p>${button('widget-entries-retry', '重新读取入口', { variant: 'ghost' })}`
+      : entries.length ? '<p class="helper">仅显示已发布沙盒入口。入口换版与草稿修改相互独立。</p>'
+        : '<p class="helper">当前没有可安装的已发布沙盒入口；入口和专家标识必须符合公开 Widget ID 格式。</p>';
+  const codeBlock = selected && code
+    ? `<pre class="install-code code-block"><code data-copyable="true">${e(code)}</code></pre>`
+    : '<p class="install-code-empty helper" role="status">选择一个状态有效的入口并连接本机配置服务后，才会生成可复制的安装代码。</p>';
+  return pageHeading('网站客服窗', '编辑草稿外观，预览接待入口；网站绑定始终引用指定版本。', button('navigate', '版本与绑定', { page: 'versions' })) + readonlyNote(readonly) + simulation('访客预览使用当前草稿，可在本地索取、接收和查看文件。安装代码只面向已发布沙盒入口；此处不是公网发布或送达证明。') + `<div class="split-layout widget-visitor-layout"><div class="editor-main">${section('接待入口', `<div class="grid-2">${field('客服窗标题', 'widget.title', widget.title, { readonly })}${field('品牌色', 'widget.color', safeColor(widget.color), { type: 'color', readonly })}${field('语言', 'widget.language', widget.language || 'zh-CN', { readonly, type: 'select', options: [{ value: 'zh-CN', label: '简体中文' }, { value: 'en', label: '英语' }] })}${field('时区', 'widget.timezone', widget.timezone || 'Asia/Shanghai', { readonly, type: 'select', options: [{ value: 'Asia/Shanghai', label: '中国标准时间' }, { value: 'UTC', label: 'UTC' }] })}</div>${field('服务时间', 'widget.hours', widget.hours, { readonly, placeholder: '例如：周一至周五 09:00–18:00' })}${field('欢迎语', 'greeting', agent.config.greeting, { readonly, type: 'textarea', rows: 3 })}${field('访客表单', 'widget.formMode', widget.formMode || 'offline', { readonly, type: 'select', options: [{ value: 'none', label: '不显示表单' }, { value: 'offline', label: '离线时收集联系方式' }, { value: 'optional', label: '咨询前选填' }, { value: 'required', label: '咨询前填写必填字段' }] })}<label class="checkbox-field"><input type="checkbox" data-bind="widget.showFaq"${widget.showFaq ? ' checked' : ''}${readonly ? ' disabled' : ''}> 展示已就绪常见问答</label>${field('预约外链（可选）', 'widget.bookingUrl', widget.bookingUrl || '', { readonly, type: 'url', help: '这里只预览入口；不会访问或替访客提交预约。' })}<div class="button-group">${button('navigate', '编辑访客字段', { page: 'configuration', section: 'fields' })}<span class="helper">外观修改已自动保存；不会改变入口绑定。</span></div>`)}${section('安装与检查', detailList([['当前本地配置服务', ctx.configurationApiOrigin || '未连接'], ['当前草稿', revisionLabel(agent.revision)], ['安装范围', '本机已发布沙盒入口']]) + `<div class="field"><label for="widget-entry-select">已发布沙盒入口</label><select class="input control" id="widget-entry-select" data-widget-entry${readonly ? ' disabled' : ''}>${entryOptions.map(option => `<option value="${a(option.value)}"${option.value === installer.selectedEntryId ? ' selected' : ''}${option.disabled ? ' disabled' : ''}>${e(option.label)}</option>`).join('')}</select><p class="helper">版本 ID 与入口 ID 是不同标识；只有服务端已发布的入口可用于生成代码。</p></div>${installerStatus}${codeBlock}<div class="button-group">${button('widget-copy', '复制安装代码', { disabled: !code || readonly })}${button('widget-check', '运行分项检测（模拟）', { disabled: readonly, variant: 'primary' })}</div><div class="table-wrap"><table class="data-table"><thead><tr><th scope="col">检查项</th><th scope="col">状态</th><th scope="col">依据</th></tr></thead><tbody>${defaults.map(item => { const value = checks.find(check => check.id === item.id || (item.id === 'script' && check.id === 'load')); const status = value?.status; return `<tr><td>${e(item.label)}</td><td>${badge(['pass', 'ok', 'simulation'].includes(status) ? '模拟通过' : status === 'failed' || status === 'fail' ? '模拟失败' : status === 'running' ? '模拟检测中' : status === 'missing' ? '缺少证据' : '待检测', ['pass', 'ok', 'simulation'].includes(status) ? 'success' : status === 'failed' || status === 'fail' ? 'danger' : 'neutral')}</td><td>${e(value?.detail || '无真实网站证据；后端接入后按项目留证。')}</td></tr>`; }).join('')}</tbody></table></div><p class="helper">检查结果仍需针对独立网站、请求、事件和送达分别留证。</p>`)}</div><aside class="side-panel visitor-preview-panel">${section('访客即时预览', widgetPreview(agent, ctx), { description: `当前草稿 r${agent.revision} · 本地访客会话`, className: 'widget-visitor-preview' })}</aside></div>`;
 }
 
 function contactPreview(agent) {
@@ -120,6 +291,7 @@ function contactPreview(agent) {
 }
 
 export function renderContact(ctx) {
+  if (ctx.contactWorkspace) return renderContactService(ctx);
   const { state, agent, readonly } = ctx;
   if (!agent) return unavailable();
   const contact = agent.config.contact;

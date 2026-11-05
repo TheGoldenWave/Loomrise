@@ -46,6 +46,20 @@ function harness() {
         return structuredClone(candidate);
       }
       if (action === 'candidate.get') return structuredClone(candidates[0]);
+      if (action === 'advisory.dismiss') return {
+        source_revision: payload.expected_revision,
+        advisory_key: `closed-set:${JSON.stringify(payload.layer_path)}`,
+        layer_path: structuredClone(payload.layer_path), closed_set_size: 7,
+        actor_id: 'operator-1', created_at: '2026-11-03T00:00:00Z',
+      };
+      if (action === 'run.overlay') return {
+        version_id: payload.version_id, time_window: { from: payload.from, to: payload.to },
+        channel: payload.channel || null, sample_count: 1, low_sample: true,
+        nodes: { 'welcome.from_start': { entered: 1, dwell_ms: 2000, percentage: null } },
+        edges: { 'to-booking': { traversed: 1, percentage: null } },
+        terminations: { completed: 1 }, termination_targets: {}, channels: { text: 1 },
+        average_duration_ms: 2000,
+      };
       if (action === 'release.checklist') return {
         candidate_id: payload.candidate_id,
         checks: [
@@ -69,6 +83,17 @@ test('configuration client checks API schema and rejects failed envelopes', asyn
   await assert.rejects(mismatch.request('draft.get', { agent_id: 'agent-1' }), error => error.code === 'schema_mismatch');
 });
 
+test('contact requests use the customer endpoint and its own schema envelope', async () => {
+  let sent;
+  const client = createConfigurationClient({ baseUrl: 'http://127.0.0.1:8778', fetchImpl: async (url, options) => {
+    sent = { url, body: JSON.parse(options.body) };
+    return response({ schema_version: 'customer-service-v1', ok: true, result: { revision: 2 } });
+  } });
+  assert.deepEqual(await client.customerRequest('contact.preview', { agent_id: 'a' }), { revision: 2 });
+  assert.equal(sent.url, 'http://127.0.0.1:8778/api/customer-service');
+  assert.equal(sent.body.action, 'contact.preview');
+});
+
 test('configuration client reports a recoverable service error when offline', async () => {
   const client = createConfigurationClient({ fetchImpl: async () => { throw new TypeError('Failed to fetch'); } });
   await assert.rejects(client.health(), error => error instanceof ConfigurationApiError
@@ -77,6 +102,48 @@ test('configuration client reports a recoverable service error when offline', as
   await assert.rejects(client.request('draft.get', { agent_id: 'agent-1' }), error => error instanceof ConfigurationApiError
     && error.code === 'service_unavailable'
     && !error.message.includes('Failed to fetch'));
+});
+
+test('loads a server-aggregated run overlay with its version and time window', async () => {
+  const h = harness();
+  const workspace = createR1ConfigurationWorkspace({ client: h.client });
+  await workspace.load('agent-1');
+  await workspace.openStable('v1');
+  const overlay = await workspace.loadRunOverlay({
+    versionId: 'v1', from: '2026-10-30T00:00:00+00:00', to: '2026-11-01T00:00:00+00:00',
+  });
+  assert.equal(overlay.sample_count, 1);
+  assert.equal(workspace.state.runOverlay.nodes['welcome.from_start'].percentage, null);
+  assert.deepEqual(h.calls.at(-1), {
+    action: 'run.overlay',
+    payload: {
+      agent_id: 'agent-1', version_id: 'v1',
+      from: '2026-10-30T00:00:00+00:00', to: '2026-11-01T00:00:00+00:00',
+    },
+  });
+});
+
+test('a late run overlay cannot replace data after switching expert or returning to the draft', async () => {
+  const h = harness();
+  const original = h.client.request;
+  let resolveOverlay;
+  h.client.request = async (action, payload) => action === 'run.overlay'
+    ? new Promise(resolve => { resolveOverlay = resolve; }) : original(action, payload);
+  const workspace = createR1ConfigurationWorkspace({ client: h.client });
+  await workspace.load('agent-1');
+  await workspace.openStable('v1');
+  const pending = workspace.loadRunOverlay({ versionId: 'v1', from: '2026-10-30T00:00:00Z', to: '2026-11-01T00:00:00Z' });
+  workspace.closeSnapshot();
+  resolveOverlay({ version_id: 'v1', nodes: {} });
+  await pending;
+  assert.equal(workspace.state.runOverlay, null);
+  await workspace.openStable('v1');
+  const switching = workspace.loadRunOverlay({ versionId: 'v1', from: '2026-10-30T00:00:00Z', to: '2026-11-01T00:00:00Z' });
+  await workspace.load('agent-2');
+  resolveOverlay({ version_id: 'v1', nodes: {} });
+  await switching;
+  assert.equal(workspace.state.runOverlay, null);
+  assert.equal(workspace.state.status, 'ready');
 });
 
 test('loads shared draft and keeps unknown legacy fields intact through save', async () => {
@@ -92,6 +159,34 @@ test('loads shared draft and keeps unknown legacy fields intact through save', a
   assert.equal(workspace.state.lastDiff[0].path, '$.persona.goal');
   assert.deepEqual(workspace.state.draft.config.legacy, { tone: '中性', knowledge: [{ id: 'local-source' }] });
   assert.equal(h.calls.at(-1).payload.expected_revision, 1);
+});
+
+test('object diff labels its baseline, escapes content and excludes unsaved changes', async () => {
+  const h = harness();
+  const workspace = createR1ConfigurationWorkspace({ client: h.client });
+  await workspace.load('agent-1');
+  workspace.state.draft.object_diff = { changes: [
+    { object_type: 'edge_order', object_id: '$', operation: 'priority', path: '$.orchestration.edges', before: ['b', 'a'], after: ['a', 'b'] },
+    { object_type: 'entry_port', object_id: '<img src=x>', operation: 'changed', path: '$.units[unit_id="a"].entry_ports[port="in"].requires', before: null, after: false },
+  ], diagnostics: [{ path: '$.units', message: '标识缺失或重复' }] };
+  const context = { r1Configuration: workspace };
+  let html = renderR1Configuration(context);
+  assert.match(html, /边优先级.*优先级变化/);
+  assert.match(html, /最近一次保存：r0 → r1/);
+  assert.match(html, /<pre>null<\/pre>/);
+  assert.match(html, /<pre>false<\/pre>/);
+  assert.match(html, /&lt;img src=x&gt;/);
+  assert.ok(!html.includes('<img src=x>'));
+  workspace.updateField('persona.goal', '尚未保存');
+  html = renderR1Configuration(context);
+  assert.match(html, /另有未保存修改，不含在本回执中/);
+  workspace.state.selectedCandidate = { candidate_id: 'cp-review', config: configuration(), object_diff: workspace.state.draft.object_diff };
+  html = renderR1Configuration(context);
+  assert.match(html, /冻结候选与其基准稳定版本/);
+  assert.ok(!html.includes('最近一次保存：'));
+  workspace.state.selectedCandidate = null;
+  await workspace.load('agent-1');
+  assert.ok(!renderR1Configuration(context).includes('对象级差异'));
 });
 
 test('revision conflict retains attempted changes until explicit reload', async () => {
@@ -123,11 +218,16 @@ test('validation errors and frozen candidate history remain server-derived and r
   assert.equal(workspace.state.releaseChecklist.publish_enabled, false);
   assert.equal(workspace.state.activeTab, 'history');
   assert.equal(workspace.state.candidates.length, 1);
+  workspace.state.selectedCandidate.review_summary = [{ advisory_key: 'closed-set:[]', layer_path: [],
+    closed_set_size: 7, actor_id: 'operator-1', source_revision: 1, created_at: '2026-11-03T00:00:00Z' }];
   const html = renderR1Configuration({ r1Configuration: workspace, agent: { name: '测试专家' } });
   assert.match(html, /发布前检查/);
   assert.match(html, /授权检查/);
   assert.match(html, /待验证/);
   assert.match(html, /当前不能批准或发布/);
+  assert.match(html, /画布提示忽略记录/);
+  assert.match(html, /operator-1/);
+  assert.match(html, /2026-11-03T00:00:00Z/);
   await workspace.openCandidate('cp_1');
   const before = structuredClone(workspace.state.selectedCandidate.config);
   workspace.updateField('persona.goal', '不能写');
@@ -135,6 +235,21 @@ test('validation errors and frozen candidate history remain server-derived and r
   await workspace.openStable('v1');
   assert.equal(workspace.state.readOnlySnapshot.version_id, 'v1');
   assert.equal(workspace.state.releaseChecklist, null);
+});
+
+test('closed-set dismissal uses the trusted draft revision and leaves unsaved config untouched', async () => {
+  const h = harness();
+  const workspace = createR1ConfigurationWorkspace({ client: h.client });
+  await workspace.load('agent-1');
+
+  assert.equal(await workspace.dismissAdvisory([]), true);
+  const call = h.calls.find(item => item.action === 'advisory.dismiss');
+  assert.deepEqual(call.payload, { agent_id: 'agent-1', expected_revision: 1, layer_path: [] });
+  assert.equal(workspace.state.draft.advisory_dismissals[0].actor_id, 'operator-1');
+
+  workspace.updateField('persona.goal', '本地未保存修改');
+  assert.equal(workspace.canDismissAdvisory([]), false);
+  assert.equal(await workspace.dismissAdvisory([]), false);
 });
 
 test('syntax errors in JSON blocks saving until repaired', async () => {

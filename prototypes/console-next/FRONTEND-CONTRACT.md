@@ -1,8 +1,26 @@
-# console-next 前端协作合同 v0.9
+# console-next 前端协作合同 v0.13
 
-状态：2026-10-26，本地前端实施规格。当前配置布局按[线框预览 v0.2](../../docs/CONFIG-UI-PREVIEW.md)和[配置差距需求](../../docs/CONFIG-GAP-REQUIREMENTS.md)实现；验证与未验项见[首轮报告](../../docs/CONFIG-UI-ROUND1-REPORT.md)。代码仍只使用当前浏览器的状态，不连接 `loomrise/` 后端、真实模型、抓取、业务工具、渠道或云服务，CG-23 未实现。
+状态：2026-11-02。布局沿用[线框预览 v0.2](../../docs/CONFIG-UI-PREVIEW.md)。R1 服务端版本工作面与 R3 联系页已接共享 SQLite 服务；其他未接入页面仍为浏览器本地原型。联系页使用服务端定义的内容块、共享 revision 草稿、模板/预览、可选 AI 起草、批准入口启停及分享，失败不回退到本地保存。证据和剩余边界见 [R3 实施计划](../../docs/superpowers/plans/2026-10-30-r3-development.md)；早期布局证据见[首轮报告](../../docs/CONFIG-UI-ROUND1-REPORT.md)，不据此宣称整体 CG-23 已完成。
 
-技术：原生 HTML/CSS + ES modules，无构建步骤。XLSX 解析按需加载 `@e965/xlsx@0.20.3`，安装、来源和许可证见[版本钉第 9 节](../../VERSION-PINS.md#9-配置后台前端原型表格解析器2026-10-26)。启动 HTTP 预览前先执行锁定安装，服务目录必须包含 `console-next/node_modules/`；直接打开 `index.html` 不能代替模块与依赖资源预览。
+技术：主体为原生 HTML/CSS + ES modules；局部 React Flow 画布需 `npm run build:canvas` 构建。XLSX 解析按需加载 `@e965/xlsx@0.20.3`，安装、来源和许可证见[版本钉第 9 节](../../VERSION-PINS.md#9-配置后台前端原型表格解析器2026-10-26)。启动 HTTP 预览前先执行锁定安装，服务目录必须包含 `console-next/node_modules/`；直接打开 `index.html` 不能代替模块与依赖资源预览。
+
+2026-11-01：`editorConfig/jsonInputs` 始终持有当前草稿；稳定版、候选和 `configuration.compare` 结果独立投影，不覆盖编辑状态。应用后修改进入 workspace 的有界撤销历史；保存、重读、冲突处理和切专家清空历史，跨分区和返回同专家工作面保留历史。版本比较为只读请求，返回字段与对象差异；画布只投影服务端差异，不创建第二套配置权威。事件属性与受支持状态窗口可表单编辑，坏 JSON 阻止应用并保留原文。
+
+2026-11-02，联系页起草协议：`contact-workspace.js` 经 `customerRequest('contact.generate', {agent_id, expected_revision, brief, template_id?})` 请求候选，`brief` 由用户本栏明确填写且最多 4000 字符；模型只接素材及静态模板/Schema，不接整个配置、内部 Prompt、工具或客户历史。响应为 `{state:'proposal', base_revision, contact, model_evidence}`，生成不改变当前编辑内容、revision 或批准页。`cs-contact-adopt-proposal` 明确替换编辑内容，`cs-contact-save` 单独持久化；不自动冻结、批准、启用或发布。生成 Schema 覆盖现有 21 类块但仅开放必填条目字段，手动编辑仍保留可选字段。
+
+工作面在生成/保存、只读或冲突状态阻止写入；重新读取或切专家使迟到响应失效，本地后续修改或保存新 revision 使旧候选失效。服务端在调用前检查 owner/editor、专家范围及 revision，并在 await 后复验版本；缺模型/失败以脱敏 `generation_unavailable` 503 / `generation_failed` 502 返回，冲突为 409，均保留手动路径。候选全文转义，不展示原始模型证据；素材输入与模板选择在重绘后恢复焦点，中文 composition 结束后提交完整素材。动作由 `app.js` 接线，不进入本地 `store.dispatch()` 或 localStorage。
+
+当前证据：确定性 SQLite 浏览器验证 1440/390px 的候选→采用→单独保存、批准页不变、转义、焦点及失败/冲突保留输入，page errors 0，预期 502/409 各一次；只读权限与迟到专家响应由单元/API 测试验证，不声称浏览器只读开关检查。21 类预置批准快照另有公开渲染矩阵，page errors 0，3 条 console errors 对应预期两次 404 与一次 409；不证明批准 Gate。一次真实 `gpt-6-sol` 虚构样本接受严格 Schema、生成 3 块并在显式保存后重开 SQLite 核验，未证明全部块的生成质量或目标角色任务基线。
+
+## 官方 Inbox 已读与提醒协议（2026-11-02）
+
+官方 `/inbox/{agent_id}` 页面消费同一 `/api/customer-service`，不使用工作台原型的本地会话集合。`inbox.list {agent_id}` 返回 `items`、`can_mark_read` 和不透明的 `notification_scope`；每条会话增加 `read_sequence`、访客消息的 `unread_count/last_visitor_sequence` 与全部消息的 `latest_sequence`。范围由服务端 principal 的 tenant/agent/actor 决定，页面不提交 actor/tenant，也不以时间戳推导游标。
+
+`inbox.read {agent_id, conversation_id, through_sequence}` 只确认已实际渲染的最大消息序号。页面必须仍可见、选中同一会话且请求代次有效，不能因列表刷新、通知出现或迟到线程响应确认已读；服务端严格整数、拒绝未来序号并事务内单调推进。确认已读不接管、不更改占用代次。轮询刷新选中线程、保留回复输入与历史滚动位置，读取失败保留当前消息和手动重试。上传、处理、接管、回复及发物料共用提交状态判断，列表/物料轮询不能重新启用仍在提交的动作；完成回调按原目标和代次处理，不清空新输入。
+
+`inbox.preferences {agent_id}` 及 `inbox.preferences.save {agent_id, new_messages, handoff}` 返回两项严格布尔偏好与 `can_edit`，默认都关闭。owner/editor 可写，viewer 只读。保存偏好不请求系统权限；单独明确点击按钮才调用 `Notification.requestPermission()`。会话存储中的本页启用状态以服务端不透明范围隔离；页面初读和启用时建立基线，重复轮询不重复提醒。通知正文只提供通用查看提示，点击聚焦并读取线程，正常渲染后才确认已读，不自动接管。
+
+本片仅检查页面开启时的新消息和当前待人工状态，短暂接管状态可能在两次轮询之间漏过。权限拒绝、不支持或显示抛错继续使用站内未读；没有 Web Push、后台唤醒、可靠事件回执或原生 WebView 送达证据。浏览器检查采用 Notification 替身，只证明权限及显示请求合同，最终本轮结果见 [R3 实施计划](../../docs/superpowers/plans/2026-10-30-r3-development.md)。HTTP Adapter 仍给本机请求注入固定 principal，服务层坐席隔离不等于逐浏览器认证隔离。
 
 ## 当前导航与模块
 

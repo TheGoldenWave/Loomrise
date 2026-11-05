@@ -20,11 +20,41 @@
 .r1-history > h3, .r1-snapshot h3 { margin: 8px 0 0; }
 .r1-diff > li { display: grid; grid-template-columns: minmax(160px, .7fr) repeat(2, minmax(0, 1fr)); gap: 12px; border-top: 1px solid var(--border-soft); padding-top: 10px; }
 .r1-diff > li > div { min-width: 0; }
+.r1-object-diff { margin-block: 16px; }
+.r1-object-diff summary { cursor: pointer; }
+.r1-object-diff .r1-diff > li > strong { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .r1-diff > li > div > span { font-size: 12px; color: var(--muted); }
 .r1-conflict { display: grid; gap: 8px; }
 .r1-unknown { border-top: 1px solid var(--border-soft); padding-top: 12px; }
 .r1-api-detail { border-top: 1px solid var(--border-soft); padding-top: 10px; }
+.r1-draft-history, .r1-comparison-picker, .r1-comparison-result { min-width: 0; border-block-end: 1px solid var(--border-soft); padding-bottom: 12px; }
+.r1-comparison-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) auto; gap: 12px; align-items: end; }
+.r1-comparison-fields .field { min-width: 0; margin: 0; }
+.r1-comparison-fields select { width: 100%; min-width: 0; }
+.r1-comparison-result h3 { overflow-wrap: anywhere; }
 @media (max-width: 640px) {
   .r1-service-header { align-items: flex-start; flex-direction: column; }
   .r1-issues li, .r1-diff > li { grid-template-columns: minmax(0, 1fr); }
+  .r1-comparison-fields { grid-template-columns: minmax(0, 1fr); }
+}
+.r1-reception-choice { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-soft); overflow-wrap: anywhere; }
+.r1-reception-settings { max-width: 800px; }
+.r1-reception-settings > button { justify-self: start; }
+.r1-reception-choice input { flex: none; margin-top: 3px; }
+.r1-reception-choice small { display: block; color: var(--muted); margin-top: 3px; }
+.r1-faq-editor { border-top: 1px solid var(--border-soft); padding-top: 12px; }
+.r1-faq-editor h4 { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.r1-faq-editor h4 small, .r1-faq-copy small { color: var(--muted); font-size: 12px; }
+.r1-faq-list { list-style: none; margin: 0; padding: 0; }
+.r1-faq-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+.r1-faq-copy { min-width: 0; overflow-wrap: anywhere; }
+.r1-faq-copy strong, .r1-faq-copy small { display: block; }
+.r1-faq-copy small { margin-top: 3px; }
+.r1-faq-add { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+.r1-faq-add .field { min-width: 0; margin: 0; }
+.r1-faq-add .control { width: 100%; min-width: 0; }
+.r1-faq-add .btn { justify-self: start; }
+.r1-faq-editor [data-r1-faq-error]:not([hidden]) { margin: 8px 0 0; }
+@media (max-width: 640px) {
+  .r1-faq-add { grid-template-columns: minmax(0, 1fr); }
 }

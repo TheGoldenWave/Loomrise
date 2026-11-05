@@ -1,0 +1,149 @@
+.orch-workspace { min-width: 0; color: var(--fg); }
+.orch-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-block: 6px 12px; }
+.orch-toolbar > div { display: flex; gap: 4px; }
+.orch-toolbar > span, .orch-caption { color: var(--muted); font-size: 12px; }
+.orch-toolbar-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.orch-caption { margin: 0 0 12px; line-height: 1.6; }
+.orch-advisory { display: grid; gap: 4px; margin: 0 0 12px; padding: 10px 12px; border-left: 1px solid #b98226; background: #fff8e8; color: #4c3b1a; font-size: 12px; line-height: 1.5; }
+.orch-advisory.is-strong { border-left-color: #b34a36; background: #fff0ed; color: #60291f; }
+.orch-advisory small { color: inherit; opacity: .84; }
+.orch-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; }
+.orch-layout.is-focused { grid-template-columns: minmax(0, 1fr); }
+.orch-layout.is-focused > .orch-inspector { display: none; }
+.orch-workspace.is-focus-mode > .orch-caption,
+.orch-workspace.is-focus-mode > .orch-validation-results,
+.orch-workspace.is-focus-mode > .orch-validation-raw,
+.orch-workspace.is-focus-mode > .orch-overlay-controls,
+.orch-workspace.is-focus-mode > .orch-advisory,
+.orch-workspace.is-focus-mode > .orch-layout > .orch-main > .orch-edge-list,
+.orch-workspace.is-focus-mode > .orch-layout > .orch-main > .orch-tray,
+.orch-workspace.is-focus-mode > .orch-layout > .orch-main > .orch-projection-issues { display: none; }
+.orch-workspace.is-focus-mode > .orch-layout .orch-canvas { height: min(72vh, 760px); min-height: 420px; }
+.orch-main { min-width: 0; background: var(--surface-warm); }
+.orch-canvas { height: 520px; min-height: 360px; width: 100%; }
+.orch-canvas .react-flow { background: #fafbfc; }
+.orch-canvas .react-flow__node { width: 254px; font-family: inherit; }
+.orch-node { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 0 0; }
+.orch-node.is-selected { border-color: var(--accent); outline: 2px solid var(--accent-soft); }
+.orch-node.has-validation-error { border-color: var(--danger); border-style: dashed; }
+.orch-validation-mark, .orch-validation-port-error { display: block; margin: 0 12px 8px; color: var(--danger); font-size: 11px; overflow-wrap: anywhere; }
+.orch-validation-port-error { margin: 4px 0 8px; }
+.orch-port-row.has-validation-error { border-color: var(--danger); border-style: dashed; }
+.orch-node-caption { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; padding-inline: 14px; }
+.orch-node > strong { display: block; font-size: 14px; padding: 5px 14px 14px; overflow-wrap: anywhere; }
+.orch-atom-summary { display: block; margin: -8px 14px 10px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.orch-condition-summary { display: block; margin: -4px 14px 8px; color: var(--fg-2); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.orch-run-slot { height: 28px; padding-inline: 14px; }
+.orch-run-overlay { display: inline-block; padding: 2px 6px; border: 1px solid #b7c9e7; border-radius: 4px; color: #244c82; background: #eef5ff; font-size: 11px; font-variant-numeric: tabular-nums; }
+.orch-overlay-controls { padding-block: 12px; margin-bottom: 12px; border-block: 1px solid var(--border-soft); font-size: 12px; overflow-wrap: anywhere; }
+.orch-overlay-controls form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.orch-overlay-controls label { display: grid; gap: 5px; min-width: 120px; }
+.orch-overlay-controls p { margin: 8px 0 0; }
+.orch-overlay-controls .helper { color: var(--muted); }
+.orch-port-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-block: 6px; border-top: 1px solid var(--border-soft); }
+.orch-port { position: relative; padding: 5px 12px; color: var(--fg-2); font-size: 11px; overflow-wrap: anywhere; }
+.orch-output { text-align: right; }
+.orch-port .react-flow__handle { background: var(--bg); border: 1.5px solid #8793a3; width: 8px; height: 8px; }
+.orch-node footer { background: var(--surface); color: var(--muted); font-size: 11px; padding: 8px 14px; border-radius: 0 0 8px 8px; }
+.orch-inspector { min-width: 0; background: var(--bg); border-left: 1px solid var(--border-soft); padding: 16px; }
+.orch-inspector-title h3 { overflow-wrap: anywhere; font-size: 15px; margin: 0 0 5px; }
+.orch-inspector-title span, .orch-inspector > p { color: var(--muted); font-size: 12px; }
+.orch-inspector > p { margin-block: 12px; }
+.orch-edge-id { color: var(--muted); font-size: 12px; }
+.orch-inspector fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.orch-inspector label { display: grid; gap: 5px; margin-bottom: 14px; font-size: 12px; }
+.orch-inspector textarea { font-size: 12px; line-height: 1.55; resize: vertical; }
+.orch-inspector .orch-checkbox { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.orch-inspector .orch-checkbox input { width: 16px; height: 16px; }
+.orch-port-editor { margin-block: 18px 22px; }
+.orch-port-editor h4 { margin: 0 0 12px; font-size: 13px; }
+.orch-port-editor h4 span { color: var(--muted); margin-left: 6px; }
+.orch-inspector .orch-port-row { border-top: 1px solid var(--border-soft); padding-top: 12px; margin-block: 12px; }
+.orch-inspector .orch-aux-editor { margin-block: 18px 22px; }
+.orch-inspector .orch-aux-editor h4 { margin: 0 0 10px; font-size: 13px; }
+.orch-inspector .orch-aux-row { border-top: 1px solid var(--border-soft); padding-top: 12px; margin-block: 12px; }
+.orch-inspector .orch-aux-row legend { color: var(--muted); font-size: 12px; }
+.orch-inspector .orch-aux-toggle { display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.orch-inspector .orch-aux-toggle input { width: 16px; height: 16px; }
+.orch-aux-raw { margin-block: 10px; }
+.orch-aux-raw > label { margin-top: 10px; }
+.orch-aux-raw .helper { color: var(--muted); font-size: 12px; }
+.orch-port-row legend { padding-right: 8px; font-size: 12px; color: var(--muted); }
+.orch-port-editor small, .orch-port-editor > p { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.orch-condition-editor { margin-block: 12px 18px; min-width: 0; }
+.orch-condition-children { border-left: 1px solid var(--border); padding-left: 10px; }
+.orch-inspector .orch-condition-children > fieldset { border-top: 1px solid var(--border-soft); padding-top: 10px; margin-block: 10px; }
+.orch-condition-children legend { font-size: 12px; color: var(--muted); }
+.orch-condition-editor .helper { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.orch-port-impact { border-top: 1px solid var(--border-soft); margin-top: 12px; padding-top: 12px; overflow-wrap: anywhere; }
+.orch-port-impact ul { padding-left: 18px; margin-block: 8px; }
+.orch-port-impact li { margin-bottom: 8px; font-size: 12px; }
+.orch-port-impact code { display: block; font-size: 11px; color: var(--muted); }
+.orch-cycle-fields { display: grid; gap: 4px; border-left: 2px solid var(--border-soft); padding-left: 12px; }
+.orch-edge-order { display: flex; gap: 4px; margin-block: 8px 14px; }
+.orch-edge-order .btn { min-width: 40px; min-height: 36px; padding: 4px; font-size: 16px; }
+.orch-inspector details { margin-top: 18px; border-top: 1px solid var(--border-soft); padding-top: 12px; }
+.orch-inspector dd { margin: 4px 0 12px; overflow-wrap: anywhere; }
+.orch-inspector pre, .orch-rule-view pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.orch-empty { min-height: 300px; display: grid; align-content: center; padding: 32px; text-align: center; }
+.orch-empty h3 { margin-bottom: 10px; }
+.orch-empty p { color: var(--muted); }
+.orch-tray { border-top: 1px solid var(--border-soft); padding: 14px 18px; background: var(--bg); }
+.orch-tray h3 { font-size: 13px; margin: 0 0 10px; }
+.orch-tray h3 span { color: var(--muted); margin-left: 8px; }
+.orch-tray-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.orch-tray-header > div { min-width: 180px; }
+.orch-tray-header label { display: grid; gap: 5px; min-width: 150px; color: var(--fg-2); font-size: 12px; }
+.orch-concurrent-limit { width: 150px; }
+.orch-tray > button { margin: 0 6px 8px 0; }
+.orch-tray > p { color: var(--muted); font-size: 12px; }
+.orch-concurrent-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 10px 0; }
+.orch-concurrent-item { display: grid; gap: 4px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--fg); text-align: left; cursor: pointer; }
+.orch-concurrent-item:hover, .orch-concurrent-item.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.orch-concurrent-item strong, .orch-concurrent-item span { overflow-wrap: anywhere; }
+.orch-concurrent-item span { color: var(--muted); font-size: 11px; }
+.orch-concurrent-scope { margin-block: 18px 22px; padding: 12px; border: 1px solid var(--border-soft); border-radius: 7px; background: var(--surface-warm); }
+.orch-concurrent-scope h4 { margin: 0 0 6px; font-size: 13px; }
+.orch-concurrent-scope label { margin-bottom: 10px; }
+.orch-list { overflow-x: auto; }
+.orch-list small { display: block; color: var(--muted); margin-top: 4px; }
+.orch-list .is-selected { background: var(--accent-soft); }
+.orch-edge-list { border-top: 1px solid var(--border-soft); padding: 14px 18px; background: var(--bg); }
+.orch-edge-list h3 { font-size: 13px; margin: 0 0 8px; }
+.orch-edge-list ol { margin: 0; padding-left: 30px; }
+.orch-edge-list li { min-height: 36px; padding-inline: 4px; overflow-wrap: anywhere; }
+.orch-edge-list li.is-selected { background: var(--accent-soft); }
+.orch-edge-list li button { min-height: 36px; text-align: left; white-space: normal; }
+.orch-edge-list li button span { display: inline-grid; place-items: center; width: 20px; aspect-ratio: 1; margin-right: 4px; border-radius: 50%; color: var(--fg-2); background: var(--surface); font-size: 11px; }
+.orch-edge-list > p { color: var(--muted); font-size: 12px; }
+.orch-rule-view, .orch-projection-issues { padding: 16px 18px; overflow-wrap: anywhere; }
+.orch-validation-results { padding: 12px 16px; border: 1px solid var(--danger); background: #fff8f6; overflow-wrap: anywhere; }
+.orch-validation-results h3 { margin: 0 0 8px; font-size: 13px; color: var(--danger); }
+.orch-validation-results ul { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+.orch-validation-results li { padding: 4px 0; }
+.orch-validation-results li > div { display: grid; gap: 3px; }
+.orch-validation-results code { overflow-wrap: anywhere; font-size: 11px; }
+.orch-validation-results li > button, .orch-validation-results li > small { display: inline-block; margin-top: 3px; }
+.orch-validation-results .helper { margin: 8px 0 0; font-size: 11px; }
+.orch-validation-raw { margin-top: 10px; padding: 12px; border: 1px solid var(--border); background: var(--bg); }
+.orch-validation-raw label { display: grid; gap: 6px; margin-top: 10px; }
+.orch-rule-view h3 { font-size: 14px; margin-block: 6px 10px; }
+.orch-rule-view p, .orch-rule-view pre { margin-bottom: 18px; }
+.orch-projection-issues { border-top: 1px solid var(--border-soft); color: var(--warning); font-size: 12px; }
+.orch-projection-issues h3, .orch-projection-issues p { margin-bottom: 8px; }
+[data-orchestration] { min-height: 480px; }
+@media (max-width: 1050px) {
+  .orch-layout { grid-template-columns: minmax(0, 1fr); }
+  .orch-inspector { border-left: 0; border-top: 1px solid var(--border-soft); }
+  .orch-canvas { height: 430px; }
+}
+@media (max-width: 520px) {
+  .orch-edge-list { padding-inline: 12px; }
+  .orch-edge-list li { padding-inline: 0; }
+  .orch-tray { padding-inline: 12px; }
+  .orch-tray-header { display: block; }
+  .orch-tray-header label { margin-top: 12px; }
+  .orch-concurrent-limit { width: 100%; }
+  .orch-workspace.is-focus-mode > .orch-layout .orch-canvas { min-height: 360px; height: 68vh; }
+}
+@media (prefers-reduced-motion: reduce) { .orch-workspace * { transition: none !important; animation: none !important; } }

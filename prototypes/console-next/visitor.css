@@ -77,6 +77,7 @@
 .widget-faq-button { width: 100%; text-align: left; cursor: pointer; line-height: 1.5; overflow-wrap: anywhere; }
 .widget-faq-button:hover { background: var(--surface); }
 .widget-faq-button:disabled { cursor: default; opacity: .65; }
+.widget-booking-link { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
 .widget-field-preview { margin-top: 10px; padding-top: 8px; }
 .widget-field-preview > summary { font-size: 12px; }
 @media (max-width: 1023px) { .widget-faq-button { min-height: 44px; } }

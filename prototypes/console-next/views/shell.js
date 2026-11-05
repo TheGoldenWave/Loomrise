@@ -15,6 +15,7 @@ export const routes = [
   { id: 'settings', label: '专家设置', group: '设置', icon: 'settings', scoped: true },
   { id: 'materials', label: '物料库', group: '配置与资料', icon: 'book', scoped: false },
   { id: 'inbox', label: '会话收件箱', group: '客服应用', icon: 'inbox', scoped: true },
+  { id: 'customer-statistics', label: '客服统计', group: '客服应用', icon: 'runs', scoped: true },
   { id: 'widget', label: '网站客服窗', group: '客服应用', icon: 'widget', scoped: true },
   { id: 'contact', label: '联系页', group: '客服应用', icon: 'contact', scoped: true },
   { id: 'trial', label: '试用台', group: '运行与验收', icon: 'play', scoped: true },
@@ -64,10 +65,17 @@ function renderContext(ctx) {
   const { state, agent, readonly } = ctx;
   if (!agent) return '';
   const preview = agent.versions?.find(version => version.id === state.ui.previewVersionId);
+  const contact = state.ui.page === 'contact' ? ctx.contactWorkspace?.state : null;
+  const contactStatus = contact ? `<span class="save-status" aria-live="polite">${escapeHtml(
+    readonly ? '只读 · 不写入草稿' : contact.status === 'saving' ? '正在保存…'
+      : contact.status === 'conflict' ? '版本冲突 · 输入已保留'
+        : contact.error ? '保存或读取失败' : ['idle', 'loading'].includes(contact.status) ? '正在读取…'
+          : contact.dirty ? '有未保存修改' : '已保存到服务端')}
+    </span>` : null;
   return `<section class="contextbar" aria-label="当前配置上下文">
     <div class="context-heading">
       <div class="context-title"><strong>${escapeHtml(agent.name)}</strong>${badge(preview ? '历史版本' : '草稿', preview ? 'neutral' : 'info')}</div>
-      <div class="context-actions">${renderSaveStatus(state, readonly)}${!readonly && state.ui.saveStatus === 'error' ? '<button class="btn btn-secondary btn-sm" type="button" data-action="save-now">重试保存</button>' : ''}</div>
+      <div class="context-actions">${contactStatus || renderSaveStatus(state, readonly)}${!contact && !readonly && state.ui.saveStatus === 'error' ? '<button class="btn btn-secondary btn-sm" type="button" data-action="save-now">重试保存</button>' : ''}</div>
     </div>
   </section>`;
 }
@@ -91,6 +99,11 @@ export function renderShell(ctx, body, side = '') {
   const toast = typeof ui.toast === 'string' ? ui.toast : ui.toast?.message || ui.toast?.text;
   const navOpen = Boolean(ui.navOpen);
   const collapsed = Boolean(ui.sidebarCollapsed);
+  const environment = ui.page === 'contact' && ctx.contactWorkspace
+    ? '<span class="badge badge-neutral environment-label" data-environment="local-service" title="联系页读写本机服务端草稿；保存不发布">本机服务</span>'
+    : ui.page === 'customer-statistics'
+      ? '<span class="badge badge-neutral environment-label" data-environment="local-service" title="客服统计从本机客服服务读取，不含未接入指标">本机服务</span>'
+    : '<span class="badge badge-neutral environment-label" data-environment="local-prototype" title="仅当前浏览器保存；没有真实模型、外部业务写入或线上发布">本地交互原型</span>';
   return `<div class="app-shell" data-page="${attr(ui.page)}" data-scope="${workspace ? 'workspace' : 'agent'}" data-sidebar-collapsed="${collapsed}">
     <a class="skip-link" href="#workspace-content">跳到当前页面</a>
     <button type="button" class="nav-backdrop ${navOpen ? 'is-open' : ''}" data-action="toggle-nav" aria-label="关闭导航" tabindex="${navOpen ? '0' : '-1'}"></button>
@@ -102,7 +115,7 @@ export function renderShell(ctx, body, side = '') {
     <div class="workspace">
       <header class="topbar">
         <div class="topbar-start"><div class="desktop-sidebar-toggle">${iconButton('toggle-sidebar', collapsed ? '展开侧边栏' : '收起侧边栏', 'panel-left', `aria-expanded="${!collapsed}" aria-controls="app-navigation"`)}</div><div class="mobile-menu">${iconButton('toggle-nav', '打开导航', 'panel-left', `aria-expanded="${navOpen}" aria-controls="app-navigation"`)}</div><div class="breadcrumb">${parentRoute ? `<button class="button-link breadcrumb-parent" type="button" data-action="navigate" data-page="${parentRoute.id}">${escapeHtml(parentRoute.label)}</button>` : workspace ? '<span>工作区</span>' : '<button class="button-link breadcrumb-parent" type="button" data-action="navigate" data-page="agents">工作区</button>'}<span class="separator" aria-hidden="true">/</span><strong>${escapeHtml(route.label)}</strong></div></div>
-        <div class="topbar-end"><span class="badge badge-neutral environment-label" data-environment="local-prototype" title="仅当前浏览器保存；没有真实模型、外部业务写入或线上发布">本地交互原型</span>${!workspace && agent ? `<button class="btn btn-ghost btn-sm" type="button" data-action="pending-toggle" aria-expanded="${Boolean(ui.pendingOpen)}">待处理 ${pending.length}</button><button class="btn btn-primary btn-sm" type="button" data-action="open-trial">${icon('play', 15)}试一试</button>` : ''}</div>
+        <div class="topbar-end">${environment}${!workspace && agent ? `<button class="btn btn-ghost btn-sm" type="button" data-action="pending-toggle" aria-expanded="${Boolean(ui.pendingOpen)}">待处理 ${pending.length}</button><button class="btn btn-primary btn-sm" type="button" data-action="open-trial">${icon('play', 15)}试一试</button>` : ''}</div>
       </header>
       ${workspace ? '' : renderContext(ctx)}
       ${!workspace && ui.pendingOpen && agent ? `<section class="pending-popover" aria-label="待处理队列"><div class="item-heading"><strong>待处理 ${pending.length}</strong>${iconButton('pending-toggle', '关闭待处理队列', 'close')}</div>${['block', 'suggest'].map(level => `<div class="pending-group"><h2>${level === 'block' ? '上线前必须处理' : '建议处理'}</h2>${pending.filter(item => item.level === level).map(item => `<div class="pending-row"><span>${escapeHtml(item.text)}</span><button class="button-link" type="button" data-action="pending-open" data-id="${attr(item.id)}">${escapeHtml(item.fix)}</button></div>`).join('') || '<p class="muted">暂无</p>'}</div>`).join('')}</section>` : ''}

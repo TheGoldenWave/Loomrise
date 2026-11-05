@@ -7,7 +7,7 @@ import { prepareAgentTask, readiness } from './domain.js';
 import { button, emptyState, escapeHtml, section } from './helpers.js';
 import { routes, renderShell } from './views/shell.js';
 import { renderAgents, renderCreate, renderOverview, renderConfiguration, renderAssistant } from './views/editor.js';
-import { renderKnowledge, renderTrial, renderInbox, renderWidget, widgetPreview, renderContact, renderConnections, renderRuns, renderCases, renderIterations, renderVersions, renderDeployment } from './views/surfaces.js';
+import { renderKnowledge, renderTrial, renderInbox, renderCustomerStatistics, renderWidget, widgetPreview, renderContact, renderConnections, renderRuns, renderCases, renderIterations, renderVersions, renderDeployment } from './views/surfaces.js';
 import { renderMaterials, renderMaterialPreview } from './views/materials.js';
 import { renderRedlines } from './views/knowledge.js';
 import { renderBusiness, renderSettings, renderTest, renderRelease } from './views/config-pages.js';
@@ -16,6 +16,8 @@ import { renderQuickTrial, renderEvidencePanel } from './views/config-panels.js'
 import { parseBatchText, parseWorkbook } from './knowledge-model.js';
 import { createNavigationHistory, routeScope } from './navigation.js';
 import { createR1ConfigurationWorkspace } from './r1-configuration.js';
+import { hydrateOrchestration, unmountOrchestration, updateOrchestration } from './orchestration/loader.js';
+import { createContactWorkspace } from './contact-workspace.js';
 
 let browserStorage;
 try { browserStorage = window.localStorage; } catch { browserStorage = { getItem() { throw new Error('存储不可用'); }, setItem() { throw new Error('存储不可用'); } }; }
@@ -24,12 +26,22 @@ const app = document.querySelector('#app');
 let renderingR1Configuration = false;
 const r1Configuration = createR1ConfigurationWorkspace({
   onChange() {
-    if (store.state.ui.page === 'configuration' && store.state.ui.section === 'r1-server') render();
+    if (store.state.ui.page !== 'configuration' || store.state.ui.section !== 'r1-server') return;
+    render({ preserveCanvas: Boolean(document.activeElement?.closest('[data-orchestration]')) });
+  },
+});
+const contactWorkspace = createContactWorkspace({
+  client: r1Configuration.client,
+  isReadOnly: () => store.readonly(),
+  onChange() {
+    if (store.state.ui.page === 'contact' && contactWorkspace.state.agentId === store.state.selectedAgentId) render();
   },
 });
 let materialsController;
 let visitorController;
 let previousR1Context = null;
+let previousR1Tab = null;
+let pendingCanvasReveal = false;
 function fileContext() {
   const { ui, selectedAgentId } = store.state;
   if (ui.page !== 'knowledge' || ui.sourceTab !== 'File' || !ui.sourceForm || store.readonly()) return null;
@@ -37,7 +49,12 @@ function fileContext() {
 }
 const fileReader = createLocalFileReader(fileContext);
 let lastFileContext = fileContext();
-const pages = { agents: renderAgents, create: renderCreate, overview: renderOverview, configuration: renderConfiguration, materials: renderMaterials, knowledge: renderKnowledge, redlines: renderRedlines, business: renderBusiness, flow: renderFlow, test: renderTest, settings: renderSettings, trial: renderTrial, inbox: renderInbox, widget: renderWidget, contact: renderContact, connections: renderConnections, runs: renderRuns, cases: renderCases, iterations: renderIterations, versions: renderRelease, deployment: renderDeployment };
+const pages = { agents: renderAgents, create: renderCreate, overview: renderOverview, configuration: renderConfiguration, materials: renderMaterials, knowledge: renderKnowledge, redlines: renderRedlines, business: renderBusiness, flow: renderFlow, test: renderTest, settings: renderSettings, trial: renderTrial, inbox: renderInbox, 'customer-statistics': renderCustomerStatistics, widget: renderWidget, contact: renderContact, connections: renderConnections, runs: renderRuns, cases: renderCases, iterations: renderIterations, versions: renderRelease, deployment: renderDeployment };
+let customerStatistics = { agentId: null, requestKey: null, status: 'idle', data: null, error: null };
+let customerStatisticsRequest = 0;
+const customerStatisticsFilters = { period: 'all', channel: 'all' };
+let widgetInstall = { agentId: null, status: 'idle', entries: [], selectedEntryId: '', error: null };
+let widgetInstallRequest = 0;
 let toastTimer = null;
 let undoTimer = null;
 let preserveOnExit = true;
@@ -127,11 +144,78 @@ function preview(ctx) {
   return section('访客看到的样子', widgetPreview(agent, ctx) + `<p class="helper">当前草稿 r${agent.revision}；不会改变已绑定入口。</p>` + button('navigate', '进入脚本试用', { page: 'trial', variant: 'primary', disabled: false }), { description: '当前草稿的本地访客预览，检索和发送按策略演示。' });
 }
 let renderedDisclosureKey;
-function render() {
+function customerStatisticsPayload() {
+  const payload = {};
+  if (customerStatisticsFilters.period !== 'all') {
+    const to = new Date();
+    const duration = customerStatisticsFilters.period === '24h' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+    payload.from = new Date(to.getTime() - duration).toISOString();
+    payload.to = to.toISOString();
+  }
+  if (customerStatisticsFilters.channel !== 'all') payload.channel = customerStatisticsFilters.channel;
+  return payload;
+}
+async function loadCustomerStatistics(agentId = store.state.selectedAgentId) {
+  if (!agentId) return;
+  const request = ++customerStatisticsRequest;
+  const scope = customerStatisticsPayload();
+  const requestKey = JSON.stringify({ agentId, period: customerStatisticsFilters.period,
+    channel: customerStatisticsFilters.channel, ...scope });
+  customerStatistics = { agentId, requestKey, filters: { ...customerStatisticsFilters }, status: 'loading', data: null, error: null };
+  const isCurrent = () => request === customerStatisticsRequest
+    && requestKey === customerStatistics.requestKey && store.state.selectedAgentId === agentId;
+  if (store.state.ui.page === 'customer-statistics') render();
+  try {
+    const data = await r1Configuration.client.customerRequest('customer.statistics', { agent_id: agentId, ...scope });
+    if (!isCurrent()) return;
+    customerStatistics = { agentId, requestKey, filters: { ...customerStatisticsFilters }, status: 'ready', data, error: null };
+  } catch (error) {
+    if (!isCurrent()) return;
+    customerStatistics = { agentId, requestKey, filters: { ...customerStatisticsFilters }, status: 'error', data: null, error: error.message };
+  }
+  if (store.state.ui.page === 'customer-statistics' && isCurrent()) render();
+}
+async function loadWidgetEntries(agentId = store.state.selectedAgentId) {
+  if (!agentId || widgetInstall.agentId === agentId && widgetInstall.status !== 'idle') return;
+  const request = ++widgetInstallRequest;
+  widgetInstall = { agentId, status: 'loading', entries: [], selectedEntryId: '', error: null };
+  render();
+  try {
+    const result = await r1Configuration.client.request('release.entry.list', { agent_id: agentId });
+    if (request !== widgetInstallRequest || store.state.selectedAgentId !== agentId) return;
+    const entries = Array.isArray(result?.items) ? result.items : [];
+    widgetInstall = {
+      agentId, status: 'ready', entries,
+      selectedEntryId: entries.some(item => item.entry_id === widgetInstall.selectedEntryId && item.knowledge_state === 'ready')
+        ? widgetInstall.selectedEntryId : '',
+      error: null,
+    };
+  } catch (error) {
+    if (request !== widgetInstallRequest || store.state.selectedAgentId !== agentId) return;
+    widgetInstall = { agentId, status: 'error', entries: [], selectedEntryId: '', error: error.message };
+  }
+  if (store.state.ui.page === 'widget' && store.state.selectedAgentId === agentId) render();
+}
+function revealOrchestration(container) {
+  if (!container?.isConnected) return;
+  const viewport = window.innerHeight || document.documentElement.clientHeight;
+  // 画布容器顶部有版本路由说明；以首个节点为判据，避免「容器露了一半、图仍在屏外」。
+  const target = container.querySelector('.react-flow__node') || container;
+  const rect = target.getBoundingClientRect();
+  const visible = Math.min(rect.bottom, viewport) - Math.max(rect.top, 0);
+  if (rect.top >= 0 && visible >= Math.min(rect.height, viewport) * 0.6) return;
+  container.scrollIntoView({ block: 'start', behavior: 'instant' });
+}
+function render({ preserveCanvas = false } = {}) {
   visitorController?.beforeRender();
   const focused = document.activeElement;
+  const canvas = preserveCanvas ? focused?.closest('[data-orchestration]') : null;
   const previewFocus = focused?.closest('.material-preview-dialog') ? actionSelector(focused) : null;
-  const identifier = focused?.dataset.bind ? ['bind', focused.dataset.bind] : focused?.dataset.uiBind ? ['ui-bind', focused.dataset.uiBind] : focused?.dataset.r1Bind ? ['r1-bind', focused.dataset.r1Bind] : focused?.dataset.r1Json ? ['r1-json', focused.dataset.r1Json] : focused?.hasAttribute('data-agent-name') ? ['agent-name', ''] : null;
+  const identifier = focused?.dataset.customerStatisticsFilter ? ['customer-statistics-filter', focused.dataset.customerStatisticsFilter]
+    : focused?.hasAttribute('data-contact-generation-brief') ? ['contact-generation-brief', '']
+    : focused?.hasAttribute('data-contact-generation-template') ? ['contact-generation-template', '']
+    : focused?.hasAttribute('data-widget-entry') ? ['widget-entry', '']
+    : focused?.hasAttribute('data-contact-entry') ? ['contact-entry', ''] : focused?.dataset.contactBind ? ['contact-bind', focused.dataset.contactBind] : focused?.dataset.bind ? ['bind', focused.dataset.bind] : focused?.dataset.uiBind ? ['ui-bind', focused.dataset.uiBind] : focused?.dataset.r1Bind ? ['r1-bind', focused.dataset.r1Bind] : focused?.dataset.r1Source ? ['r1-source', focused.dataset.r1Source] : focused?.dataset.r1Json ? ['r1-json', focused.dataset.r1Json] : focused?.hasAttribute('data-agent-name') ? ['agent-name', ''] : null;
   const selection = focused && ['INPUT', 'TEXTAREA'].includes(focused.tagName) ? { start: focused.selectionStart, end: focused.selectionEnd } : null;
   const focusedForm = focused?.closest('[data-form]');
   const formFocus = !identifier && focusedForm && focused.name ? { key: formKey(focusedForm), name: focused.name } : null;
@@ -141,12 +225,18 @@ function render() {
   store.state.ui.disclosures ||= {}; store.state.ui.disclosures[key] = disclosures;
   renderedDisclosureKey = key;
   const ctx = context();
+  if (customerStatistics.agentId !== ctx.agent?.id) customerStatistics = { agentId: ctx.agent?.id || null, requestKey: null, status: 'idle', data: null, error: null };
   const nextLibrary = librarySurface(ctx);
   const previousLibrary = renderedLibrary;
   if (previousLibrary?.mode === 'list' && previousLibrary.key !== nextLibrary?.key) {
     libraryListPositions.set(previousLibrary.scope, window.scrollY);
   }
   ctx.r1Configuration = r1Configuration;
+  ctx.contactWorkspace = contactWorkspace;
+  ctx.widgetInstall = widgetInstall;
+  ctx.configurationApiOrigin = r1Configuration.client.origin;
+  ctx.customerStatistics = customerStatistics;
+  ctx.customerStatisticsFilters = { ...customerStatisticsFilters };
   const renderer = pages[ctx.state.ui.page] || renderAgents;
   let body;
   try { body = renderer(ctx); }
@@ -156,7 +246,30 @@ function render() {
   if (!scoped || !ctx.agent) ctx.r1Configuration.closeSnapshot();
   const withSide = scoped && ctx.agent && ctx.state.ui.sideOpen;
   const side = withSide ? ctx.state.ui.sidePanel === 'evidence' ? renderEvidencePanel(ctx) : renderQuickTrial(ctx) : '';
+  if (!canvas) unmountOrchestration();
   app.innerHTML = renderShell(ctx, body, side) + renderMaterialPreview(ctx);
+  if (ctx.state.ui.page === 'customer-statistics' && ctx.agent && customerStatistics.status === 'idle') void loadCustomerStatistics(ctx.agent.id);
+  if (ctx.state.ui.page === 'widget' && ctx.agent
+    && (widgetInstall.agentId !== ctx.agent.id || widgetInstall.status === 'idle')) void loadWidgetEntries(ctx.agent.id);
+  const canvasTarget = app.querySelector('[data-orchestration]');
+  const r1Tab = ctx.state.ui.page === 'configuration' && ctx.state.ui.section === 'r1-server'
+    ? ctx.r1Configuration?.state?.activeTab ?? null : null;
+  if (r1Tab !== 'flow') pendingCanvasReveal = false;
+  else if (previousR1Tab !== 'flow') pendingCanvasReveal = true;
+  previousR1Tab = r1Tab;
+  if (canvas && canvasTarget) {
+    canvasTarget.replaceWith(canvas);
+    updateOrchestration(r1Configuration);
+    focused.focus({ preventScroll: true });
+    if (selection?.start != null) focused.setSelectionRange(selection.start, selection.end);
+  } else {
+    if (canvas) unmountOrchestration();
+    void hydrateOrchestration(canvasTarget, r1Configuration).then(() => {
+      if (!pendingCanvasReveal || !canvasTarget?.isConnected) return;
+      pendingCanvasReveal = false;
+      revealOrchestration(canvasTarget);
+    });
+  }
   materialsController?.hydrate();
   visitorController?.afterRender();
   restoreForms();
@@ -176,11 +289,14 @@ function render() {
   renderedLibrary = nextLibrary;
   const r1Context = ctx.state.ui.page === 'configuration' && ctx.state.ui.section === 'r1-server' && ctx.agent
     ? `${ctx.agent.id}:r1-server` : null;
-  if (r1Context !== previousR1Context && r1Context && !renderingR1Configuration) {
+  if (r1Context && !renderingR1Configuration && (r1Configuration.state.agentId !== ctx.agent.id || r1Configuration.state.status === 'idle')) {
     renderingR1Configuration = true;
     void r1Configuration.load(ctx.agent?.id).finally(() => { renderingR1Configuration = false; });
   }
   previousR1Context = r1Context;
+  if (ctx.state.ui.page === 'contact' && ctx.agent && contactWorkspace.state.agentId !== ctx.agent.id) {
+    void contactWorkspace.load(ctx.agent.id);
+  }
   if (nextLibrary && nextLibrary.key !== previousLibrary?.key) {
     if (nextLibrary.mode === 'list' && nextLibrary.scope === previousLibrary?.scope) {
       window.scrollTo({ top: libraryListPositions.get(nextLibrary.scope) || 0, behavior: 'instant' });
@@ -300,7 +416,44 @@ async function intakeFiles(files, details = {}) {
 app.addEventListener('click', async event => {
   const target = event.target.closest('[data-action]'); if (!target || target.disabled || target.tagName === 'SELECT' || target.tagName === 'INPUT') return;
   const { action, ...data } = target.dataset;
+  if (action.startsWith('cs-contact-')) {
+    const index = Number(data.index);
+    if (action === 'cs-contact-reload') await contactWorkspace.load(store.state.selectedAgentId);
+    else if (action === 'cs-contact-save') await contactWorkspace.save();
+    else if (action === 'cs-contact-generate') await contactWorkspace.generate();
+    else if (action === 'cs-contact-adopt-proposal') contactWorkspace.adoptProposal();
+    else if (action === 'cs-contact-discard-proposal') contactWorkspace.discardProposal();
+    else if (action === 'cs-contact-template') contactWorkspace.applyTemplate(data.id);
+    else if (action === 'cs-contact-add') contactWorkspace.addBlock(app.querySelector('#contact-new-type')?.value);
+    else if (action === 'cs-contact-add-item') contactWorkspace.addItem(index);
+    else if (action === 'cs-contact-remove-item') contactWorkspace.removeItem(index, Number(data.itemIndex));
+    else if (action === 'cs-contact-remove') contactWorkspace.removeBlock(index);
+    else if (action === 'cs-contact-up') contactWorkspace.moveBlock(index, -1);
+    else if (action === 'cs-contact-down') contactWorkspace.moveBlock(index, 1);
+    else if (action === 'cs-contact-query-entry') await contactWorkspace.queryEntry();
+    else if (action === 'cs-contact-enable') await contactWorkspace.setEntryEnabled(true);
+    else if (action === 'cs-contact-disable') await contactWorkspace.setEntryEnabled(false);
+    return;
+  }
+  if (action === 'customer-statistics-refresh') { await loadCustomerStatistics(); return; }
   if (action === 'r1-refresh') { await r1Configuration.refresh(); return; }
+  if (action === 'r1-cancel-refresh') { r1Configuration.cancelRefresh(); return; }
+  if (action === 'r1-discard-refresh') { await r1Configuration.refresh({ discard: true }); return; }
+  if (action === 'r1-undo') { r1Configuration.undo(); return; }
+  if (action === 'r1-redo') { r1Configuration.redo(); return; }
+  if (action === 'r1-compare') { await r1Configuration.compareVersions(); return; }
+  if (action === 'r1-close-comparison') { r1Configuration.closeComparison(); return; }
+  if (action === 'r1-reception-resources') { await r1Configuration.loadReceptionOptions(); return; }
+  if (action === 'r1-add-faq-suggestion') {
+    const question = app.querySelector('[data-r1-faq-question]')?.value || '';
+    const sourceId = app.querySelector('[data-r1-faq-source]')?.value || '';
+    if (!r1Configuration.addReceptionFaqSuggestion(question, sourceId)) {
+      const error = app.querySelector('[data-r1-faq-error]');
+      if (error) { error.textContent = '请填写未重复的问题，并选择当前允许的资料版本。'; error.hidden = false; }
+    }
+    return;
+  }
+  if (action === 'r1-remove-faq-suggestion') { r1Configuration.removeReceptionFaqSuggestion(Number(data.index)); return; }
   if (action === 'r1-create-draft') { await r1Configuration.createDraft(data.versionId); return; }
   if (action === 'r1-save') { await r1Configuration.save(r1Configuration.state.editorConfig); return; }
   if (action === 'r1-validate') { await r1Configuration.validate(); return; }
@@ -328,10 +481,22 @@ app.addEventListener('click', async event => {
     render(); return;
   }
   if (action === 'widget-copy') {
-    const code = document.querySelector('.install-code code')?.textContent || '<!-- 前端示例，尚无可运行安装代码 -->';
-    try { await navigator.clipboard.writeText(code); store.state.ui.toast = { text: '不可运行的示例代码已复制；没有安装真实网站客服窗。', tone: 'neutral' }; render(); }
-    catch { store.state.ui.toast = { text: '浏览器未允许复制，请选中示例代码手动复制。', tone: 'warning' }; render(); }
+    const code = document.querySelector('.install-code code[data-copyable="true"]')?.textContent;
+    if (!code || !widgetInstall.entries.some(entry => entry.entry_id === widgetInstall.selectedEntryId && entry.knowledge_state === 'ready')) {
+      store.state.ui.toast = { text: '请先选择一个状态有效的已发布沙盒入口。', tone: 'warning' }; render(); return;
+    }
+    try { await navigator.clipboard.writeText(code); store.state.ui.toast = { text: '本机沙盒入口代码已复制；尚未证明公网安装或访客送达。', tone: 'neutral' }; render(); }
+    catch { store.state.ui.toast = { text: '浏览器未允许复制，请选中有效入口的安装代码手动复制。', tone: 'warning' }; render(); }
     return;
+  }
+  if (action === 'widget-entries-retry') {
+    widgetInstall = { agentId: null, status: 'idle', entries: [], selectedEntryId: '', error: null };
+    void loadWidgetEntries(); return;
+  }
+  if (action === 'widget-entry-select') {
+    const entry = widgetInstall.entries.find(item => item.entry_id === data.entryId && item.knowledge_state === 'ready');
+    widgetInstall.selectedEntryId = entry?.entry_id || '';
+    render(); return;
   }
   if (action === 'preview-question') { store.dispatch('open-trial', { question: data.question }); return; }
   store.dispatch(action, data);
@@ -341,9 +506,38 @@ app.addEventListener('click', async event => {
 });
 app.addEventListener('input', event => {
   const target = event.target;
-  if (target.dataset.r1Bind) {
-    const value = target.type === 'number' ? Number(target.value) : target.value;
-    r1Configuration.updateField(target.dataset.r1Bind, value);
+  if (target.hasAttribute('data-contact-generation-brief')) {
+    if (composing || event.isComposing) return;
+    contactWorkspace.setGenerationBrief(target.value);
+  } else if (target.hasAttribute('data-contact-entry')) {
+    contactWorkspace.setEntryId(target.value);
+  } else if (target.dataset.contactBind) {
+    if (composing || event.isComposing) return;
+    try { contactWorkspace.edit(JSON.parse(target.dataset.contactBind), target.value); } catch { /* keep input visible until corrected */ }
+  } else if (target.dataset.r1Bind) {
+    if (composing || event.isComposing) return;
+    const value = target.type === 'checkbox' ? target.checked : target.type === 'number' ? Number(target.value) : target.value;
+    const faqQuestion = target.dataset.r1Bind.startsWith('ai_reception.faq_suggestions.')
+      && target.dataset.r1Bind.endsWith('.question');
+    const updated = r1Configuration.updateField(target.dataset.r1Bind, value);
+    if (target.dataset.r1Bind === 'ai_reception.handoff_phrases') {
+      const error = app.querySelector('[data-r1-handoff-error]');
+      const field = app.querySelector('[data-r1-bind="ai_reception.handoff_phrases"]');
+      field?.setAttribute('aria-invalid', String(!updated));
+      if (error) {
+        error.textContent = updated ? '' : '最多 20 条，每条不超过 100 个字符，不能含空字符或重复短语。';
+        error.hidden = updated;
+      }
+    }
+    if (faqQuestion && !updated) {
+      target.setAttribute('aria-invalid', 'true');
+      const error = target.closest('.r1-faq-copy')?.querySelector('[data-r1-faq-edit-error]');
+      if (error) { error.textContent = '问题须非空、不超过 160 个 Unicode 字符，且不能与其他问题重复。'; error.hidden = false; }
+    } else if (faqQuestion && updated) {
+      target.removeAttribute('aria-invalid');
+      const error = target.closest('.r1-faq-copy')?.querySelector('[data-r1-faq-edit-error]');
+      if (error) error.hidden = true;
+    }
   } else if (target.dataset.r1Json) {
     r1Configuration.updateJsonField(target.dataset.r1Json, target.value);
   }
@@ -365,7 +559,13 @@ app.addEventListener('input', event => {
   else if (target.closest('[data-form]')) preserveForm(target.closest('[data-form]'));
 });
 app.addEventListener('compositionstart', () => { composing = true; });
-app.addEventListener('compositionend', event => { composing = false; updateBound(event.target); });
+app.addEventListener('compositionend', event => {
+  composing = false;
+  if (event.target.hasAttribute('data-contact-generation-brief')) contactWorkspace.setGenerationBrief(event.target.value);
+  else if (event.target.dataset.contactBind) contactWorkspace.edit(JSON.parse(event.target.dataset.contactBind), event.target.value);
+  else if (event.target.dataset.r1Bind) event.target.dispatchEvent(new Event('input', { bubbles: true }));
+  else updateBound(event.target);
+});
 app.addEventListener('toggle', event => {
   if (event.target.tagName !== 'DETAILS') return;
   if (event.target.matches('[data-flow-branch-disclosure]')) { if (store.state.ui.flowBranchOpen !== event.target.open) store.dispatch('flow-branch-disclosure', { open: event.target.open }); return; }
@@ -376,6 +576,24 @@ app.addEventListener('toggle', event => {
 }, true);
 app.addEventListener('change', async event => {
   const target = event.target;
+  if (target.matches('[data-widget-entry]')) {
+    const entry = widgetInstall.entries.find(item => item.entry_id === target.value && item.knowledge_state === 'ready');
+    widgetInstall.selectedEntryId = entry?.entry_id || '';
+    render(); return;
+  }
+  if (target.dataset.customerStatisticsFilter === 'period' && ['all', '24h', '7d'].includes(target.value)) {
+    customerStatisticsFilters.period = target.value;
+    void loadCustomerStatistics();
+    return;
+  }
+  if (target.dataset.customerStatisticsFilter === 'channel' && ['all', 'text', 'voice'].includes(target.value)) {
+    customerStatisticsFilters.channel = target.value;
+    void loadCustomerStatistics();
+    return;
+  }
+  if (target.hasAttribute('data-contact-generation-template')) { contactWorkspace.setGenerationTemplate(target.value); return; }
+  if (target.dataset.r1Comparison) { r1Configuration.setComparisonSelection(target.dataset.r1Comparison, target.value); return; }
+  if (target.dataset.r1Source) { r1Configuration.setReceptionSource(target.dataset.r1Source, target.checked); return; }
   if (await materialsController.change(target)) return;
   if (target.matches('[data-batch-files]')) { await intakeFiles([...target.files]); return; }
   if (target.matches('[data-action="flow-select"]')) { store.dispatch('flow-select', { id: target.dataset.id }); return; }
