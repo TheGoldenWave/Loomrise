@@ -20,6 +20,7 @@
 | MCP、CLI、外部 Skills、通用 harness | [Agent 接入开发计划](docs/AGENT-INTEGRATION-PLAN.md) | [初始化与摄入](docs/INTAKE-AND-INITIALIZATION.md)、ARCHITECTURE、REFERENCE-PROJECTS |
 | S1 代码、依赖或运行验证 | [S1 交付与验收](docs/S1-BUILD-REPORT.md)、[版本钉](VERSION-PINS.md) | 对应 `loomrise/` 模块、`tests/` 与 `scripts/`；[适配验证快照](docs/S1-VALIDATION-AND-ADAPTATION.md)只作历史依据 |
 | 改进、评测、审批与发布 | [S2 治理设计](docs/S2-DESIGN.md) → [评测门禁提案](docs/S2-EVAL-GATE-PROPOSAL.md) | [范围决策](docs/S2-SCOPE-DECISIONS.md)、ROADMAP；逐节分清已确认与待确认 |
+| 延迟、首响、首屏与性能回归 | [性能与延迟方法](docs/PERFORMANCE-LATENCY-METHOD.md) → [基线重算](docs/reports/PERF-BASELINE-2026-10-30.md) | [语音架构决策](docs/VOICE-ARCHITECTURE-DECISIONS.md)、[验证计划](docs/VOICE-COORDINATION-VALIDATION.md)；**棘轮上限 ≠ Gate 阈值**，服务端首包 ≠ 已送达 |
 | 硬规则、记忆或供应商选型 | [硬规则模型](docs/HARD-RULE-MODEL.md)、[记忆提案](docs/MEMORY-FOUNDATION-DESIGN.md)、[参考项目](docs/REFERENCE-PROJECTS.md) | 提案不等于已选型；改技术选择或适配边界前必须读 REFERENCE-PROJECTS |
 
 ## 2. 项目事实与权威范围
