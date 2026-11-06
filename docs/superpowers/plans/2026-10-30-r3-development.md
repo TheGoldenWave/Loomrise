@@ -1,6 +1,6 @@
-# R3 开发实施与接力计划 v0.55
+# R3 开发实施与接力计划 v0.56
 
-日期：2026-11-03。状态：实施中，尚未通过 R3 退出 Gate。
+日期：2026-11-06。状态：开发侧工作包已收口，仍未通过 R3 退出 Gate。
 
 **目标**：按 [版本计划 R3](../../RELEASE-PLAN.md#r3--能扩s2-b) 推进全部六个工作包，重点参考仓库的 ElevenLabs 配置调研实现画布配置。
 
@@ -10,7 +10,7 @@
 
 **技术栈**：既有原生 JS 工作台 + React Flow v12 / React / dagre 局部组件；esbuild 生成本地静态模块，浏览器不依赖 CDN。新增依赖需登记 VERSION-PINS。
 
-## 当前状态与下一步（2026-11-03）
+## 当前状态与下一步（2026-11-06）
 
 以下状态以当前代码和本节验证为准；文末按日期保留的分片记录是当时快照，不覆盖本节。
 
@@ -18,7 +18,7 @@
 
 接管辅助已实现 `inbox.assistance.generate/check` 与折叠候选区：限定本人接管的固定版本线程；生成前后及采用前重验 tenant/Agent/actor/generation、全部消息、冻结版本和当前授权资料快照。严格结构化输出携带知识引用和模型用量；候选使用纯文本展示，生成不写消息、事件、已读或占用；显式采用只填入编辑框，人工在 check 等待期间编辑时保留其内容，发送仍走原 `inbox.reply`。切会话、新消息及占用/版本变化丢弃迟到候选。模型故障脱敏、超时和无效输出失败关闭。专项服务/Provider 32 项、独立零 DML/快照与前端并发检查通过；浏览器 fixture 的接管、采用、手动发送、迟到/线程隔离、故障与 1440/390px 布局通过，page errors 0。一次原创虚构真实模型样本（gpt-6-sol，1 次调用、0 重试，4770/180 input/output tokens、3128ms）通过引用、显式发送及 SQLite 重开；不能推定多样本质量。
 
-本轮集成验证（2026-11-04 收口后最终实测）：Python 全量 739 项（`ResourceWarning` 按错误）、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；AGI-07/08 专项 61 项、Contact／周期／算子专项 190 项、WebView 桥合同 12 项通过。SQLite 当前为 v23；v20 是 Inbox consumer durable ack 增量，v21/v22 为 AGI-07/08 诊断许可、不可变证据、诊断报告与 Worker 作业四表的同事务迁移，v23 为服务周期生命周期（generation/state/closed_at/predecessor lineage、`service_cycle_migrations` 审计表、active 周期 partial unique index 与旧库条件式 ALTER 兼容）。四个开发工作包均已收口：AGI-07/08 五缺口修复 + 12 项新测试 + 两份独立审查工件；服务周期 `close/adjudicate/migrate` + 10 项生命周期测试；`changed_to` 判定不可行并保留明确拒绝与 6 项反例；Contact 完整批准路径 9 项端到端证据；WebView 桥 8 项生命周期静态合同。真实 harness Provider / host 联调、质量对照、生产服务周期来源签发、真实渠道/Push、OCR/视频理解、实机移动 WebView、模型质量矩阵、目标角色与 R2/R3 Gate 继续保持未通过；见 [R3 收口与验收对照](../../reports/R3-ACCEPTANCE-2026-11-04.md)。
+本轮集成验证（2026-11-04 开发收口实测；2026-11-06 复跑确认）：Python 全量 739 项（`ResourceWarning` 按错误）、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；AGI-07/08 专项 61 项、Contact／周期／算子专项 190 项、WebView 桥合同 12 项通过。SQLite 当前为 v23；v20 是 Inbox consumer durable ack 增量，v21/v22 为 AGI-07/08 诊断许可、不可变证据、诊断报告与 Worker 作业四表的同事务迁移，v23 为服务周期生命周期（generation/state/closed_at/predecessor lineage、`service_cycle_migrations` 审计表、active 周期 partial unique index 与旧库条件式 ALTER 兼容）。四个开发工作包均已收口：AGI-07/08 五缺口修复 + 12 项新测试 + 两份独立审查工件；服务周期 `close/adjudicate/migrate` + 10 项生命周期测试；`changed_to` 判定不可行并保留明确拒绝与 6 项反例；Contact 完整批准路径 9 项端到端证据；WebView 桥 8 项生命周期静态合同。11 月 6 日复跑命令为 Python unittest 全量、`npm test`、`npm run build:canvas`、`tests/test_s1.py` 和 `tests/test_contract_semantics.py`，均通过，未引入新代码或新增外部证据。真实 harness Provider / host 联调、质量对照、生产服务周期来源签发、真实渠道/Push、OCR/视频理解、实机移动 WebView、模型质量矩阵、目标角色与 R2/R3 Gate 继续保持未通过；见 [R3 收口与验收对照](../../reports/R3-ACCEPTANCE-2026-11-04.md)。
 
 ### AGI-07/08：只读诊断与可选 Worker 首链（2026-11-04，代码、五缺口修复与审查工件均已落地）
 

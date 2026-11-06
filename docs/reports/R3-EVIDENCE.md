@@ -1,8 +1,8 @@
-# R3 能力证据登记 v1.6
+# R3 能力证据登记 v1.7
 
-日期：2026-11-04。状态：实施中；本文件是当前客服矩阵工件索引，不是 R3 Gate 通过报告。
+日期：2026-11-06（进度复验）；状态：开发侧工作包已收口、外部验收仍在跑；本文件是当前客服矩阵工件索引，不是 R3 Gate 通过报告。
 
-本登记映射[客服交付方案 §1.1](../CUSTOMER-SERVICE-DELIVERY-PLAN.md#11-网页客服能力覆盖矩阵)与[Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)的 `M-B-01…15`，并记录影响本矩阵判读的 R3 专项证据。本轮最终实测 Python 全量 739 项（`ResourceWarning` 作为错误）、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；AGI 专项 61 项、Contact／周期／算子专项 190 项、WebView 桥合同 12 项通过。这不表示客服能力矩阵完整验收。Gate 状态只在追溯矩阵维护。当前 SQLite schema 为 v23：v20 为 Inbox consumer durable ack 增量，v21/v22 为 AGI-07/08 诊断许可、不可变证据、诊断报告与 Worker 作业四表的同事务迁移，v23 为服务周期生命周期（generation/state/closure/predecessor lineage、`service_cycle_migrations` 审计表、active 周期 partial unique index、旧库条件式 ALTER 兼容）。SSE 本机 fixture 覆盖无游标冷启动基线与接管提醒优先级，不构成系统 Push 或实际送达证据。AGI-07/08、服务周期生命周期、Contact 完整批准路径与 WebView 桥生命周期的本机证据见下文专节；真实 harness Provider / host 联调无证据。真实渠道、平台、模型质量和送达能力不由本机 fixture 推定；R2/R3 Gate 均保持未通过，`M-B-01…14` 在跑、`M-B-15` 未开始，0/15 正式关闭。逐条 QA 对照见 [R3 收口与验收对照](R3-ACCEPTANCE-2026-11-04.md)。
+本登记映射[客服交付方案 §1.1](../CUSTOMER-SERVICE-DELIVERY-PLAN.md#11-网页客服能力覆盖矩阵)与[Gate 追溯矩阵](../RELEASE-GATE-MATRIX.md)的 `M-B-01…15`，并记录影响本矩阵判读的 R3 专项证据。2026-11-04 开发收口实测 Python 全量 739 项（`ResourceWarning` 作为错误）、前端 340/340、Canvas 构建、S1 自检与合同语义自检通过；AGI 专项 61 项、Contact／周期／算子专项 190 项、WebView 桥合同 12 项通过。2026-11-06 复跑 Python 739、前端 340/340、Canvas 构建及 S1/合同自检，均通过；未新增代码差异或外部验收证据。这不表示客服能力矩阵完整验收。Gate 状态只在追溯矩阵维护。当前 SQLite schema 为 v23：v20 为 Inbox consumer durable ack 增量，v21/v22 为 AGI-07/08 诊断许可、不可变证据、诊断报告与 Worker 作业四表的同事务迁移，v23 为服务周期生命周期（generation/state/closure/predecessor lineage、`service_cycle_migrations` 审计表、active 周期 partial unique index、旧库条件式 ALTER 兼容）。SSE 本机 fixture 覆盖无游标冷启动基线与接管提醒优先级，不构成系统 Push 或实际送达证据。AGI-07/08、服务周期生命周期、Contact 完整批准路径与 WebView 桥生命周期的本机证据见下文专节；真实 harness Provider / host 联调无证据。真实渠道、平台、模型质量和送达能力不由本机 fixture 推定；R2/R3 Gate 均保持未通过，`M-B-01…14` 在跑、`M-B-15` 未开始，0/15 正式关闭。逐条 QA 对照见 [R3 收口与验收对照](R3-ACCEPTANCE-2026-11-04.md)。
 
 ## R3 编排画布
 

@@ -1,4 +1,4 @@
-# R3 开发收口与验收对照 v1.1
+# R3 开发收口与验收对照 v1.2
 
 日期：2026-11-04（18:25 最终验证）。性质：**开发侧收口报告 + QA 对照表**，不是 R3 Gate 通过报告。Gate 权威条文只由 [验证路线 §S2-b](../ROADMAP.md) 与 [客服应用交付建设方案 §3](../CUSTOMER-SERVICE-DELIVERY-PLAN.md#3-阶段依赖与退出-gate) 定义；本文件不新增、不修改任何退出判据，也不把本机 fixture 升级为生产证据。
 
@@ -204,3 +204,17 @@ rtk git diff --cached --name-only  # 空
 3. AGI-07/08 的剩余动作是真实 harness Provider / host 联调与质量对照；代码、专项测试与两份审查工件已落地，不重复实现。
 4. 开发侧后续技术决策：`changed_to` 的可信前值来源与 `service.py` 注入、生产服务周期来源签发/验签、遗留 v22 库的 FK-safe 表重建、治理作业是否开放正向 HTTP/MCP 入口（须重新评估权限面）。
 5. R2 技术 Gate 与 R3 退出 Gate 均保持未通过，文档同步不改变这一结论。
+
+## 11. 进度复验补记（2026-11-06）
+
+本补记只刷新当前代码树的可复现本机回归，不改写 2026-11-04 开发收口快照或本报告 §2 的 Gate 判据。工作区起始状态干净；本次未发现代码差异，Gate 矩阵仍为 `M-B-01…14` 在跑、`M-B-15` 未开始，0/15 通过。
+
+| 验证 | 命令 | 结果 |
+|---|---|---|
+| Python 全量 | `rtk proxy .venv/bin/python -W error::ResourceWarning -m unittest discover -s tests -p 'test_*.py' -q` | 739 项，OK（11/06 实跑） |
+| 前端全量 | `rtk proxy npm test`（`prototypes/console-next`） | 340/340，0 failed |
+| Canvas 构建 | `rtk proxy npm run build:canvas`（`prototypes/console-next`） | Exit 0 |
+| S1 自检 | `rtk proxy .venv/bin/python tests/test_s1.py` | 全部通过 |
+| 合同语义自检 | `rtk proxy env PYTHONPATH=. .venv/bin/python tests/test_contract_semantics.py` | 全部通过 |
+
+专项 61/190/12 的分项结果仍引用 11 月 4 日收口实测，没有在本轮单独重跑；它们也不是父 Gate 通过证据。真实渠道/Push、移动 WebView 实机、外部 harness Provider / host 联调、多样本模型质量、生产周期来源与真人角色基线仍未验证。当前进度摘要已同步 README、PRODUCT、ARCHITECTURE、ROADMAP、RELEASE-PLAN、R3 实施计划、R3 证据登记、Gate 矩阵与文档索引。
